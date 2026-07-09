@@ -313,13 +313,17 @@ const PLATFORM_INTENT_PATTERNS = {
     /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i,
     /(سلام|درود|صبح بخیر|عصر بخیر)/i,
   ],
+  usePlatform: [
+    /\b(how can i use (the )?platform|how do i use (the )?platform|how to use (the )?platform)\b/i,
+    /(چطور.*از.*پلتفرم.*استفاده|چگونه.*از.*پلتفرم.*استفاده|طرز استفاده.*پلتفرم)/i,
+  ],
   platformOverview: [
     /\b(what is this platform|what is edutech|about the platform|platform overview)\b/i,
     /(پلتفرم چیه|پلتفرم چیست|این پلتفرم چیست|درباره پلتفرم|معرفی پلتفرم)/i,
   ],
   coursesOverview: [
-    /\b(what courses|available courses|which courses|what do you teach)\b/i,
-    /(چه کورس|چه درس|چه آموزش|کورس های موجود|کورس‌های موجود|چی درس میده)/i,
+    /\b(what courses|available courses|which courses|what do you teach|tell me about courses|tell me about the courses|course information)\b/i,
+    /(چه کورس|چه درس|چه آموزش|کورس های موجود|کورس‌های موجود|چی درس میده|درباره کورس|در مورد کورس)/i,
   ],
   joinPlatform: [
     /\b(how do i join|how can i join|how do i register|how can i register|how do i sign up|subscribe|membership)\b/i,
@@ -516,6 +520,40 @@ const includesAnyKeyword = (text = "", keywords = []) =>
 const matchesIntentPattern = (text = "", patterns = []) =>
   (Array.isArray(patterns) ? patterns : []).some((pattern) => pattern.test(text));
 
+const isShortGreetingLikeMessage = (text = "") => {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+  const wordCount = normalized.split(" ").filter(Boolean).length;
+  return wordCount <= 4 && includesAnyKeyword(normalized, GREETING_HINTS);
+};
+
+const isVagueFollowUpMessage = (text = "") => {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+
+  const vagueMessages = [
+    "how",
+    "why",
+    "where",
+    "what",
+    "which",
+    "more",
+    "explain",
+    "how?",
+    "why?",
+    "where?",
+    "چی",
+    "چطور",
+    "چگونه",
+    "چرا",
+    "کجا",
+    "بیشتر",
+    "توضیح",
+  ];
+
+  return vagueMessages.includes(normalized);
+};
+
 const buildPremiumSupportReply = ({
   language = "en",
   answer = "",
@@ -626,6 +664,39 @@ const buildGreetingReply = (language = "en", role = "guest") => {
   });
 };
 
+const buildVagueFollowUpReply = ({ language = "en", role = "guest", messages = [] }) => {
+  const recentConversation = getRecentUserConversationText(messages);
+  const isFa = language === "fa";
+
+  if (/course|courses|کورس|درس/.test(recentConversation)) {
+    return isFa
+      ? "اگر منظورتان کورس‌ها است، می‌توانم درباره کورس‌های موجود، نحوه پیدا کردن آن‌ها، سطح و زبان کورس‌ها، یا ثبت‌نام در کورس توضیح بدهم. فقط بگویید دقیقاً کدام بخش را می‌خواهید بدانید."
+      : "If you mean the courses, I can explain the available courses, how to find them, the course level and language, or how to enroll. Just tell me which part you want to know more about.";
+  }
+
+  if (/platform|edutech|پلتفرم/.test(recentConversation)) {
+    return isFa
+      ? "اگر منظورتان خود پلتفرم EduTech است، می‌توانم درباره نحوه استفاده، ثبت نام، ورود، کورس‌ها یا مدرسان راهنمایی بدهم. فقط بگویید دقیقاً کدام بخش را می‌خواهید."
+      : "If you mean the EduTech platform itself, I can guide you about how to use it, registration, login, courses, or teachers. Just tell me which part you want help with.";
+  }
+
+  if (/login|register|sign in|sign up|ثبت نام|ورود/.test(recentConversation)) {
+    return isFa
+      ? "اگر منظورتان ورود یا ثبت نام است، می‌توانم مرحله بعدی را دقیق‌تر توضیح بدهم. فقط بگویید درباره ساخت حساب، ورود، یا مشکل دسترسی سوال دارید."
+      : "If you mean login or registration, I can explain the next step more clearly. Just tell me whether you want help with creating an account, signing in, or an access issue.";
+  }
+
+  if (role === "guest") {
+    return isFa
+      ? "می‌توانم درباره معرفی پلتفرم، کورس‌ها، مدرسان، ثبت نام، ورود و نحوه استفاده از EduTech کمک کنم. لطفاً سوال را کمی دقیق‌تر بفرستید."
+      : "I can help with the platform overview, courses, teachers, registration, login, and how to use EduTech. Please make the question a little more specific.";
+  }
+
+  return isFa
+    ? "لطفاً سوال را کمی دقیق‌تر بفرستید تا شما را به بخش درست راهنمایی کنم."
+    : "Please make the question a little more specific so I can guide you to the right section.";
+};
+
 const buildIntentReply = ({ language = "en", role = "guest", intent = "" }) => {
   const isFa = language === "fa";
 
@@ -642,6 +713,26 @@ const buildIntentReply = ({ language = "en", role = "guest", intent = "" }) => {
         answer: "EduTech is an online learning platform where users can explore courses, view teachers, create an account, sign in, and continue their learning from inside the platform.",
         whereToGo: "If you are new here, a good start is the Courses page or the Teachers page.",
         nextStep: "If you want, I can next explain how to register or what courses are available.",
+      });
+  }
+
+  if (intent === "usePlatform") {
+    return isFa
+      ? buildPremiumSupportReply({
+        language,
+        answer: "برای استفاده از EduTech، معمولاً ابتدا حساب می‌سازید یا وارد می‌شوید، بعد کورس‌ها را بررسی می‌کنید و از بخش‌های مربوط مثل کورس‌ها، صنف زنده، تمرین‌ها، منابع و پرداخت‌ها استفاده می‌کنید.",
+        whereToGo: role === "guest"
+          ? "اگر تازه شروع می‌کنید، از صفحه ثبت نام، ورود یا کورس‌ها آغاز کنید."
+          : "اگر داخل حساب هستید، از داشبورد و سپس بخش‌های مربوط مثل کورس‌ها، تمرین‌ها یا صنف زنده شروع کنید.",
+        nextStep: "اگر بخواهید، می‌توانم دقیق‌تر بگویم برای نقش شما از کدام بخش شروع بهتر است.",
+      })
+      : buildPremiumSupportReply({
+        language,
+        answer: "To use EduTech, you normally start by creating an account or signing in, then explore courses and use the related sections such as courses, live classes, assignments, resources, and payments.",
+        whereToGo: role === "guest"
+          ? "If you are just getting started, begin with the Register, Login, or Courses page."
+          : "If you are already signed in, start from your dashboard and then open the section you need, such as Courses, Assignments, or Live Class.",
+        nextStep: "If you want, I can explain the best starting path for your role more clearly.",
       });
   }
 
@@ -1901,10 +1992,10 @@ const matchFastFaqReply = ({ user, messages }) => {
   const recentConversation = getRecentUserConversationText(messages);
   const combinedText = [recentConversation, normalized].filter(Boolean).join(" ");
 
-  if (matchesIntentPattern(combinedText, PLATFORM_INTENT_PATTERNS.greeting)) {
+  if (isVagueFollowUpMessage(latestMessage)) {
     return {
-      reply: buildGreetingReply(language, role),
-      model: "fast-intent",
+      reply: buildVagueFollowUpReply({ language, role, messages }),
+      model: "fast-clarifier",
     };
   }
 
@@ -1919,6 +2010,13 @@ const matchFastFaqReply = ({ user, messages }) => {
         };
       }
     }
+  }
+
+  if (isShortGreetingLikeMessage(latestMessage) && matchesIntentPattern(normalized, PLATFORM_INTENT_PATTERNS.greeting)) {
+    return {
+      reply: buildGreetingReply(language, role),
+      model: "fast-intent",
+    };
   }
 
   const candidates = [

@@ -1,10 +1,15 @@
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "./http.js";
 
+const MAX_OUTGOING_CHAT_MESSAGES = 10;
+
+const getTrimmedMessages = (messages = []) =>
+  (Array.isArray(messages) ? messages : []).slice(-MAX_OUTGOING_CHAT_MESSAGES);
+
 export const sendPlatformAiChatMessage = async (messages = [], context = {}) => {
   const response = await fetch(`${getApiBase()}/ai-chat/messages`, {
     method: "POST",
     headers: buildAuthHeaders(),
-    body: JSON.stringify({ messages, context }),
+    body: JSON.stringify({ messages: getTrimmedMessages(messages), context }),
   });
 
   const data = await parseJsonResponse(response);
@@ -19,7 +24,7 @@ export const streamPlatformAiChatMessage = async (
   const response = await fetch(`${getApiBase()}/ai-chat/messages/stream`, {
     method: "POST",
     headers: buildAuthHeaders(),
-    body: JSON.stringify({ messages, context }),
+    body: JSON.stringify({ messages: getTrimmedMessages(messages), context }),
     signal,
   });
 
