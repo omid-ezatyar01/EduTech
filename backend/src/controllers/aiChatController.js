@@ -4,6 +4,23 @@ import ApiError from "../utils/ApiError.js";
 import { generatePlatformChatReply, streamPlatformChatReply } from "../services/aiChat.service.js";
 import { blockTeacherIfContractExpired } from "../utils/teacherContract.js";
 
+const logAiChatFailure = ({ phase = "", req, error }) => {
+  const role = String(req?.user?.role || req?.body?.context?.role || "guest");
+  const path = String(req?.body?.context?.path || "");
+  const pageTitle = String(req?.body?.context?.pageTitle || "");
+  const latestMessage =
+    req?.body?.messages?.[req.body.messages.length - 1]?.content || "";
+
+  console.error(`[ai-chat:${phase}]`, {
+    role,
+    path,
+    pageTitle,
+    latestMessage: String(latestMessage).slice(0, 200),
+    message: error?.message || "Unknown AI chat error",
+    status: error?.status || null,
+  });
+};
+
 const resolveOptionalUserFromRequest = async (req) => {
   const authHeader = String(req.headers.authorization || "").trim();
   if (!authHeader) return null;
@@ -53,6 +70,7 @@ export const createPlatformChatReply = async (req, res, next) => {
       data: result,
     });
   } catch (error) {
+    logAiChatFailure({ phase: "reply", req, error });
     return next(error);
   }
 };
@@ -90,6 +108,7 @@ export const streamPlatformChatReplyResponse = async (req, res, next) => {
     });
     res.end();
   } catch (error) {
+    logAiChatFailure({ phase: "stream", req, error });
     if (!res.headersSent) {
       return next(error);
     }

@@ -2087,6 +2087,13 @@ const requestOllamaReply = async ({ messages, groundingText }) => {
 
   const reply = extractOllamaText(payload);
   if (!reply) {
+    console.error("[ai-chat:ollama-empty-reply]", {
+      model: payload?.model || model,
+      payloadKeys: Object.keys(payload || {}),
+      hasMessage: Boolean(payload?.message),
+      done: payload?.done,
+      doneReason: payload?.done_reason || payload?.doneReason || "",
+    });
     throw new ApiError(502, "Local AI returned an empty response.");
   }
 
@@ -2170,6 +2177,13 @@ const requestOllamaReplyStream = async ({ messages, groundingText, onChunk }) =>
     if (fallback?.reply) {
       return fallback;
     }
+    console.error("[ai-chat:ollama-stream-empty-reply]", {
+      model,
+      finalPayloadKeys: Object.keys(finalPayload || {}),
+      hasFinalMessage: Boolean(finalPayload?.message),
+      finalDone: finalPayload?.done,
+      finalDoneReason: finalPayload?.done_reason || finalPayload?.doneReason || "",
+    });
     throw new ApiError(502, "Local AI returned an empty response.");
   }
 
