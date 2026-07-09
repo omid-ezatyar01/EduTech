@@ -338,6 +338,10 @@ const PLATFORM_INTENT_PATTERNS = {
     /\b(contact|support|help center)\b/i,
     /(پشتیبانی|تماس|کمک)/i,
   ],
+  helpCapabilities: [
+    /\b(how can you help me|what can you help me with|what can you do|how can you help)\b/i,
+    /(چطور.*کمک.*می.*کنی|در چه.*کمک.*می.*کنی|چه کمکی.*می.*کنی|چطور کمکم میکنی|چطور کمکم می کنی)/i,
+  ],
 };
 
 const FAST_FAQ_LIBRARY = {
@@ -567,6 +571,39 @@ const buildPremiumSupportReply = ({
   return parts.join(language === "fa" ? " " : " ");
 };
 
+const stripThinkBlocks = (text = "") =>
+  String(text || "")
+    .replace(/<think[\s\S]*?<\/think>/gi, " ")
+    .replace(/<thinking[\s\S]*?<\/thinking>/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const compactReasoningText = (text = "") =>
+  String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z\u0600-\u06ff]+/g, "");
+
+const isReasoningLeakText = (text = "") => {
+  const cleaned = stripThinkBlocks(text);
+  if (!cleaned) return false;
+  const compact = compactReasoningText(cleaned);
+
+  const markers = [
+    "theuseris",
+    "ineedto",
+    "important",
+    "basedoncontext",
+    "firsti",
+    "ishould",
+    "theusers",
+    "okaytheuser",
+    "thecurrentpage",
+    "relevantcontext",
+  ];
+
+  return markers.some((marker) => compact.includes(marker));
+};
+
 const resolveChatAudienceRole = (user) => {
   const role = String(user?.role || "").trim().toLowerCase();
   if (role === "student" || role === "teacher" || role === "admin") return role;
@@ -714,6 +751,42 @@ const buildIntentReply = ({ language = "en", role = "guest", intent = "" }) => {
         answer: "EduTech is an online learning platform where users can explore courses, view teachers, create an account, sign in, and continue their learning from inside the platform.",
         whereToGo: "If you are new here, a good start is the Courses page or the Teachers page.",
         nextStep: "If you want, I can next explain how to register or what courses are available.",
+      });
+  }
+
+  if (intent === "helpCapabilities") {
+    return isFa
+      ? buildPremiumSupportReply({
+        language,
+        answer: role === "guest"
+          ? "می‌توانم درباره معرفی پلتفرم، کورس‌های موجود، مدرسان، ثبت نام، ورود و نحوه استفاده از EduTech راهنمایی بدهم."
+          : role === "teacher"
+            ? "می‌توانم درباره کورس‌ها، شاگردان، تمرین‌ها، صنف‌های زنده، منابع، گزارش‌ها و بخش‌های پنل مدرس راهنمایی بدهم."
+            : role === "admin"
+              ? "می‌توانم درباره کاربران، مدرسان، کورس‌ها، پرداخت‌ها، گزارش‌ها، تنظیمات و بخش‌های پنل ادمین راهنمایی بدهم."
+              : "می‌توانم درباره کورس‌ها، داشبورد، تمرین‌ها، صنف زنده، پرداخت‌ها و استفاده از بخش‌های EduTech راهنمایی بدهم.",
+        whereToGo: role === "guest"
+          ? "اگر تازه شروع می‌کنید، صفحه‌های کورس‌ها، مدرسان، ثبت نام و ورود مناسب‌ترین نقطه شروع هستند."
+          : "هر زمان بخواهید، می‌توانم شما را به بخش درست پلتفرم راهنمایی کنم.",
+        nextStep: role === "guest"
+          ? "مثلاً می‌توانید بپرسید این پلتفرم چه کورس‌هایی دارد یا چطور حساب بسازید."
+          : "مثلاً سوال خود را درباره همان بخشی که نیاز دارید مستقیم بپرسید.",
+      })
+      : buildPremiumSupportReply({
+        language,
+        answer: role === "guest"
+          ? "I can guide you about the platform overview, available courses, teachers, registration, login, and how to use EduTech."
+          : role === "teacher"
+            ? "I can guide you about courses, students, assignments, live classes, resources, reports, and the teacher panel sections."
+            : role === "admin"
+              ? "I can guide you about users, teachers, courses, payments, reports, settings, and the admin panel sections."
+              : "I can guide you about courses, the dashboard, assignments, live classes, payments, and how to use the EduTech sections.",
+        whereToGo: role === "guest"
+          ? "If you are getting started, the Courses, Teachers, Register, and Login pages are the best entry points."
+          : "Whenever you need it, I can point you to the right section of the platform.",
+        nextStep: role === "guest"
+          ? "For example, you can ask what courses are available or how to create an account."
+          : "You can ask directly about the section you need help with.",
       });
   }
 
@@ -2053,7 +2126,17 @@ const extractOllamaText = (payload = {}) =>
     .map((value) => String(value || "").trim())
     .find(Boolean) || "";
 
-const requestOllamaReply = async ({ messages, groundingText }) => {
+const buildSafeAssistantFallbackReply = ({ user, messages }) => {
+  const fastReply = matchFastFaqReply({ user, messages });
+  if (fastReply?.reply) return fastReply.reply;
+
+  const latestMessage = getLatestUserMessage(messages);
+  const language = detectMessageLanguage(latestMessage);
+  const role = resolveChatAudienceRole(user);
+  return buildIntentReply({ language, role, intent: "helpCapabilities" }) || buildGreetingReply(language, role);
+};
+
+const requestOllamaReply = async ({ user = null, messages, groundingText }) => {
   const baseUrl = String(process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").trim().replace(/\/+$/, "");
   const model = String(process.env.OLLAMA_CHAT_MODEL || "gemma3:4b").trim();
 
@@ -2087,7 +2170,7 @@ const requestOllamaReply = async ({ messages, groundingText }) => {
     throw new ApiError(response.status || 502, payload?.error || payload?.message || "Ollama request failed");
   }
 
-  const reply = extractOllamaText(payload);
+  const reply = stripThinkBlocks(extractOllamaText(payload));
   if (!reply) {
     console.error("[ai-chat:ollama-empty-reply]", {
       model: payload?.model || model,
@@ -2099,13 +2182,20 @@ const requestOllamaReply = async ({ messages, groundingText }) => {
     throw new ApiError(502, "Local AI returned an empty response.");
   }
 
+  if (isReasoningLeakText(reply)) {
+    return {
+      reply: buildSafeAssistantFallbackReply({ user, messages }),
+      model: payload?.model || model,
+    };
+  }
+
   return {
     reply,
     model: payload?.model || model,
   };
 };
 
-const requestOllamaReplyStream = async ({ messages, groundingText, onChunk }) => {
+const requestOllamaReplyStream = async ({ user = null, messages, groundingText, onChunk }) => {
   const baseUrl = String(process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").trim().replace(/\/+$/, "");
   const model = String(process.env.OLLAMA_CHAT_MODEL || "gemma3:4b").trim();
 
@@ -2143,16 +2233,25 @@ const requestOllamaReplyStream = async ({ messages, groundingText, onChunk }) =>
   let buffer = "";
   let reply = "";
   let finalPayload = null;
+  let leakedReasoningDetected = false;
 
   const flushLine = (line) => {
     const trimmed = String(line || "").trim();
     if (!trimmed) return;
     const payload = JSON.parse(trimmed);
     finalPayload = payload;
-    const delta = extractOllamaText(payload);
+    const delta = stripThinkBlocks(extractOllamaText(payload));
     if (delta) {
-      reply += delta;
-      onChunk(delta);
+      const candidateReply = `${reply}${delta}`;
+      if (isReasoningLeakText(candidateReply)) {
+        leakedReasoningDetected = true;
+        reply = candidateReply;
+        return;
+      }
+      reply = candidateReply;
+      if (!leakedReasoningDetected) {
+        onChunk(delta);
+      }
     }
   };
 
@@ -2168,7 +2267,7 @@ const requestOllamaReplyStream = async ({ messages, groundingText, onChunk }) =>
   }
 
   if (!reply.trim()) {
-    const fallbackReply = extractOllamaText(finalPayload);
+    const fallbackReply = stripThinkBlocks(extractOllamaText(finalPayload));
     if (fallbackReply) {
       reply = fallbackReply;
       onChunk(fallbackReply);
@@ -2176,7 +2275,7 @@ const requestOllamaReplyStream = async ({ messages, groundingText, onChunk }) =>
   }
 
   if (!reply.trim()) {
-    const fallback = await requestOllamaReply({ messages, groundingText }).catch(() => null);
+    const fallback = await requestOllamaReply({ user, messages, groundingText }).catch(() => null);
     if (fallback?.reply) {
       return fallback;
     }
@@ -2188,6 +2287,13 @@ const requestOllamaReplyStream = async ({ messages, groundingText, onChunk }) =>
       finalDoneReason: finalPayload?.done_reason || finalPayload?.doneReason || "",
     });
     throw new ApiError(502, "Local AI returned an empty response.");
+  }
+
+  if (isReasoningLeakText(reply)) {
+    return {
+      reply: buildSafeAssistantFallbackReply({ user, messages }),
+      model,
+    };
   }
 
   return {
@@ -2244,7 +2350,7 @@ export const generatePlatformChatReply = async ({ user = null, messages = [], co
     snippets: roleContext.snippets,
   });
 
-  return requestOllamaReply({ messages: normalizedMessages, groundingText });
+  return requestOllamaReply({ user, messages: normalizedMessages, groundingText });
 };
 
 export const streamPlatformChatReply = async ({
@@ -2301,7 +2407,7 @@ export const streamPlatformChatReply = async ({
     snippets: roleContext.snippets,
   });
 
-  return requestOllamaReplyStream({ messages: normalizedMessages, groundingText, onChunk });
+  return requestOllamaReplyStream({ user, messages: normalizedMessages, groundingText, onChunk });
 };
 
 export const generateStudentChatReply = generatePlatformChatReply;
