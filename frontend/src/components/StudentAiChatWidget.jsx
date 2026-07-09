@@ -9,18 +9,18 @@ const MAX_MESSAGE_LENGTH = 1200;
 
 const createGreeting = (language, name, role) => {
   if (role === "guest" && language === "fa") {
-    return `سلام${name ? ` ${name}` : ""}! من دستیار پلتفرم EduTech هستم. می‌توانم درباره معرفی پلتفرم، کورس‌های موجود، مدرسان، ثبت نام، ورود و نحوه استفاده از EduTech کمک کنم.`;
+    return `سلام${name ? ` ${name}` : ""}. من دستیار پلتفرم EduTech هستم و می‌توانم درباره معرفی پلتفرم، کورس‌های موجود، مدرسان، ثبت نام، ورود و نحوه استفاده از EduTech راهنمایی ارائه کنم.`;
   }
 
   if (role === "guest") {
-    return `Hi${name ? ` ${name}` : ""}! I'm the EduTech platform assistant. I can help with platform overview, available courses, teachers, registration, login, and how to use EduTech.`;
+    return `Hello${name ? ` ${name}` : ""}. I'm the EduTech platform assistant, and I can help with the platform overview, available courses, teachers, registration, login, and how to use EduTech.`;
   }
 
   if (language === "fa") {
-    return `سلام${name ? ` ${name}` : ""}! من دستیار پلتفرم EduTech هستم. فقط در مورد کورس‌ها، تمرین‌ها، پرداخت‌ها، داشبوردها و استفاده از همین پلتفرم کمک می‌کنم.`;
+    return `سلام${name ? ` ${name}` : ""}. من دستیار پلتفرم EduTech هستم و می‌توانم درباره کورس‌ها، تمرین‌ها، پرداخت‌ها، داشبوردها و استفاده از همین پلتفرم راهنمایی ارائه کنم.`;
   }
 
-  return `Hi${name ? ` ${name}` : ""}! I'm the EduTech platform assistant. I only help with EduTech courses, dashboards, assignments, payments, and how to use the platform.`;
+  return `Hello${name ? ` ${name}` : ""}. I'm the EduTech platform assistant, and I can help with EduTech courses, dashboards, assignments, payments, and how to use the platform.`;
 };
 
 const getSuggestedQuestions = (language, role) => {

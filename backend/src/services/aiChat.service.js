@@ -1,4 +1,5 @@
 import ApiError from "../utils/ApiError.js";
+import { readdir, readFile, stat } from "node:fs/promises";
 import AppSetting from "../models/AppSetting.js";
 import Assignment from "../models/Assignment.js";
 import Category from "../models/Category.js";
@@ -9,6 +10,8 @@ import Enrollment from "../models/Enrollment.js";
 import LiveSession from "../models/LiveSession.js";
 import Payment from "../models/Payment.js";
 import User from "../models/User.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MAX_MESSAGES = 6;
 const MAX_MESSAGE_LENGTH = 1200;
@@ -24,23 +27,106 @@ const OLLAMA_CHAT_OPTIONS = {
   num_predict: 180,
 };
 const OLLAMA_KEEP_ALIVE = "20m";
+const FRONTEND_KNOWLEDGE_CACHE_TTL_MS = 60 * 1000;
 const platformSummaryCache = {
   value: null,
   expiresAt: 0,
 };
 const roleContextCache = new Map();
 const roleContextSignatureCache = new Map();
+const frontendKnowledgeCache = {
+  value: null,
+  signature: "",
+  expiresAt: 0,
+};
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, "../../..");
+const FRONTEND_ROOT = path.join(PROJECT_ROOT, "frontend", "src");
+const TEACHER_FRONTEND_ROOT = path.join(PROJECT_ROOT, "teacher", "src");
+const ADMIN_FRONTEND_ROOT = path.join(PROJECT_ROOT, "admin", "src");
+const FRONTEND_SOURCE_ROOTS = [FRONTEND_ROOT, TEACHER_FRONTEND_ROOT, ADMIN_FRONTEND_ROOT];
+const FRONTEND_PAGE_DEFINITIONS = [
+  { path: "/", title: "Home", audience: "guest", file: "pages/HomePage.jsx", purpose: "introduces the platform, highlights courses, and helps visitors explore EduTech." },
+  { path: "/live-courses", title: "Live Courses", audience: "guest", file: "pages/LiveCoursesPage.jsx", purpose: "shows live or upcoming course opportunities and helps visitors discover learning options." },
+  { path: "/course/:id", title: "Course Details", audience: "guest", file: "pages/CourseDetailsPage.jsx", purpose: "shows one course in detail, including learning information and course actions." },
+  { path: "/teachers", title: "Teachers", audience: "guest", file: "pages/TeachersPage.jsx", purpose: "helps users browse available teachers and review teacher profiles." },
+  { path: "/teacher/:id", title: "Teacher Details", audience: "guest", file: "pages/TeacherDetails.jsx", purpose: "shows one teacher profile, background, and related teaching information." },
+  { path: "/about", title: "About", audience: "guest", file: "pages/AboutPage.jsx", purpose: "explains the platform background and general EduTech information." },
+  { path: "/contact", title: "Contact", audience: "guest", file: "pages/ContactPage.jsx", purpose: "lets users contact the platform for support or questions." },
+  { path: "/login", title: "Login", audience: "guest", file: "pages/LoginPage.jsx", purpose: "lets existing users sign in to their EduTech account." },
+  { path: "/register", title: "Register", audience: "guest", file: "pages/RegisterPage.jsx", purpose: "lets new users create an EduTech account." },
+  { path: "/verify", title: "Verify Certificate", audience: "guest", file: "pages/VerifyCertificatePage.jsx", purpose: "lets visitors verify certificate authenticity." },
+  { path: "/privacy-policy", title: "Privacy Policy", audience: "guest", file: "pages/PrivacyPolicyPage.jsx", purpose: "shows privacy policy information." },
+  { path: "/terms", title: "Terms", audience: "guest", file: "pages/TermsPage.jsx", purpose: "shows platform terms and conditions." },
+  { path: "/payment/success", title: "Payment Success", audience: "student", file: "pages/PaymentSuccessPage.jsx", purpose: "confirms successful payment and guides the learner after checkout." },
+  { path: "/payment/failure", title: "Payment Failure", audience: "student", file: "pages/PaymentFailurePage.jsx", purpose: "shows payment failure details and directs the learner to the next step." },
+  { path: "/payment/crypto", title: "Crypto Payment", audience: "student", file: "pages/NowPaymentsPage.jsx", purpose: "handles crypto payment flow for eligible course purchases." },
+  { path: "/student/dashboard", title: "Student Dashboard", audience: "student", file: "pages/StudentDashboardPage.jsx", purpose: "gives the learner an overview of courses, classes, assignments, resources, and activity." },
+  { path: "/student/courses", title: "My Courses", audience: "student", file: "components/MyCourses.jsx", purpose: "shows enrolled courses and helps the learner open course-related actions." },
+  { path: "/student/live", title: "Live Class", audience: "student", file: "components/LiveClass.jsx", purpose: "shows live class access and session-related actions." },
+  { path: "/student/schedule", title: "Schedule", audience: "student", file: "components/Schedule.jsx", purpose: "shows class timing and schedule information for the learner." },
+  { path: "/student/attendance", title: "Attendance", audience: "student", file: "components/Attendance.jsx", purpose: "shows attendance information and related course presence data." },
+  { path: "/student/assignments", title: "Assignments", audience: "student", file: "components/Assignments.jsx", purpose: "shows assignments, due dates, and assignment-related actions." },
+  { path: "/student/resources", title: "Resources", audience: "student", file: "components/Resources.jsx", purpose: "shows learning resources, files, and course materials." },
+  { path: "/student/certificates", title: "Certificates", audience: "student", file: "components/Certificates.jsx", purpose: "shows earned certificates and certificate-related actions." },
+  { path: "/student/payments", title: "Payments", audience: "student", file: "components/Payments.jsx", purpose: "shows payment history, payment status, and learner billing information." },
+  { path: "/student/messages", title: "Messages", audience: "student", file: "components/Messages.jsx", purpose: "lets the learner review conversations and platform messages." },
+  { path: "/student/notifications", title: "Notifications", audience: "student", file: "components/Notifications.jsx", purpose: "shows learner notifications and alert items." },
+  { path: "/student/profile", title: "Profile", audience: "student", file: "components/Profile.jsx", purpose: "lets the learner review and update profile details." },
+  { path: "/student/settings", title: "Settings", audience: "student", file: "components/Settings.jsx", purpose: "lets the learner manage account and platform settings." },
+  { path: "/teacher/login", title: "Teacher Login", audience: "teacher", app: "teacher", file: "auth/TeacherLogin.jsx", purpose: "lets teachers sign in to the teacher portal." },
+  { path: "/teacher/forgot-password", title: "Teacher Password Recovery", audience: "teacher", app: "teacher", file: "auth/TeacherPasswordRecovery.jsx", purpose: "helps teachers recover access to their account." },
+  { path: "/teacher/verify-reset-otp", title: "Teacher Reset OTP", audience: "teacher", app: "teacher", file: "auth/TeacherPasswordRecovery.jsx", purpose: "verifies teacher password reset code." },
+  { path: "/teacher/reset-password", title: "Teacher Reset Password", audience: "teacher", app: "teacher", file: "auth/TeacherPasswordRecovery.jsx", purpose: "lets teachers set a new password." },
+  { path: "/teacher/dashboard", title: "Teacher Dashboard", audience: "teacher", app: "teacher", file: "pages/TeacherDashboard.jsx", purpose: "gives teachers an overview of classes, students, assignments, and teaching activity." },
+  { path: "/teacher/courses", title: "Teacher Courses", audience: "teacher", app: "teacher", file: "pages/TeacherCourses.jsx", purpose: "lets teachers create, review, and manage their courses." },
+  { path: "/teacher/students", title: "Teacher Students", audience: "teacher", app: "teacher", file: "pages/TeacherStudents.jsx", purpose: "shows teacher student lists and student-related actions." },
+  { path: "/teacher/live-classes", title: "Teacher Live Classes", audience: "teacher", app: "teacher", file: "pages/TeacherLiveClasses.jsx", purpose: "lets teachers schedule, manage, and review live classes." },
+  { path: "/teacher/attendance", title: "Teacher Attendance", audience: "teacher", app: "teacher", file: "pages/TeacherAttendance.jsx", purpose: "shows attendance records and attendance management tools." },
+  { path: "/teacher/assignments", title: "Teacher Assignments", audience: "teacher", app: "teacher", file: "pages/TeacherAssignments.jsx", purpose: "lets teachers create, review, and manage assignments." },
+  { path: "/teacher/resources", title: "Teacher Resources", audience: "teacher", app: "teacher", file: "pages/TeacherResources.jsx", purpose: "lets teachers manage course resources and learning materials." },
+  { path: "/teacher/messages", title: "Teacher Messages", audience: "teacher", app: "teacher", file: "pages/TeacherMessages.jsx", purpose: "shows teacher conversations, class chat, and messaging tools." },
+  { path: "/teacher/reports", title: "Teacher Reports", audience: "teacher", app: "teacher", file: "pages/TeacherReports.jsx", purpose: "shows teacher reports and analytics-related information." },
+  { path: "/teacher/income", title: "Teacher Income", audience: "teacher", app: "teacher", file: "pages/TeacherIncome.jsx", purpose: "shows teacher income, earnings, and payment-related information." },
+  { path: "/teacher/profile", title: "Teacher Profile", audience: "teacher", app: "teacher", file: "pages/TeacherProfile.jsx", purpose: "lets teachers review and update profile information." },
+  { path: "/teacher/settings", title: "Teacher Settings", audience: "teacher", app: "teacher", file: "pages/TeacherSettings.jsx", purpose: "lets teachers manage account and portal settings." },
+  { path: "/login", title: "Admin Login", audience: "admin", app: "admin", file: "pages/AdminLoginPage.jsx", purpose: "lets admins sign in to the admin panel." },
+  { path: "/", title: "Admin Dashboard", audience: "admin", app: "admin", file: "pages/AdminDashboardPage.jsx", purpose: "gives admins an overview of platform activity, users, courses, and key metrics." },
+  { path: "/students", title: "Admin Students", audience: "admin", app: "admin", file: "pages/AdminStudentsPage.jsx", purpose: "lets admins review and manage student records." },
+  { path: "/teachers", title: "Admin Teachers", audience: "admin", app: "admin", file: "pages/AdminTeachersPage.jsx", purpose: "lets admins review and manage teacher records and approvals." },
+  { path: "/courses", title: "Admin Courses", audience: "admin", app: "admin", file: "pages/AdminCoursesPage.jsx", purpose: "lets admins review and manage platform courses." },
+  { path: "/categories", title: "Admin Categories", audience: "admin", app: "admin", file: "pages/AdminCategoriesPage.jsx", purpose: "lets admins manage course categories." },
+  { path: "/orders", title: "Admin Orders", audience: "admin", app: "admin", file: "pages/AdminOrdersPage.jsx", purpose: "shows order records and order management tools." },
+  { path: "/payments", title: "Admin Payments", audience: "admin", app: "admin", file: "pages/AdminPaymentsPage.jsx", purpose: "shows payment records, statuses, and payment management tools." },
+  { path: "/teacher-income", title: "Admin Teacher Income", audience: "admin", app: "admin", file: "pages/AdminTeacherIncomePage.jsx", purpose: "shows teacher income data and income-related management tools." },
+  { path: "/coupons", title: "Admin Coupons", audience: "admin", app: "admin", file: "pages/AdminCouponsPage.jsx", purpose: "lets admins manage coupon and discount settings." },
+  { path: "/reviews", title: "Admin Reviews", audience: "admin", app: "admin", file: "pages/AdminReviewsPage.jsx", purpose: "lets admins review course feedback and review-related items." },
+  { path: "/messages", title: "Admin Messages", audience: "admin", app: "admin", file: "pages/AdminMessagesPage.jsx", purpose: "shows platform messages and admin communication tools." },
+  { path: "/otp-email-status", title: "Admin OTP Email Status", audience: "admin", app: "admin", file: "pages/AdminOtpEmailStatusPage.jsx", purpose: "shows OTP and email delivery status information." },
+  { path: "/reports", title: "Admin Reports", audience: "admin", app: "admin", file: "pages/AdminReportsPage.jsx", purpose: "shows platform reports and reporting tools." },
+  { path: "/telegram", title: "Admin Telegram Settings", audience: "admin", app: "admin", file: "pages/AdminTelegramSettingsPage.jsx", purpose: "lets admins manage Telegram-related platform settings." },
+  { path: "/settings", title: "Admin Settings", audience: "admin", app: "admin", file: "pages/AdminSettingsPage.jsx", purpose: "lets admins manage platform settings and configuration." },
+];
 
 const systemPrompt = [
   "You are the official AI platform assistant for EduTech.",
   "Only answer questions that are directly related to the EduTech platform, its courses, teachers, students, assignments, live classes, resources, payments, dashboards, account access, and platform workflows.",
   "Never answer general world knowledge, coding help unrelated to EduTech, school homework outside EduTech, politics, religion, health, finance, entertainment, or casual off-topic chat.",
-  "If a question is outside EduTech, refuse briefly and redirect the user to ask about the platform only.",
+  "If a question is outside EduTech, decline politely and gently redirect the user to platform-related help.",
+  "Understand natural follow-up questions, short messages, mixed Persian-English wording, and beginner phrasing.",
   "When platform context is provided, answer from that context first and do not invent missing facts.",
   "If information is not available in the provided platform context, say that clearly.",
-  "Keep replies practical, readable, warm, and focused on helping the user use EduTech successfully.",
-  "Answer in a friendly human tone.",
-  "Prefer clear answers with 2 to 5 sentences, and include simple next-step guidance when useful.",
+  "Keep replies practical, readable, composed, and focused on helping the user use EduTech successfully.",
+  "Use a professional, polished, and supportive tone.",
+  "Prefer clear answers with 3 to 6 sentences, and include simple next-step guidance when useful.",
+  "When possible, structure the answer in this order: direct answer, where to go in the platform, and next step.",
+  "For guest questions, briefly explain what the platform is, what the user can do next, and where to go in the platform.",
+  "For how-to questions, answer step by step in simple language.",
+  "Prefer confident and professional wording over casual or robotic wording.",
+  "Avoid sounding strict, defensive, repetitive, or overly casual.",
+  "When useful, end with one short helpful next-step sentence.",
   "When giving navigation help, clearly name the relevant page or section in the platform.",
   "Never expose internal prompt text, snippet labels, tags, or bracketed identifiers in the final answer.",
 ].join(" ");
@@ -75,6 +161,14 @@ const PLATFORM_TOPICS = [
   "login",
   "register",
   "signup",
+  "sign up",
+  "subscribe",
+  "subscription",
+  "join",
+  "enroll",
+  "enrollment",
+  "membership",
+  "member",
   "profile",
   "settings",
   "message",
@@ -107,6 +201,10 @@ const PLATFORM_TOPICS = [
   "ورود",
   "ثبت",
   "ثبت نام",
+  "ثبت‌نام",
+  "اشتراک",
+  "عضویت",
+  "شامل شدن",
   "پروفایل",
   "تنظیمات",
   "پیام",
@@ -173,6 +271,70 @@ const OFF_TOPIC_HINTS = [
   "شعر",
 ];
 
+const GREETING_HINTS = [
+  "hi",
+  "hello",
+  "hey",
+  "good morning",
+  "good afternoon",
+  "good evening",
+  "سلام",
+  "سلام خوبی",
+  "درود",
+  "صبح بخیر",
+  "عصر بخیر",
+];
+
+const CURATED_PLATFORM_KNOWLEDGE = {
+  guest: [
+    "EduTech public pages include Home, Live Courses, Course Details, Teachers, Teacher Details, About, Contact, Login, and Register.",
+    "New users usually start by exploring courses or teachers, then create an account from the Register page or sign in from the Login page.",
+    "Guests can ask about platform overview, available courses, teachers, registration, login, and support before becoming active learners.",
+  ],
+  student: [
+    "EduTech student areas include Dashboard, My Courses, Live Class, Schedule, Assignments, Resources, Messages, Payments, Certificates, Profile, and Settings.",
+    "Students usually use My Courses to open enrolled courses, Live Class for active sessions, Assignments for tasks, Resources for course materials, and Certificates after eligible course completion.",
+    "For most student guidance, answers should mention the exact page name so the learner knows where to go next inside the platform.",
+  ],
+  teacher: [
+    "EduTech teacher pages include Teacher Dashboard, Courses, Students, Live Classes, Attendance, Assignments, Resources, Messages, Reports, Income, Profile, and Settings.",
+    "EduTech teacher guidance should focus on course creation, course management, students, assignments, live classes, attendance, resources, reports, income, and portal settings.",
+    "When helping teachers, prefer practical answers that point to the relevant teacher panel section instead of generic explanations.",
+  ],
+  admin: [
+    "EduTech admin pages include Dashboard, Students, Teachers, Courses, Categories, Orders, Payments, Teacher Income, Coupons, Reviews, Messages, OTP Email Status, Reports, Telegram Settings, and Settings.",
+    "EduTech admin guidance should focus on users, teachers, courses, categories, orders, payments, reports, Telegram settings, and overall platform settings.",
+    "When helping admins, answers should stay operational and clearly reference the matching admin panel section.",
+  ],
+};
+
+const PLATFORM_INTENT_PATTERNS = {
+  greeting: [
+    /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i,
+    /(سلام|درود|صبح بخیر|عصر بخیر)/i,
+  ],
+  platformOverview: [
+    /\b(what is this platform|what is edutech|about the platform|platform overview)\b/i,
+    /(پلتفرم چیه|پلتفرم چیست|این پلتفرم چیست|درباره پلتفرم|معرفی پلتفرم)/i,
+  ],
+  coursesOverview: [
+    /\b(what courses|available courses|which courses|what do you teach)\b/i,
+    /(چه کورس|چه درس|چه آموزش|کورس های موجود|کورس‌های موجود|چی درس میده)/i,
+  ],
+  joinPlatform: [
+    /\b(how do i join|how can i join|how do i register|how can i register|how do i sign up|subscribe|membership)\b/i,
+    /(چطور.*(اشتراک|عضویت|ثبت نام|ثبت‌نام)|چگونه.*(اشتراک|عضویت|ثبت نام|ثبت‌نام)|طور.*(اشتراک|عضویت|ثبت نام|ثبت‌نام))/i,
+  ],
+  loginHelp: [
+    /\b(how do i login|how can i login|sign in)\b/i,
+    /(چطور.*ورود|چگونه.*ورود|لاگین)/i,
+  ],
+  supportHelp: [
+    /\b(contact|support|help center)\b/i,
+    /(پشتیبانی|تماس|کمک)/i,
+  ],
+};
+
 const FAST_FAQ_LIBRARY = {
   guest: [
     {
@@ -204,6 +366,18 @@ const FAST_FAQ_LIBRARY = {
       keywordsFa: ["چی", "درس"],
       replyEn: "EduTech teaches through the courses published on the platform. Users can browse available courses, read each course description, and choose the topics they want to learn from the listed teachers.",
       replyFa: "EduTech از طریق کورس‌های منتشرشده در پلتفرم آموزش می‌دهد. کاربر می‌تواند کورس‌های موجود را ببیند، توضیحات هر کورس را بخواند و موضوع مورد نظر خود را از میان کورس‌ها و مدرسان انتخاب کند.",
+    },
+    {
+      keywords: ["subscribe"],
+      keywordsFa: ["اشتراک"],
+      replyEn: "To join EduTech, first open the Register page and create your account, or sign in if you already have one. After that, you can explore courses and continue with the platform steps shown for enrollment or payment.",
+      replyFa: "برای پیوستن به EduTech، ابتدا صفحه ثبت نام را باز کنید و حساب خود را بسازید، یا اگر حساب دارید وارد شوید. بعد از آن می‌توانید کورس‌ها را ببینید و مراحل ثبت‌نام در کورس یا پرداخت را از داخل پلتفرم ادامه دهید.",
+    },
+    {
+      keywords: ["join"],
+      keywordsFa: ["عضویت"],
+      replyEn: "To join EduTech as a user, open the Register page, complete your account details, and then sign in. After login, you can browse courses, teachers, and the learning sections available on the platform.",
+      replyFa: "برای عضویت در EduTech، صفحه ثبت نام را باز کنید، معلومات حساب خود را تکمیل کنید و سپس وارد شوید. بعد از ورود می‌توانید کورس‌ها، مدرسان و بخش‌های آموزشی پلتفرم را ببینید.",
     },
   ],
   student: [
@@ -328,8 +502,31 @@ const getSearchTerms = (messages = []) => {
 const getLatestUserMessage = (messages = []) =>
   [...messages].reverse().find((message) => message.role === "user")?.content || "";
 
+const getRecentUserConversationText = (messages = []) =>
+  (Array.isArray(messages) ? messages : [])
+    .filter((message) => message?.role === "user" && String(message?.content || "").trim())
+    .slice(-3)
+    .map((message) => normalizeText(message.content))
+    .filter(Boolean)
+    .join(" ");
+
 const includesAnyKeyword = (text = "", keywords = []) =>
   keywords.some((keyword) => text.includes(String(keyword || "").toLowerCase()));
+
+const matchesIntentPattern = (text = "", patterns = []) =>
+  (Array.isArray(patterns) ? patterns : []).some((pattern) => pattern.test(text));
+
+const buildPremiumSupportReply = ({
+  language = "en",
+  answer = "",
+  whereToGo = "",
+  nextStep = "",
+}) => {
+  const parts = [String(answer || "").trim(), String(whereToGo || "").trim(), String(nextStep || "").trim()]
+    .filter(Boolean);
+
+  return parts.join(language === "fa" ? " " : " ");
+};
 
 const resolveChatAudienceRole = (user) => {
   const role = String(user?.role || "").trim().toLowerCase();
@@ -337,22 +534,26 @@ const resolveChatAudienceRole = (user) => {
   return "guest";
 };
 
-const isPlatformQuestion = (text = "", role = "guest") => {
+const isPlatformQuestion = ({ text = "", role = "guest", messages = [] }) => {
   const normalized = normalizeText(text);
   if (!normalized) return true;
+  if (includesAnyKeyword(normalized, GREETING_HINTS)) return true;
+
+  const recentConversation = getRecentUserConversationText(messages);
+  const combinedText = [recentConversation, normalized].filter(Boolean).join(" ");
 
   const roleKeywords = {
-    student: ["student", "dashboard", "courses", "assignments", "certificates", "payments", "محصل", "داشبورد", "کورس", "تمرین", "سرتیفیکیت", "پرداخت"],
-    teacher: ["teacher", "students", "courses", "assignments", "live", "resources", "مدرس", "شاگرد", "کورس", "تمرین", "صنف", "منابع"],
-    admin: ["admin", "users", "teachers", "students", "courses", "payments", "reports", "ادمین", "کاربران", "مدرسان", "محصلان", "کورس", "پرداخت", "گزارش"],
-    guest: ["register", "login", "course", "teacher", "contact", "platform", "learn", "teach", "offer", "service", "ثبت", "ورود", "کورس", "مدرس", "تماس", "پلتفرم", "سایت", "درس", "آموزش", "یادگیری", "خدمات", "امکانات", "معرفی"],
+    student: ["student", "dashboard", "courses", "assignments", "certificates", "payments", "subscribe", "subscription", "join", "enroll", "محصل", "داشبورد", "کورس", "تمرین", "سرتیفیکیت", "پرداخت", "اشتراک", "عضویت"],
+    teacher: ["teacher", "students", "courses", "assignments", "live", "resources", "subscribe", "join", "enroll", "مدرس", "شاگرد", "کورس", "تمرین", "صنف", "منابع", "اشتراک", "عضویت"],
+    admin: ["admin", "users", "teachers", "students", "courses", "payments", "reports", "subscription", "ادمین", "کاربران", "مدرسان", "محصلان", "کورس", "پرداخت", "گزارش", "اشتراک"],
+    guest: ["register", "login", "course", "teacher", "contact", "platform", "learn", "teach", "offer", "service", "subscribe", "subscription", "join", "enroll", "member", "membership", "signup", "ثبت", "ورود", "کورس", "مدرس", "تماس", "پلتفرم", "سایت", "درس", "آموزش", "یادگیری", "خدمات", "امکانات", "معرفی", "اشتراک", "عضویت", "ثبت نام", "ثبت‌نام"],
   };
 
   const hasPlatformTopic =
-    includesAnyKeyword(normalized, PLATFORM_TOPICS) ||
-    includesAnyKeyword(normalized, roleKeywords[role] || []);
+    includesAnyKeyword(combinedText, PLATFORM_TOPICS) ||
+    includesAnyKeyword(combinedText, roleKeywords[role] || []);
 
-  const hasOffTopicHint = includesAnyKeyword(normalized, OFF_TOPIC_HINTS);
+  const hasOffTopicHint = includesAnyKeyword(combinedText, OFF_TOPIC_HINTS);
   if (hasPlatformTopic) return true;
   if (hasOffTopicHint) return false;
 
@@ -374,10 +575,141 @@ const buildPlatformOnlyRefusal = (language = "en", role = "guest") => {
   };
 
   if (language === "fa") {
-    return `من فقط به سوالات مربوط به پلتفرم EduTech پاسخ می‌دهم و درباره موضوعات خارج از پلتفرم جواب نمی‌دهم. ${suggestionsFa[role] || suggestionsFa.guest}`;
+    return buildPremiumSupportReply({
+      language,
+      answer: "من دستیار پلتفرم EduTech هستم و بیشتر روی سوالات مربوط به همین پلتفرم کمک می‌کنم.",
+      whereToGo: "",
+      nextStep: suggestionsFa[role] || suggestionsFa.guest,
+    });
   }
 
-  return `I only answer questions about the EduTech platform and I do not respond to off-platform topics. ${suggestionsEn[role] || suggestionsEn.guest}`;
+  return buildPremiumSupportReply({
+    language,
+    answer: "I'm here mainly to help with the EduTech platform.",
+    whereToGo: "",
+    nextStep: suggestionsEn[role] || suggestionsEn.guest,
+  });
+};
+
+const buildGreetingReply = (language = "en", role = "guest") => {
+  if (language === "fa") {
+    if (role === "guest") {
+      return buildPremiumSupportReply({
+        language,
+        answer: "سلام و خوش آمدید. من می‌توانم درباره معرفی EduTech، کورس‌های موجود، مدرسان، ثبت نام، ورود و نحوه استفاده از پلتفرم کمک کنم.",
+        whereToGo: "",
+        nextStep: "اگر بخواهید، می‌توانید بپرسید این پلتفرم چه کورس‌هایی دارد یا چطور حساب بسازید.",
+      });
+    }
+    return buildPremiumSupportReply({
+      language,
+      answer: "سلام و خوش آمدید. من می‌توانم درباره بخش‌های EduTech مثل کورس‌ها، تمرین‌ها، صنف زنده، پرداخت‌ها و نحوه استفاده از پلتفرم کمک کنم.",
+      whereToGo: "",
+      nextStep: "هر زمان خواستید، سوال خود را مستقیم بپرسید تا شما را به بخش درست راهنمایی کنم.",
+    });
+  }
+
+  if (role === "guest") {
+    return buildPremiumSupportReply({
+      language,
+      answer: "Hello and welcome. I can help with the EduTech platform overview, available courses, teachers, registration, login, and how to use the platform.",
+      whereToGo: "",
+      nextStep: "If you want, you can ask what courses are available or how to create an account.",
+    });
+  }
+
+  return buildPremiumSupportReply({
+    language,
+    answer: "Hello and welcome. I can help with EduTech courses, assignments, live classes, payments, and how to use the platform.",
+    whereToGo: "",
+    nextStep: "Ask your question directly and I will guide you to the right section.",
+  });
+};
+
+const buildIntentReply = ({ language = "en", role = "guest", intent = "" }) => {
+  const isFa = language === "fa";
+
+  if (intent === "platformOverview") {
+    return isFa
+      ? buildPremiumSupportReply({
+        language,
+        answer: "EduTech یک پلتفرم آموزشی آنلاین است که در آن می‌توانید کورس‌ها را ببینید، با مدرسان آشنا شوید، حساب بسازید، وارد شوید و مسیر یادگیری خود را از داخل پلتفرم ادامه دهید.",
+        whereToGo: "اگر تازه وارد هستید، بهتر است از صفحه‌های کورس‌ها و مدرسان شروع کنید.",
+        nextStep: "اگر بخواهید، می‌توانم بعدی برایتان بگویم چطور ثبت نام کنید یا چه کورس‌هایی موجود است.",
+      })
+      : buildPremiumSupportReply({
+        language,
+        answer: "EduTech is an online learning platform where users can explore courses, view teachers, create an account, sign in, and continue their learning from inside the platform.",
+        whereToGo: "If you are new here, a good start is the Courses page or the Teachers page.",
+        nextStep: "If you want, I can next explain how to register or what courses are available.",
+      });
+  }
+
+  if (intent === "coursesOverview") {
+    return isFa
+      ? buildPremiumSupportReply({
+        language,
+        answer: "EduTech آموزش را از طریق کورس‌های منتشرشده در پلتفرم ارائه می‌کند. شما می‌توانید کورس‌های موجود را ببینید، توضیحات هر کورس را بخوانید، سطح و زبان آن را بررسی کنید و سپس کورس مناسب خود را انتخاب کنید.",
+        whereToGo: "برای شروع، بخش کورس‌ها یا صفحه جزئیات هر کورس بهترین جا است.",
+        nextStep: "اگر بخواهید، می‌توانم توضیح بدهم کورس‌ها را از کدام بخش پیدا کنید.",
+      })
+      : buildPremiumSupportReply({
+        language,
+        answer: "EduTech teaches through the courses published on the platform. You can browse available courses, read each course description, check the level and language, and then choose the course that fits you best.",
+        whereToGo: "A good place to start is the Courses area or any Course Details page.",
+        nextStep: "If you want, I can also explain where to find those courses in the platform.",
+      });
+  }
+
+  if (intent === "joinPlatform") {
+    return isFa
+      ? buildPremiumSupportReply({
+        language,
+        answer: "برای شروع در EduTech، ابتدا صفحه ثبت نام را باز کنید و حساب خود را بسازید. بعد از ثبت نام یا ورود، می‌توانید کورس‌ها را ببینید و اگر کورسی مناسب شما بود، مراحل ثبت‌نام در کورس یا پرداخت را از همان داخل پلتفرم ادامه دهید.",
+        whereToGo: "برای این کار، از صفحه ثبت نام و بعد از آن بخش کورس‌ها استفاده کنید.",
+        nextStep: "اگر بخواهید، قدم بعدی را هم دقیق‌تر برایتان می‌گویم.",
+      })
+      : buildPremiumSupportReply({
+        language,
+        answer: "To join EduTech, first open the Register page and create your account. After you register or sign in, you can explore the courses and continue with the course enrollment or payment steps directly in the platform.",
+        whereToGo: "Start with the Register page, then move to the Courses area.",
+        nextStep: "If you want, I can also walk you through the next step more clearly.",
+      });
+  }
+
+  if (intent === "loginHelp") {
+    return isFa
+      ? buildPremiumSupportReply({
+        language,
+        answer: "برای ورود، صفحه ورود را باز کنید و از معلومات حساب خود یا ورود با Google استفاده کنید. اگر هنوز حساب ندارید، ابتدا از صفحه ثبت نام حساب بسازید.",
+        whereToGo: "بخش درست برای این کار صفحه ورود یا صفحه ثبت نام است.",
+        nextStep: "اگر مشکل ورود دارید، می‌توانم گزینه‌های بعدی را هم توضیح بدهم.",
+      })
+      : buildPremiumSupportReply({
+        language,
+        answer: "To sign in, open the Login page and use your account details or Google sign-in if it is available. If you do not have an account yet, start from the Register page first.",
+        whereToGo: "The right place for this is the Login page or the Register page.",
+        nextStep: "If you are having trouble signing in, I can explain the next options too.",
+      });
+  }
+
+  if (intent === "supportHelp") {
+    return isFa
+      ? buildPremiumSupportReply({
+        language,
+        answer: "برای دریافت کمک، صفحه تماس با ما یا بخش پشتیبانی EduTech را باز کنید. آنجا می‌توانید برای مشکلات حساب، کورس‌ها یا پرداخت‌ها کمک بگیرید.",
+        whereToGo: "بهترین بخش برای این کار صفحه تماس با ما است.",
+        nextStep: "اگر بخواهید، می‌توانم بگویم بهتر است از کدام بخش شروع کنید.",
+      })
+      : buildPremiumSupportReply({
+        language,
+        answer: "For help, open the EduTech Contact or support section. That is the right place for account, course, or payment issues.",
+        whereToGo: "The best place to start is the Contact page.",
+        nextStep: "If you want, I can also tell you the best next step.",
+      });
+  }
+
+  return null;
 };
 
 const detectMessageLanguage = (text = "") => /[\u0600-\u06FF]/.test(String(text || "")) ? "fa" : "en";
@@ -417,6 +749,167 @@ const createSnippet = ({ scopeId = "", label = "", text = "", priority = 1 }) =>
   text: String(text || "").trim().slice(0, 1400),
   priority: Number(priority || 1),
 });
+
+const humanizeIdentifier = (value = "") =>
+  String(value || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[-_/]/g, " ")
+    .replace(/\b(JSX|JS|TSX|TS)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const toRelativeFrontendPath = (filePath = "") => path.relative(PROJECT_ROOT, filePath).replace(/\\/g, "/");
+
+const resolveFrontendSourceRoot = (app = "frontend") => {
+  if (app === "teacher") return TEACHER_FRONTEND_ROOT;
+  if (app === "admin") return ADMIN_FRONTEND_ROOT;
+  return FRONTEND_ROOT;
+};
+
+const extractUiFeaturesFromSource = (source = "") => {
+  const componentNames = Array.from(
+    new Set(
+      [...String(source || "").matchAll(/<([A-Z][A-Za-z0-9]+)/g)]
+        .map((match) => match[1])
+        .filter((name) => !["Route", "Routes", "Navigate", "Suspense", "ProtectedRoute", "AuthRoute"].includes(name)),
+    ),
+  );
+
+  return componentNames
+    .slice(0, 8)
+    .map((name) =>
+      humanizeIdentifier(name)
+        .replace(/\b(Card|Modal|Page|Section|Table|Tabs|Panel|Preview)\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter(Boolean);
+};
+
+const walkFiles = async (dirPath) => {
+  const entries = await readdir(dirPath, { withFileTypes: true }).catch(() => []);
+  const files = await Promise.all(entries.map(async (entry) => {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      return walkFiles(fullPath);
+    }
+    return fullPath;
+  }));
+
+  return files.flat();
+};
+
+const getFrontendKnowledgeSignature = async () => {
+  const fileGroups = await Promise.all(FRONTEND_SOURCE_ROOTS.map((rootPath) => walkFiles(rootPath)));
+  const files = fileGroups
+    .flat()
+    .filter((filePath) => /\.(jsx|js)$/.test(filePath))
+    .sort();
+
+  const stats = await Promise.all(
+    files.map(async (filePath) => {
+      const details = await stat(filePath).catch(() => null);
+      if (!details) return null;
+      return `${toRelativeFrontendPath(filePath)}:${details.mtimeMs}`;
+    }),
+  );
+
+  return stats.filter(Boolean).join("|");
+};
+
+const buildFrontendKnowledgeSnippets = async () => {
+  const signature = await getFrontendKnowledgeSignature();
+  if (
+    frontendKnowledgeCache.value &&
+    frontendKnowledgeCache.signature === signature &&
+    frontendKnowledgeCache.expiresAt > Date.now()
+  ) {
+    return frontendKnowledgeCache.value;
+  }
+
+  const definitions = await Promise.all(
+    FRONTEND_PAGE_DEFINITIONS.map(async (page) => {
+      const sourceFile = path.join(resolveFrontendSourceRoot(page.app), page.file);
+      const source = await readFile(sourceFile, "utf8").catch(() => "");
+      const features = extractUiFeaturesFromSource(source);
+
+      return {
+        ...page,
+        relativeFile: toRelativeFrontendPath(sourceFile),
+        features,
+      };
+    }),
+  );
+
+  const value = {
+    guest: definitions
+      .filter((page) => page.audience === "guest")
+      .map((page) =>
+        createSnippet({
+          scopeId: page.path,
+          label: `frontend-page:${page.title}`,
+          priority: 5,
+          text: [
+            `Frontend page: ${page.title} (${page.path})`,
+            `Purpose: ${page.purpose}`,
+            page.features.length ? `Visible functionality from current frontend source: ${page.features.join("; ")}` : "",
+            `Source file: ${page.relativeFile}`,
+          ].filter(Boolean).join(" | "),
+        }),
+      ),
+    student: definitions
+      .filter((page) => page.audience === "student")
+      .map((page) =>
+        createSnippet({
+          scopeId: page.path,
+          label: `frontend-page:${page.title}`,
+          priority: 5,
+          text: [
+            `Frontend page: ${page.title} (${page.path})`,
+            `Purpose: ${page.purpose}`,
+            page.features.length ? `Visible functionality from current frontend source: ${page.features.join("; ")}` : "",
+            `Source file: ${page.relativeFile}`,
+          ].filter(Boolean).join(" | "),
+        }),
+      ),
+    teacher: definitions
+      .filter((page) => page.audience === "teacher")
+      .map((page) =>
+        createSnippet({
+          scopeId: page.path,
+          label: `frontend-page:${page.title}`,
+          priority: 5,
+          text: [
+            `Frontend page: ${page.title} (${page.path})`,
+            `Purpose: ${page.purpose}`,
+            page.features.length ? `Visible functionality from current frontend source: ${page.features.join("; ")}` : "",
+            `Source file: ${page.relativeFile}`,
+          ].filter(Boolean).join(" | "),
+        }),
+      ),
+    admin: definitions
+      .filter((page) => page.audience === "admin")
+      .map((page) =>
+        createSnippet({
+          scopeId: page.path,
+          label: `frontend-page:${page.title}`,
+          priority: 5,
+          text: [
+            `Frontend page: ${page.title} (${page.path})`,
+            `Purpose: ${page.purpose}`,
+            page.features.length ? `Visible functionality from current frontend source: ${page.features.join("; ")}` : "",
+            `Source file: ${page.relativeFile}`,
+          ].filter(Boolean).join(" | "),
+        }),
+      ),
+  };
+
+  frontendKnowledgeCache.value = value;
+  frontendKnowledgeCache.signature = signature;
+  frontendKnowledgeCache.expiresAt = Date.now() + FRONTEND_KNOWLEDGE_CACHE_TTL_MS;
+
+  return value;
+};
 
 const getCachedRoleContext = (cacheKey = "", signature = "") => {
   const normalizedKey = String(cacheKey || "").trim();
@@ -768,6 +1261,15 @@ const createRoleGuideSnippet = (role = "guest") => {
   });
 };
 
+const createCuratedKnowledgeSnippets = (role = "guest") =>
+  (CURATED_PLATFORM_KNOWLEDGE[role] || []).map((text, index) =>
+    createSnippet({
+      label: `${role}-knowledge-${index + 1}`,
+      priority: 6,
+      text,
+    }),
+  );
+
 const finalizeRoleContext = ({
   baseContext,
   terms = [],
@@ -794,6 +1296,7 @@ const finalizeRoleContext = ({
 
 const getStudentContextBase = async ({ user }) => {
   const platformSummary = await getPlatformSummaryData();
+  const frontendKnowledge = await buildFrontendKnowledgeSnippets();
   const now = new Date();
   const enrollments = await Enrollment.find({
     studentId: user?._id,
@@ -857,6 +1360,8 @@ const getStudentContextBase = async ({ user }) => {
   const primaryTitlesByScopeId = {};
   snippets.push(createRoleGuideSnippet("student"));
   snippets.push(createPlatformSummarySnippet(platformSummary));
+  snippets.push(...createCuratedKnowledgeSnippets("student"));
+  snippets.push(...(frontendKnowledge.student || []));
 
   courses.forEach((course) => {
     const scopeId = String(course?._id || "");
@@ -947,6 +1452,7 @@ const getStudentContextBase = async ({ user }) => {
 
 const getTeacherContextBase = async ({ user }) => {
   const platformSummary = await getPlatformSummaryData();
+  const frontendKnowledge = await buildFrontendKnowledgeSnippets();
   const ownedCourses = await Course.find({
     $or: [{ teacher: user?._id }, { teacherId: user?._id }, { createdBy: user?._id }],
   })
@@ -998,6 +1504,8 @@ const getTeacherContextBase = async ({ user }) => {
   const primaryTitlesByScopeId = {};
   snippets.push(createRoleGuideSnippet("teacher"));
   snippets.push(createPlatformSummarySnippet(platformSummary));
+  snippets.push(...createCuratedKnowledgeSnippets("teacher"));
+  snippets.push(...(frontendKnowledge.teacher || []));
 
   ownedCourses.forEach((course) => {
     const summary = enrollmentSummary.get(String(course?._id || "")) || { total: 0, active: 0 };
@@ -1069,6 +1577,7 @@ const getTeacherContextBase = async ({ user }) => {
 };
 
 const getAdminContextBase = async () => {
+  const frontendKnowledge = await buildFrontendKnowledgeSnippets();
   const [
     totalStudents,
     totalTeachers,
@@ -1099,6 +1608,8 @@ const getAdminContextBase = async () => {
 
   const snippets = [
     createRoleGuideSnippet("admin"),
+    ...createCuratedKnowledgeSnippets("admin"),
+    ...(frontendKnowledge.admin || []),
     createPlatformSummarySnippet({
       publishedCourses: totalPublishedCourses,
       approvedTeachers: totalTeachers,
@@ -1161,7 +1672,7 @@ const getAdminContextBase = async () => {
 };
 
 const getPublicContextBase = async () => {
-  const [platformSummary, categories, courses, teachers] = await Promise.all([
+  const [platformSummary, categories, courses, teachers, frontendKnowledge] = await Promise.all([
     getPlatformSummaryData(),
     Category.find({ isActive: true }).select("name description").sort({ createdAt: -1 }).limit(8).lean(),
     Course.find({ status: "published", isPublished: true })
@@ -1174,9 +1685,15 @@ const getPublicContextBase = async () => {
       .sort({ createdAt: -1 })
       .limit(8)
       .lean(),
+    buildFrontendKnowledgeSnippets(),
   ]);
 
-  const snippets = [createRoleGuideSnippet("guest"), createPlatformSummarySnippet(platformSummary)];
+  const snippets = [
+    createRoleGuideSnippet("guest"),
+    ...createCuratedKnowledgeSnippets("guest"),
+    createPlatformSummarySnippet(platformSummary),
+    ...(frontendKnowledge.guest || []),
+  ];
   const primaryTitlesByScopeId = {};
 
   categories.forEach((category) => {
@@ -1248,7 +1765,7 @@ const getPublicContextBase = async () => {
 
 const buildRoleContext = async ({ user, messages, context }) => {
   const { terms } = getSearchTerms(messages);
-  const preferredScopeId = String(context?.courseId || "").trim();
+  const preferredScopeId = String(context?.courseId || context?.path || "").split("?")[0].trim();
 
   if (!user) {
     const cacheKey = "guest";
@@ -1381,14 +1898,41 @@ const matchFastFaqReply = ({ user, messages }) => {
 
   const language = detectMessageLanguage(latestMessage);
   const role = resolveChatAudienceRole(user);
+  const recentConversation = getRecentUserConversationText(messages);
+  const combinedText = [recentConversation, normalized].filter(Boolean).join(" ");
+
+  if (matchesIntentPattern(combinedText, PLATFORM_INTENT_PATTERNS.greeting)) {
+    return {
+      reply: buildGreetingReply(language, role),
+      model: "fast-intent",
+    };
+  }
+
+  for (const [intent, patterns] of Object.entries(PLATFORM_INTENT_PATTERNS)) {
+    if (intent === "greeting") continue;
+    if (matchesIntentPattern(combinedText, patterns)) {
+      const reply = buildIntentReply({ language, role, intent });
+      if (reply) {
+        return {
+          reply,
+          model: "fast-intent",
+        };
+      }
+    }
+  }
+
   const candidates = [
     ...(FAST_FAQ_LIBRARY[role] || []),
     ...(role === "guest" ? [] : FAST_FAQ_LIBRARY.guest || []),
   ];
 
   for (const item of candidates) {
-    const matchesEn = Array.isArray(item.keywords) && item.keywords.every((keyword) => normalized.includes(String(keyword)));
-    const matchesFa = Array.isArray(item.keywordsFa) && item.keywordsFa.every((keyword) => normalized.includes(normalizeText(keyword)));
+    const matchesEnAll = Array.isArray(item.keywords) && item.keywords.every((keyword) => combinedText.includes(String(keyword)));
+    const matchesFaAll = Array.isArray(item.keywordsFa) && item.keywordsFa.every((keyword) => combinedText.includes(normalizeText(keyword)));
+    const matchesEnAny = Array.isArray(item.keywords) && item.keywords.some((keyword) => combinedText.includes(String(keyword)));
+    const matchesFaAny = Array.isArray(item.keywordsFa) && item.keywordsFa.some((keyword) => combinedText.includes(normalizeText(keyword)));
+    const matchesEn = matchesEnAll || (matchesEnAny && (item.keywords?.length || 0) === 1);
+    const matchesFa = matchesFaAll || (matchesFaAny && (item.keywordsFa?.length || 0) === 1);
     if (matchesEn || matchesFa) {
       return {
         reply: language === "fa" ? item.replyFa : item.replyEn,
@@ -1523,7 +2067,7 @@ export const generatePlatformChatReply = async ({ user = null, messages = [], co
   const role = resolveChatAudienceRole(user);
   const language = detectMessageLanguage(latestUserMessage);
 
-  if (!isPlatformQuestion(latestUserMessage, role)) {
+  if (!isPlatformQuestion({ text: latestUserMessage, role, messages: normalizedMessages })) {
     return {
       reply: buildPlatformOnlyRefusal(language, role),
       model: "platform-only-guard",
@@ -1579,7 +2123,7 @@ export const streamPlatformChatReply = async ({
   const role = resolveChatAudienceRole(user);
   const language = detectMessageLanguage(latestUserMessage);
 
-  if (!isPlatformQuestion(latestUserMessage, role)) {
+  if (!isPlatformQuestion({ text: latestUserMessage, role, messages: normalizedMessages })) {
     const reply = buildPlatformOnlyRefusal(language, role);
     onChunk(reply);
     return { reply, model: "platform-only-guard" };

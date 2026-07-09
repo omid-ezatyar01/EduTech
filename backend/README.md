@@ -271,6 +271,7 @@ Current behavior:
 - common platform questions can return instant fast-path answers before calling the model
 - the Ollama request is tuned for faster platform-focused replies with smaller grounding context
 - saved platform context is reused from in-memory cache and automatically refreshed when platform data changes
+- public, student, teacher, and admin route/page knowledge is read from the current source files and refreshed automatically when those files change
 
 For a free local setup with Ollama:
 
