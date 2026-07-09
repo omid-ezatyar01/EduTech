@@ -21,14 +21,32 @@ export const streamPlatformAiChatMessage = async (
   context = {},
   { onChunk = () => {}, signal } = {},
 ) => {
-  const response = await fetch(`${getApiBase()}/ai-chat/messages/stream`, {
-    method: "POST",
-    headers: buildAuthHeaders(),
-    body: JSON.stringify({ messages: getTrimmedMessages(messages), context }),
-    signal,
-  });
+  const payload = { messages: getTrimmedMessages(messages), context };
+  let response;
+
+  try {
+    response = await fetch(`${getApiBase()}/ai-chat/messages/stream`, {
+      method: "POST",
+      headers: buildAuthHeaders(),
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    const fallback = await sendPlatformAiChatMessage(payload.messages, context);
+    if (fallback?.reply) {
+      onChunk(fallback.reply);
+      return fallback;
+    }
+    throw error;
+  }
 
   if (!response.ok || !response.body) {
+    const fallback = await sendPlatformAiChatMessage(payload.messages, context).catch(() => null);
+    if (fallback?.reply) {
+      onChunk(fallback.reply);
+      return fallback;
+    }
     const data = await parseJsonResponse(response);
     return data?.data || { reply: "", model: "" };
   }
