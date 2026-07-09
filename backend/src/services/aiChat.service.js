@@ -24,9 +24,10 @@ const OLLAMA_CHAT_OPTIONS = {
   temperature: 0.15,
   top_p: 0.85,
   num_ctx: 2048,
-  num_predict: 180,
+  num_predict: 256,
 };
 const OLLAMA_KEEP_ALIVE = "20m";
+const OLLAMA_THINK = false;
 const FRONTEND_KNOWLEDGE_CACHE_TTL_MS = 60 * 1000;
 const platformSummaryCache = {
   value: null,
@@ -2066,6 +2067,7 @@ const requestOllamaReply = async ({ messages, groundingText }) => {
     body: JSON.stringify({
       model,
       stream: false,
+      think: OLLAMA_THINK,
       keep_alive: OLLAMA_KEEP_ALIVE,
       options: OLLAMA_CHAT_OPTIONS,
       messages: [
@@ -2117,6 +2119,7 @@ const requestOllamaReplyStream = async ({ messages, groundingText, onChunk }) =>
     body: JSON.stringify({
       model,
       stream: true,
+      think: OLLAMA_THINK,
       keep_alive: OLLAMA_KEEP_ALIVE,
       options: OLLAMA_CHAT_OPTIONS,
       messages: [
