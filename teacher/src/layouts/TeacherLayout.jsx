@@ -1,6 +1,5 @@
 import { useState } from "react";
 import TeacherSidebar from "../components/common/TeacherSidebar";
-import TeacherAiChatWidget from "../components/common/TeacherAiChatWidget";
 import TeacherTopbar from "../components/common/TeacherTopbar";
 import { PORTAL_CONFIG, clearAuth } from "../../services/portal.js";
 
@@ -83,8 +82,6 @@ export default function TeacherLayout({ teacher, language, onLanguageChange, chi
           </div>
         </div>
       </div>
-
-      <TeacherAiChatWidget language={language} />
     </div>
   );
 }

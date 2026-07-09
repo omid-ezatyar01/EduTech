@@ -16,7 +16,6 @@ import { enableEduTechPushNotifications } from "../services/pushNotifications.js
 import useSeo from "./seo/useSeo.js";
 import { RegionalPricingProvider } from "./context/RegionalPricingContext.jsx";
 import FrontendPageLoader from "./components/common/FrontendPageLoader.jsx";
-import StudentAiChatWidget from "./components/StudentAiChatWidget.jsx";
 
 // Pages
 const loadHomePage = () => import("./pages/HomePage.jsx");
@@ -552,7 +551,6 @@ export default function App() {
             </Routes>
           </Suspense>
         </main>
-        {!isStudentPage && !isLegalPage && <StudentAiChatWidget language={language} />}
         {!hideGlobalLayout && <Footer t={t} />}
       </div>
     </RegionalPricingProvider>

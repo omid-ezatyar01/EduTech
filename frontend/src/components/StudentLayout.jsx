@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import StudentSidebar from "./StudentSidebar";
-import StudentAiChatWidget from "./StudentAiChatWidget";
 import StudentTopbar from "./StudentTopbar";
 
 export default function StudentLayout({ children, language = "fa" }) {
@@ -63,8 +62,6 @@ export default function StudentLayout({ children, language = "fa" }) {
           </div>
         </main>
       </div>
-
-      <StudentAiChatWidget language={language} />
     </div>
   );
 }

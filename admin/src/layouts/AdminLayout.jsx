@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import AdminAiChatWidget from "../components/AdminAiChatWidget.jsx";
 import AdminSidebar from "../components/AdminSidebar";
 import AdminHeader from "../components/AdminHeader";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -71,8 +70,6 @@ export default function AdminLayout({ children, onLogout }) {
           </div>
         </div>
       </div>
-
-      <AdminAiChatWidget />
     </div>
   );
 }
