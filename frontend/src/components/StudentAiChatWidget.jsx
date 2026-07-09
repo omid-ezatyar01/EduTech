@@ -74,7 +74,6 @@ export default function StudentAiChatWidget({ language = "fa" }) {
     !hasUserMessages &&
     messages.some((message) => message.role === "assistant");
   const handleClose = () => {
-    activeRequestRef.current?.abort();
     setIsOpen(false);
   };
 

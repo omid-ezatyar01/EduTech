@@ -60,7 +60,6 @@ export default function AdminAiChatWidget() {
   const isFa = language === "fa";
   const suggestedQuestions = getSuggestedQuestions(language);
   const handleClose = () => {
-    activeRequestRef.current?.abort();
     setIsOpen(false);
   };
 

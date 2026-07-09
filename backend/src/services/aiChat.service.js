@@ -2042,6 +2042,16 @@ const matchFastFaqReply = ({ user, messages }) => {
   return null;
 };
 
+const extractOllamaText = (payload = {}) =>
+  [
+    payload?.message?.content,
+    payload?.response,
+    payload?.content,
+    payload?.output,
+  ]
+    .map((value) => String(value || "").trim())
+    .find(Boolean) || "";
+
 const requestOllamaReply = async ({ messages, groundingText }) => {
   const baseUrl = String(process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").trim().replace(/\/+$/, "");
   const model = String(process.env.OLLAMA_CHAT_MODEL || "gemma3:4b").trim();
@@ -2075,7 +2085,7 @@ const requestOllamaReply = async ({ messages, groundingText }) => {
     throw new ApiError(response.status || 502, payload?.error || payload?.message || "Ollama request failed");
   }
 
-  const reply = String(payload?.message?.content || "").trim();
+  const reply = extractOllamaText(payload);
   if (!reply) {
     throw new ApiError(502, "Local AI returned an empty response.");
   }
@@ -2122,12 +2132,14 @@ const requestOllamaReplyStream = async ({ messages, groundingText, onChunk }) =>
   const decoder = new TextDecoder();
   let buffer = "";
   let reply = "";
+  let finalPayload = null;
 
   const flushLine = (line) => {
     const trimmed = String(line || "").trim();
     if (!trimmed) return;
     const payload = JSON.parse(trimmed);
-    const delta = String(payload?.message?.content || "");
+    finalPayload = payload;
+    const delta = extractOllamaText(payload);
     if (delta) {
       reply += delta;
       onChunk(delta);
@@ -2146,6 +2158,18 @@ const requestOllamaReplyStream = async ({ messages, groundingText, onChunk }) =>
   }
 
   if (!reply.trim()) {
+    const fallbackReply = extractOllamaText(finalPayload);
+    if (fallbackReply) {
+      reply = fallbackReply;
+      onChunk(fallbackReply);
+    }
+  }
+
+  if (!reply.trim()) {
+    const fallback = await requestOllamaReply({ messages, groundingText }).catch(() => null);
+    if (fallback?.reply) {
+      return fallback;
+    }
     throw new ApiError(502, "Local AI returned an empty response.");
   }
 

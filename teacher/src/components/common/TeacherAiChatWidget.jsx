@@ -60,7 +60,6 @@ export default function TeacherAiChatWidget({ language = "fa" }) {
   const isFa = language === "fa";
   const suggestedQuestions = getSuggestedQuestions(language);
   const handleClose = () => {
-    activeRequestRef.current?.abort();
     setIsOpen(false);
   };
 
