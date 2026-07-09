@@ -48,6 +48,14 @@ const systemPrompt = [
 const PLATFORM_TOPICS = [
   "edutech",
   "platform",
+  "learning",
+  "teach",
+  "teaches",
+  "training",
+  "service",
+  "services",
+  "offer",
+  "offers",
   "course",
   "courses",
   "class",
@@ -108,6 +116,14 @@ const PLATFORM_TOPICS = [
   "تقسیم اوقات",
   "ادمین",
   "پنل",
+  "پلتفرم",
+  "سایت",
+  "درس",
+  "آموزش",
+  "یادگیری",
+  "خدمات",
+  "امکانات",
+  "معرفی",
 ];
 
 const OFF_TOPIC_HINTS = [
@@ -176,6 +192,18 @@ const FAST_FAQ_LIBRARY = {
       keywordsFa: ["تماس", "پشتیبانی"],
       replyEn: "You can reach EduTech support from the Contact page. Use that page when you need help with account access, courses, or payments.",
       replyFa: "برای کمک با حساب، کورس یا پرداخت می‌توانید از صفحه تماس با ما با پشتیبانی EduTech ارتباط بگیرید.",
+    },
+    {
+      keywords: ["platform"],
+      keywordsFa: ["پلتفرم"],
+      replyEn: "EduTech is an online learning platform where users can explore courses, learn from teachers, register or sign in, and use platform features like course pages, teacher profiles, and support access.",
+      replyFa: "EduTech یک پلتفرم آموزشی آنلاین است که کاربران می‌توانند در آن کورس‌ها را ببینند، با مدرسان آشنا شوند، ثبت نام یا ورود انجام دهند و از بخش‌هایی مثل کورس‌ها، پروفایل مدرسان و پشتیبانی استفاده کنند.",
+    },
+    {
+      keywords: ["what", "teach"],
+      keywordsFa: ["چی", "درس"],
+      replyEn: "EduTech teaches through the courses published on the platform. Users can browse available courses, read each course description, and choose the topics they want to learn from the listed teachers.",
+      replyFa: "EduTech از طریق کورس‌های منتشرشده در پلتفرم آموزش می‌دهد. کاربر می‌تواند کورس‌های موجود را ببیند، توضیحات هر کورس را بخواند و موضوع مورد نظر خود را از میان کورس‌ها و مدرسان انتخاب کند.",
     },
   ],
   student: [
@@ -317,7 +345,7 @@ const isPlatformQuestion = (text = "", role = "guest") => {
     student: ["student", "dashboard", "courses", "assignments", "certificates", "payments", "محصل", "داشبورد", "کورس", "تمرین", "سرتیفیکیت", "پرداخت"],
     teacher: ["teacher", "students", "courses", "assignments", "live", "resources", "مدرس", "شاگرد", "کورس", "تمرین", "صنف", "منابع"],
     admin: ["admin", "users", "teachers", "students", "courses", "payments", "reports", "ادمین", "کاربران", "مدرسان", "محصلان", "کورس", "پرداخت", "گزارش"],
-    guest: ["register", "login", "course", "teacher", "contact", "ثبت", "ورود", "کورس", "مدرس", "تماس"],
+    guest: ["register", "login", "course", "teacher", "contact", "platform", "learn", "teach", "offer", "service", "ثبت", "ورود", "کورس", "مدرس", "تماس", "پلتفرم", "سایت", "درس", "آموزش", "یادگیری", "خدمات", "امکانات", "معرفی"],
   };
 
   const hasPlatformTopic =
@@ -333,13 +361,13 @@ const isPlatformQuestion = (text = "", role = "guest") => {
 
 const buildPlatformOnlyRefusal = (language = "en", role = "guest") => {
   const suggestionsFa = {
-    guest: "مثلاً درباره ثبت نام، ورود، کورس‌ها یا تماس با پشتیبانی بپرسید.",
+    guest: "مثلاً درباره معرفی پلتفرم، کورس‌ها، مدرسان، ثبت نام، ورود یا تماس با پشتیبانی بپرسید.",
     student: "مثلاً درباره کورس‌های من، صنف زنده، تمرین‌ها، پرداخت‌ها یا سرتیفیکیت‌ها بپرسید.",
     teacher: "مثلاً درباره کورس‌ها، شاگردان، تمرین‌ها، صنف‌های زنده یا منابع بپرسید.",
     admin: "مثلاً درباره کاربران، مدرسان، کورس‌ها، پرداخت‌ها یا گزارش‌ها بپرسید.",
   };
   const suggestionsEn = {
-    guest: "You can ask about registration, login, courses, or contacting support.",
+    guest: "You can ask about the platform overview, courses, teachers, registration, login, or contacting support.",
     student: "You can ask about your courses, live classes, assignments, payments, or certificates.",
     teacher: "You can ask about courses, students, assignments, live classes, or resources.",
     admin: "You can ask about users, teachers, courses, payments, or reports.",

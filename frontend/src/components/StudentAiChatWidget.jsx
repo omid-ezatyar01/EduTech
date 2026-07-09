@@ -7,7 +7,15 @@ import { getLocalizedRequestErrorMessage } from "../../services/http";
 
 const MAX_MESSAGE_LENGTH = 1200;
 
-const createGreeting = (language, name) => {
+const createGreeting = (language, name, role) => {
+  if (role === "guest" && language === "fa") {
+    return `سلام${name ? ` ${name}` : ""}! من دستیار پلتفرم EduTech هستم. می‌توانم درباره معرفی پلتفرم، کورس‌های موجود، مدرسان، ثبت نام، ورود و نحوه استفاده از EduTech کمک کنم.`;
+  }
+
+  if (role === "guest") {
+    return `Hi${name ? ` ${name}` : ""}! I'm the EduTech platform assistant. I can help with platform overview, available courses, teachers, registration, login, and how to use EduTech.`;
+  }
+
   if (language === "fa") {
     return `سلام${name ? ` ${name}` : ""}! من دستیار پلتفرم EduTech هستم. فقط در مورد کورس‌ها، تمرین‌ها، پرداخت‌ها، داشبوردها و استفاده از همین پلتفرم کمک می‌کنم.`;
   }
@@ -15,7 +23,23 @@ const createGreeting = (language, name) => {
   return `Hi${name ? ` ${name}` : ""}! I'm the EduTech platform assistant. I only help with EduTech courses, dashboards, assignments, payments, and how to use the platform.`;
 };
 
-const getSuggestedQuestions = (language) => {
+const getSuggestedQuestions = (language, role) => {
+  if (role === "guest" && language === "fa") {
+    return [
+      "این پلتفرم چیست و چه کمکی می‌کند؟",
+      "این پلتفرم چه کورس‌هایی دارد؟",
+      "چطور در EduTech ثبت نام کنم؟",
+    ];
+  }
+
+  if (role === "guest") {
+    return [
+      "What is this platform and how does it help?",
+      "What courses are available on EduTech?",
+      "How do I register on EduTech?",
+    ];
+  }
+
   if (language === "fa") {
     return [
       "کورس‌های من را کجا ببینم؟",
@@ -42,8 +66,13 @@ export default function StudentAiChatWidget({ language = "fa" }) {
   const location = useLocation();
   const isFa = language === "fa";
   const user = useMemo(() => getAuthUser(), []);
+  const role = String(user?.role || "").trim().toLowerCase() || "guest";
   const displayName = String(user?.name || "").trim();
-  const suggestedQuestions = getSuggestedQuestions(language);
+  const suggestedQuestions = getSuggestedQuestions(language, role);
+  const hasUserMessages = messages.some((message) => message.role === "user");
+  const shouldShowSuggestedQuestions =
+    !hasUserMessages &&
+    messages.some((message) => message.role === "assistant");
   const handleClose = () => {
     activeRequestRef.current?.abort();
     setIsOpen(false);
@@ -56,11 +85,11 @@ export default function StudentAiChatWidget({ language = "fa" }) {
         {
           id: "welcome",
           role: "assistant",
-          content: createGreeting(language, displayName),
+          content: createGreeting(language, displayName, role),
         },
       ];
     });
-  }, [language, displayName]);
+  }, [language, displayName, role]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -233,7 +262,7 @@ export default function StudentAiChatWidget({ language = "fa" }) {
           </div>
 
           <div ref={scrollRef} className="edutech-scrollbar flex-1 space-y-3 overflow-y-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef5ff_100%)] px-3 py-3.5 pe-2 sm:px-4 sm:py-4 [direction:ltr]">
-            {messages.length === 1 ? (
+            {shouldShowSuggestedQuestions ? (
               <div className="rounded-[24px] border border-slate-200/80 bg-white/95 p-3 shadow-sm backdrop-blur">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                   {isFa ? "پرسش‌های پیشنهادی" : "Suggested questions"}
