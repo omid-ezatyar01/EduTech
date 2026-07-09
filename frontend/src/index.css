@@ -1,0 +1,113 @@
+@font-face {
+  font-family: "BrittanySignature";
+  src: url("./assets/fonts/BrittanySignature.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-scale: 0.9;
+  color: #0f172a;
+  background: #f8fafc;
+  font-family:
+    "Plus Jakarta Sans",
+    Vazirmatn,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: calc(16px * var(--app-scale));
+  scroll-behavior: smooth;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow-x: clip;
+  text-align: start;
+}
+
+@supports not (overflow: clip) {
+  body {
+    overflow-x: hidden;
+  }
+}
+
+#root {
+  overflow-x: clip;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+[dir="rtl"] {
+  font-family:
+    Vazirmatn,
+    "Plus Jakarta Sans",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+.edutech-prose-justify {
+  text-align: justify;
+  text-justify: inter-word;
+}
+
+.edutech-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.95) transparent;
+}
+
+.edutech-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.edutech-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.edutech-scrollbar::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: rgba(148, 163, 184, 0.95);
+}
+
+.edutech-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.98);
+}

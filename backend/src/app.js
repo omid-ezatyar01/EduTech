@@ -1,0 +1,177 @@
+import "./config/loadEnv.js";
+import cors from "cors";
+import express from "express";
+import morgan from "morgan";
+import helmet from "helmet";
+import compression from "compression";
+import rateLimit from "express-rate-limit";
+import path from "path";
+import { fileURLToPath } from "url";
+import apiRouter from "./routes/index.js";
+import errorHandler from "./middlewares/errorHandler.js";
+import { handleResendWebhook } from "./controllers/resendWebhookController.js";
+
+const app = express();
+const isProduction = process.env.NODE_ENV === "production";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadsDir = path.resolve(__dirname, "../uploads");
+const publicDir = path.resolve(__dirname, "../public");
+
+const normalizeOrigin = (value = "") => String(value || "").trim().replace(/\/+$/, "");
+const resolveTrustProxy = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return 1;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  if (["loopback", "linklocal", "uniquelocal"].includes(raw)) return raw;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : 1;
+};
+
+app.disable("x-powered-by");
+app.set("trust proxy", resolveTrustProxy(process.env.TRUST_PROXY));
+
+const allowedOrigins = process.env.CLIENT_ORIGIN
+  ? process.env.CLIENT_ORIGIN.split(",").map((origin) => normalizeOrigin(origin))
+  : [];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests from Postman, curl, server-to-server, etc.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(normalizeOrigin(origin))) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+  }),
+);
+
+app.use(
+  helmet({
+    // Avatar files are served from /uploads and consumed by frontend apps
+    // that may run on a different origin.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
+app.use(
+  compression({
+    threshold: 1024,
+  }),
+);
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const apiLimiter = rateLimit({
+  windowMs: parsePositiveInt(
+    process.env.API_RATE_LIMIT_WINDOW_MS,
+    15 * 60 * 1000,
+  ),
+  max: parsePositiveInt(
+    process.env.API_RATE_LIMIT_MAX,
+    isProduction ? 300 : 5000,
+  ),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many requests from this IP, please try again later.",
+  },
+  skip: (req) => {
+    if (isProduction) return false;
+
+    const origin = req.headers.origin || "";
+    const host = req.headers.host || "";
+    const ip = req.ip || "";
+    const xff = Array.isArray(req.headers["x-forwarded-for"])
+      ? req.headers["x-forwarded-for"][0]
+      : req.headers["x-forwarded-for"] || "";
+
+    const isLocalOrigin =
+      origin.includes("localhost") || origin.includes("127.0.0.1");
+    const isLocalHost =
+      host.includes("localhost") || host.includes("127.0.0.1");
+    const isLocalIp =
+      ip === "::1" ||
+      ip === "::ffff:127.0.0.1" ||
+      ip.startsWith("127.") ||
+      String(xff).includes("127.0.0.1") ||
+      String(xff).includes("::1");
+
+    return isLocalOrigin || isLocalHost || isLocalIp;
+  },
+});
+app.use("/api/", apiLimiter);
+
+const resendWebhookRawBody = express.raw({ type: "application/json" });
+app.post("/api/webhooks/resend", resendWebhookRawBody, handleResendWebhook);
+app.post("/api/v1/webhooks/resend", resendWebhookRawBody, handleResendWebhook);
+
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "1mb" }));
+app.use(express.urlencoded({
+  extended: true,
+  limit: process.env.URL_ENCODED_LIMIT || "1mb",
+  parameterLimit: Number(process.env.URL_ENCODED_PARAMETER_LIMIT || 100),
+}));
+app.use(morgan(isProduction ? "combined" : "dev"));
+app.use(
+  "/uploads",
+  express.static(uploadsDir, {
+    etag: true,
+    maxAge: "30d",
+    immutable: true,
+    setHeaders: (res) => {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    },
+  }),
+);
+
+app.use(
+  "/public",
+  express.static(publicDir, {
+    etag: true,
+    maxAge: "30d",
+    immutable: true,
+    setHeaders: (res) => {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    },
+  }),
+);
+
+app.get("/", (req, res) => {
+  res.json({
+    message: "EduTech API is running",
+    docs: "/api/v1",
+  });
+});
+
+app.get("/api/v1/health", (_req, res) => {
+  res.json({
+    success: true,
+    message: "EduTech API is healthy",
+    environment: process.env.NODE_ENV || "development",
+  });
+});
+
+app.use("/api/v1", apiRouter);
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
+});
+
+app.use(errorHandler);
+
+export default app;

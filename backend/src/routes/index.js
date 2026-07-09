@@ -1,0 +1,44 @@
+import express from "express";
+import authRoutes from "./authRoutes.routes.js";
+import adminRoutes from "./adminRoutes.routes.js";
+import paymentRoutes from "./payment.routes.js";
+import adminCourseRoutes from "./adminCourse.routes.js";
+import teacherCourseRoutes from "./teacherCourse.routes.js";
+import publicCourseRoutes from "./publicCourse.routes.js";
+import categoryRoutes from "./category.routes.js";
+import paymentManagementRoutes from "./paymentManagement.routes.js";
+import teacherPortalRoutes from "./teacherPortal.routes.js";
+import publicTeacherRoutes from "./publicTeacher.routes.js";
+import contactMessageRoutes from "./contactMessage.routes.js";
+import liveSessionRoutes from "./liveSession.routes.js";
+import googleRoutes from "./google.routes.js";
+import assignmentRoutes from "./assignment.routes.js";
+import messageRoutes from "./message.routes.js";
+import pushSubscriptionRoutes from "./pushSubscription.routes.js";
+import courseRatingRoutes from "./courseRating.routes.js";
+import sharePreviewRoutes from "./sharePreview.routes.js";
+import aiChatRoutes from "./aiChat.routes.js";
+
+const router = express.Router();
+
+router.use("/auth", authRoutes);
+router.use("/admin", adminRoutes);
+router.use("/admin", adminCourseRoutes);
+router.use("/teacher", teacherCourseRoutes);
+router.use("/", publicCourseRoutes);
+router.use("/", categoryRoutes);
+router.use("/", paymentManagementRoutes);
+router.use("/", teacherPortalRoutes);
+router.use("/", publicTeacherRoutes);
+router.use("/", liveSessionRoutes);
+router.use("/", googleRoutes);
+router.use("/", assignmentRoutes);
+router.use("/", messageRoutes);
+router.use("/", pushSubscriptionRoutes);
+router.use("/", courseRatingRoutes);
+router.use("/", sharePreviewRoutes);
+router.use("/", paymentRoutes);
+router.use("/", contactMessageRoutes);
+router.use("/", aiChatRoutes);
+
+export default router;

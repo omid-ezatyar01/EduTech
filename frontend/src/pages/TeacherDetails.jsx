@@ -1,0 +1,1412 @@
+import { useState, useEffect, useMemo, useRef } from "react";
+import {
+  ExternalLink,
+  Info,
+  MessageCircle,
+  PlayCircle,
+  UsersRound,
+  Smile,
+  LineChart,
+} from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import TeacherHero from "../components/TeacherHero.jsx";
+import TeacherStats from "../components/TeacherStats.jsx";
+import CourseCard from "../components/CourseCard.jsx";
+import SkillBadge from "../components/SkillBadge.jsx";
+import ProgressSkill from "../components/ProgressSkill.jsx";
+import ReviewCard from "../components/ReviewCard.jsx";
+import TeacherScheduleTable from "../components/TeacherScheduleTable.jsx";
+import FAQAccordion from "../components/FAQAccordion.jsx";
+import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
+import { fetchPublicTeacherById } from "../../services/teacherService.js";
+import { fetchStudentEnrollments } from "../../services/courseService.js";
+import { buildTeacherPath, extractRouteIdentifier } from "../utils/routePaths.js";
+import {
+  getLocalizedRequestErrorMessage,
+  isUnauthorizedError,
+} from "../../services/http.js";
+
+const PANEL_COLLAPSED_HEIGHT = 580;
+const FEATURED_COURSES_PER_PAGE = 6;
+
+function resolveCourseId(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object") {
+    return String(value._id || value.id || "").trim();
+  }
+  return "";
+}
+
+function hasActiveEnrollmentAccess(row = {}) {
+  const status = String(row?.enrollmentStatus || "").toLowerCase();
+  if (!["active", "completed"].includes(status)) return false;
+  if (String(row?.accessStatus || "").toLowerCase() !== "allowed") return false;
+  if (!row?.accessExpiresAt) return true;
+  const expiresAt = new Date(row.accessExpiresAt);
+  return Number.isNaN(expiresAt.getTime()) || expiresAt > new Date();
+}
+
+function getYouTubeEmbedUrl(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+    let videoId = "";
+
+    if (host === "youtu.be") {
+      videoId = url.pathname.split("/").filter(Boolean)[0] || "";
+    } else if (host === "youtube.com" || host === "m.youtube.com") {
+      if (url.pathname.startsWith("/shorts/")) {
+        videoId = url.pathname.split("/").filter(Boolean)[1] || "";
+      } else if (url.pathname.startsWith("/embed/")) {
+        videoId = url.pathname.split("/").filter(Boolean)[1] || "";
+      } else {
+        videoId = url.searchParams.get("v") || "";
+      }
+    }
+
+    const cleanId = String(videoId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+    return cleanId ? `https://www.youtube.com/embed/${cleanId}` : "";
+  } catch {
+    return "";
+  }
+}
+
+const pageData = {
+  fa: {
+    breadcrumbs: ["خانه", "مدرسان", "سارا احمدی"],
+    hero: {
+      name: "سارا احمدی",
+      role: "استاد مکالمه انگلیسی",
+      bio: "سارا احمدی بیش از ۵ سال تجربه تدریس زبان انگلیسی دارد و تمرکز او روی مکالمه عملی، تقویت اعتماد به نفس، Listening و اصلاح تلفظ شاگردان است.",
+      btnViewCourses: "مشاهده کورس‌های استاد",
+      btnContact: "تماس با استاد",
+      btnShare: "اشتراک‌گذاری پروفایل",
+      onlineBadge: "آنلاین",
+    },
+    stats: [
+      { label: "امتیاز", value: "هنوز امتیازی نیست" },
+      { label: "مجموع شاگردان", value: "۸۰۰" },
+      { label: "کورس‌های فعال", value: "۴" },
+      { label: "سال تجربه", value: "۵" },
+    ],
+    tabs: [
+      "درباره استاد",
+      "نظریات شاگردان درباره استاد",
+      "مهارت‌ها",
+      "تقسیم اوقات",
+      "سوالات",
+    ],
+    sections: {
+      aboutTitle: "درباره استاد",
+      aboutText:
+        "سارا احمدی یکی از استادان باتجربه ایجوتک در بخش مکالمه انگلیسی است. روش تدریس او عملی، ساده و تعاملی است. در صنف‌های او شاگردان فقط قواعد یاد نمی‌گیرند، بلکه صحبت می‌کنند، تمرین می‌کنند و اشتباهات خود را اصلاح می‌کنند.",
+      teachingStyles: [
+        { title: "تدریس عملی", text: "تمرکز روی تمرین واقعی و مکالمه روزمره" },
+        { title: "صنف تعاملی", text: "پرسش و پاسخ، تمرین گروهی و Role Play" },
+        { title: "روش ساده و دوستانه", text: "توضیح ساده برای شاگردان مبتدی" },
+        {
+          title: "پیگیری پیشرفت",
+          text: "بررسی سطح و پیشرفت شاگردان در طول کورس",
+        },
+      ],
+      skillsTitle: "مهارت‌ها و تخصص‌ها",
+      skills: [],
+      progressSkills: [
+        { name: "مکالمه", percentage: 95 },
+        { name: "شنیداری", percentage: 90 },
+        { name: "تلفظ", percentage: 92 },
+        { name: "گرامر", percentage: 85 },
+      ],
+      coursesTitle: "کورس‌های این استاد",
+      courses: [
+        {
+          title: "مکالمه انگلیسی",
+          level: "همه سطوح",
+          duration: "۲ ماه",
+          schedule: "دوشنبه، چهارشنبه، جمعه",
+          time: "18:00 - 19:30",
+          seats: "12 / 30",
+          price: "29 دالر",
+          liveLabel: "آنلاین",
+          btnRegister: "ثبت نام",
+          btnDetails: "مشاهده جزئیات",
+        },
+        {
+          title: "انگلیسی تجاری",
+          level: "متوسط",
+          duration: "۲ ماه",
+          schedule: "سه‌شنبه، پنجشنبه",
+          time: "19:00 - 20:30",
+          seats: "8 / 25",
+          price: "39 دالر",
+          liveLabel: "آنلاین",
+          btnRegister: "ثبت نام",
+          btnDetails: "مشاهده جزئیات",
+        },
+        {
+          title: "تلفظ و مکالمه",
+          level: "همه سطوح",
+          duration: "۱.۵ ماه",
+          schedule: "شنبه، دوشنبه",
+          time: "18:30 - 20:00",
+          seats: "10 / 20",
+          price: "25 دالر",
+          liveLabel: "آنلاین",
+          btnRegister: "ثبت نام",
+          btnDetails: "مشاهده جزئیات",
+        },
+        {
+          title: "آمادگی آیلتس",
+          level: "پیشرفته",
+          duration: "۳ ماه",
+          schedule: "یکشنبه، سه‌شنبه، پنجشنبه",
+          time: "20:00 - 21:30",
+          seats: "6 / 20",
+          price: "59 دالر",
+          liveLabel: "آنلاین",
+          btnRegister: "ثبت نام",
+          btnDetails: "مشاهده جزئیات",
+        },
+      ],
+      scheduleTitle: "تقسیم اوقات هفتگی استاد",
+      scheduleLabels: {
+        day: "روز",
+        course: "کورس",
+        time: "وقت",
+        status: "حالت",
+      },
+      schedule: [
+        {
+          day: "دوشنبه",
+          course: "English Conversation",
+          time: "18:00 - 19:30",
+          status: "پیش‌رو",
+        },
+        {
+          day: "سه‌شنبه",
+          course: "Business English",
+          time: "19:00 - 20:30",
+          status: "پیش‌رو",
+        },
+        {
+          day: "چهارشنبه",
+          course: "English Conversation",
+          time: "18:00 - 19:30",
+          status: "پیش‌رو",
+        },
+        {
+          day: "پنجشنبه",
+          course: "Business English",
+          time: "19:00 - 20:30",
+          status: "پیش‌رو",
+        },
+        {
+          day: "جمعه",
+          course: "English Conversation",
+          time: "18:00 - 19:30",
+          status: "پیش‌رو",
+        },
+      ],
+      scheduleNote:
+        "لینک Google Meet برای شاگردان ثبت‌نام‌شده از داخل داشبورد قابل دسترس است.",
+      endedCoursesTitle: "کورس‌های پایان‌یافته این استاد",
+      endedCoursesEmpty: "این استاد هنوز کورس پایان‌یافته‌ای برای نمایش ندارد.",
+      reviewsTitle: "نظریات شاگردان",
+      reviews: [],
+      faqTitle: "سوالات رایج درباره استاد",
+      faqs: [
+        {
+          q: "آیا استاد با شاگردان مبتدی هم کار می‌کند؟",
+          a: "بلی، این استاد تجربه کار با شاگردان مبتدی تا متوسط را دارد.",
+        },
+        {
+          q: "آیا می‌توانم قبل از ثبت‌نام مشوره بگیرم؟",
+          a: "بلی، می‌توانید از طریق دکمه تماس با استاد یا تماس با مشاور درخواست مشوره کنید.",
+        },
+        {
+          q: "صنف‌ها در کجا برگزار می‌شود؟",
+          a: "صنف‌ها به صورت آنلاین در Google Meet برگزار می‌شود.",
+        },
+        {
+          q: "آیا این استاد کورس خصوصی هم دارد؟",
+          a: "در صورت موجود بودن وقت، امکان کورس خصوصی یا 1-on-1 وجود دارد.",
+        },
+      ],
+    },
+    sidebar: {
+      contactTitle: "تماس با استاد",
+      responseTime: "معمولاً در ۲۴ ساعت پاسخ می‌دهد",
+      btnSendMessage: "ارسال پیام",
+      btnRequestConsultation: "درخواست مشاوره",
+      btnViewCourses: "مشاهده کورس‌ها",
+      quickInfoTitle: "معلومات سریع",
+      quickInfo: [
+        { label: "زبان", value: "فارسی، انگلیسی" },
+        { label: "حالت تدریس", value: " آنلاین" },
+        { label: "پلتفرم", value: "Google Meet" },
+        { label: "اوقات فراغت", value: "عصرها و آخر هفته" },
+      ],
+      featuredTitle: "کورس پیشنهادی استاد",
+      featuredCourse: {
+        title: "مکالمه انگلیسی",
+        level: "همه سطوح",
+        price: "29 دالر",
+        duration: "۲ ماه",
+        schedule: "دوشنبه، چهارشنبه، جمعه",
+        time: "18:00 - 19:30",
+        btnRegister: "ثبت‌نام حالا",
+      },
+      shareTitle: "اشتراک‌گذاری پروفایل",
+      copyLink: "کاپی لینک",
+      achievementsTitle: "دستاوردها و سرتیفیکیت‌ها",
+      achievements: [
+        "استاد تاییدشده زبان انگلیسی",
+        "آموزش بیش از ۸۰۰ شاگرد",
+        "۵ سال تجربه تدریس",
+      ],
+    },
+  },
+  en: {
+    breadcrumbs: ["Home", "Teachers", "Sara Ahmadi"],
+    hero: {
+      name: "Sara Ahmadi",
+      role: "English Conversation Instructor",
+      bio: "Sara Ahmadi has over 5 years of experience teaching English, focusing on practical conversation, confidence building, listening, and pronunciation improvement.",
+      btnViewCourses: "View Teacher Courses",
+      btnContact: "Contact Teacher",
+      btnShare: "Share Profile",
+      onlineBadge: "Online",
+    },
+    stats: [
+      { label: "Rating", value: "No ratings yet" },
+      { label: "Total Learners", value: "800" },
+      { label: "Active Courses", value: "4" },
+      { label: "Years Experience", value: "5" },
+    ],
+    tabs: ["About Teacher", "Student Reviews About Teacher", "Skills", "Schedule", "FAQ"],
+    sections: {
+      aboutTitle: "About Teacher",
+      aboutText:
+        "Sara Ahmadi is one of EduTech’s experienced English conversation instructors. Her teaching method is practical, simple, and interactive. In her classes, students do not only learn rules; they speak, practice, and correct their mistakes.",
+      teachingStyles: [
+        {
+          title: "Practical Teaching",
+          text: "Focusing on real practice and daily conversation",
+        },
+        {
+          title: "Interactive Class",
+          text: "Q&A, group practice, and Role Play",
+        },
+        {
+          title: "Friendly Method",
+          text: "Simple explanations for beginner students",
+        },
+        {
+          title: "Progress Tracking",
+          text: "Monitoring students' level and progress throughout the course",
+        },
+      ],
+      skillsTitle: "Skills & Expertise",
+      skills: [],
+      progressSkills: [
+        { name: "Speaking", percentage: 95 },
+        { name: "Listening", percentage: 90 },
+        { name: "Pronunciation", percentage: 92 },
+        { name: "Grammar", percentage: 85 },
+      ],
+      coursesTitle: "Teacher's Courses",
+      courses: [
+        {
+          title: "English Conversation",
+          level: "All Levels",
+          duration: "2 Months",
+          schedule: "Mon, Wed, Fri",
+          time: "18:00 - 19:30",
+          seats: "12 / 30",
+          price: "29 USD",
+          liveLabel: "Live",
+          btnRegister: "Register",
+          btnDetails: "View Details",
+        },
+        {
+          title: "Business English",
+          level: "Intermediate",
+          duration: "2 Months",
+          schedule: "Tue, Thu",
+          time: "19:00 - 20:30",
+          seats: "8 / 25",
+          price: "39 USD",
+          liveLabel: "Live",
+          btnRegister: "Register",
+          btnDetails: "View Details",
+        },
+        {
+          title: "Pronunciation & Speaking",
+          level: "All Levels",
+          duration: "1.5 Months",
+          schedule: "Sat, Mon",
+          time: "18:30 - 20:00",
+          seats: "10 / 20",
+          price: "25 USD",
+          liveLabel: "Live",
+          btnRegister: "Register",
+          btnDetails: "View Details",
+        },
+        {
+          title: "IELTS Preparation",
+          level: "Advanced",
+          duration: "3 Months",
+          schedule: "Sun, Tue, Thu",
+          time: "20:00 - 21:30",
+          seats: "6 / 20",
+          price: "59 USD",
+          liveLabel: "Live",
+          btnRegister: "Register",
+          btnDetails: "View Details",
+        },
+      ],
+      scheduleTitle: "Teacher Weekly Schedule",
+      scheduleLabels: {
+        day: "Day",
+        course: "Course",
+        time: "Time",
+        status: "Status",
+      },
+      schedule: [
+        {
+          day: "Monday",
+          course: "English Conversation",
+          time: "18:00 - 19:30",
+          status: "Upcoming",
+        },
+        {
+          day: "Tuesday",
+          course: "Business English",
+          time: "19:00 - 20:30",
+          status: "Upcoming",
+        },
+        {
+          day: "Wednesday",
+          course: "English Conversation",
+          time: "18:00 - 19:30",
+          status: "Upcoming",
+        },
+        {
+          day: "Thursday",
+          course: "Business English",
+          time: "19:00 - 20:30",
+          status: "Upcoming",
+        },
+        {
+          day: "Friday",
+          course: "English Conversation",
+          time: "18:00 - 19:30",
+          status: "Upcoming",
+        },
+      ],
+      scheduleNote:
+        "Google Meet links are available inside the dashboard for enrolled students.",
+      endedCoursesTitle: "Ended Courses By This Teacher",
+      endedCoursesEmpty: "This teacher does not have ended courses to show yet.",
+      reviewsTitle: "Student Reviews",
+      reviews: [],
+      faqTitle: "Frequently Asked Questions",
+      faqs: [
+        {
+          q: "Does the teacher work with beginners?",
+          a: "Yes, this teacher has experience working with beginner to intermediate students.",
+        },
+        {
+          q: "Can I get consultation before registration?",
+          a: "Yes, you can use the contact teacher or advisor button before enrolling.",
+        },
+        {
+          q: "Where are the classes held?",
+          a: "Classes are held live on Google Meet.",
+        },
+        {
+          q: "Does this teacher offer private classes?",
+          a: "Private or 1-on-1 classes may be available depending on schedule.",
+        },
+      ],
+    },
+    sidebar: {
+      contactTitle: "Contact Teacher",
+      responseTime: "Usually responds within 24 hours",
+      btnSendMessage: "Send Message",
+      btnRequestConsultation: "Request Consultation",
+      btnViewCourses: "View Courses",
+      quickInfoTitle: "Quick Info",
+      quickInfo: [
+        { label: "Language", value: "Persian, English" },
+        { label: "Teaching Mode", value: "Live Online" },
+        { label: "Platform", value: "Google Meet" },
+        { label: "Availability", value: "Evenings and weekends" },
+      ],
+      featuredTitle: "Featured Course",
+      featuredCourse: {
+        title: "English Conversation",
+        level: "All Levels",
+        price: "29 USD",
+        duration: "2 Months",
+        schedule: "Mon, Wed, Fri",
+        time: "18:00 - 19:30",
+        btnRegister: "Register Now",
+      },
+      shareTitle: "Share Profile",
+      copyLink: "Copy Link",
+      achievementsTitle: "Achievements & Certificates",
+      achievements: [
+        "Certified English Instructor",
+        "800+ Students Trained",
+        "5 Years Teaching Experience",
+      ],
+    },
+  },
+};
+
+export default function TeacherDetails({ language = "fa" }) {
+  const { id } = useParams();
+  const teacherIdParam = extractRouteIdentifier(id);
+  const navigate = useNavigate();
+  const isFa = language === "fa";
+  const dir = isFa ? "rtl" : "ltr";
+  const baseData = pageData[language] || pageData["fa"];
+  const [activeTab, setActiveTab] = useState(0);
+  const [expandedPanels, setExpandedPanels] = useState({});
+  const [panelOverflow, setPanelOverflow] = useState({});
+  const [teacher, setTeacher] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [enrolledCourseIds, setEnrolledCourseIds] = useState(() => new Set());
+  const [currentFeaturedCoursesPage, setCurrentFeaturedCoursesPage] = useState(1);
+  const panelRefs = useRef({});
+  const courseCardLabels = useMemo(
+    () => ({ details: isFa ? "جزئیات بیشتر" : "More details" }),
+    [isFa],
+  );
+  const pageNumberFormatter = useMemo(
+    () => new Intl.NumberFormat(isFa ? "fa-AF" : "en-US"),
+    [isFa],
+  );
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadTeacher = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const row = await fetchPublicTeacherById(teacherIdParam);
+        if (!mounted) return;
+        if (!row) {
+          setError(isFa ? "استاد یافت نشد." : "Teacher not found.");
+          setTeacher(null);
+          return;
+        }
+        const canonicalPath = buildTeacherPath(row);
+        if (canonicalPath !== `/teacher/${id}`) {
+          navigate(canonicalPath, { replace: true });
+        }
+        setTeacher(row);
+      } catch (err) {
+        if (!mounted) return;
+        setError(
+          getLocalizedRequestErrorMessage(
+            err,
+            isFa ? "fa" : "en",
+            "دریافت معلومات استاد ناموفق بود.",
+            "Failed to load teacher details.",
+          ),
+        );
+        setTeacher(null);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadTeacher();
+
+    return () => {
+      mounted = false;
+    };
+  }, [id, navigate, teacherIdParam, isFa]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadEnrollments = async () => {
+      if (localStorage.getItem("edutech_auth") !== "true") {
+        setEnrolledCourseIds(new Set());
+        return;
+      }
+
+      try {
+        const rows = await fetchStudentEnrollments();
+        if (!mounted) return;
+
+        const nextIds = new Set();
+        rows.forEach((enrollment) => {
+          if (!hasActiveEnrollmentAccess(enrollment)) return;
+          const courseId = resolveCourseId(enrollment?.courseId);
+          if (courseId) nextIds.add(courseId);
+        });
+        setEnrolledCourseIds(nextIds);
+      } catch (err) {
+        if (!mounted) return;
+        if (isUnauthorizedError(err)) {
+          setEnrolledCourseIds(new Set());
+          return;
+        }
+        setEnrolledCourseIds(new Set());
+      }
+    };
+
+    loadEnrollments();
+
+    const handleDataChanged = () => {
+      loadEnrollments();
+    };
+
+    window.addEventListener("edutech_data_changed", handleDataChanged);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener("edutech_data_changed", handleDataChanged);
+    };
+  }, []);
+
+  const data = useMemo(() => {
+    if (!teacher) return baseData;
+
+    const locale = isFa ? "fa-AF" : "en-US";
+    const numberFormatter = new Intl.NumberFormat(locale);
+    const levelLabel = (level) => {
+      if (!isFa) {
+        if (level === "beginner") return "Beginner";
+        if (level === "intermediate") return "Intermediate";
+        if (level === "advanced") return "Advanced";
+        return "All Levels";
+      }
+      if (level === "beginner") return "مبتدی";
+      if (level === "intermediate") return "متوسط";
+      if (level === "advanced") return "پیشرفته";
+      return "همه سطوح";
+    };
+
+    const meetingTypeLabel = (type) => {
+      if (type === "zoom") return "Zoom";
+      if (type === "physical") return isFa ? "حضوری" : "In Person";
+      if (type === "recorded") return isFa ? "ضبط‌شده" : "Recorded";
+      return "Google Meet";
+    };
+
+    const normalizeList = (rows = []) =>
+      [...new Set((Array.isArray(rows) ? rows : []).map((item) => String(item || "").trim()).filter(Boolean))];
+    const hiddenSkillValues = new Set([
+      "wwws",
+      "intermediate",
+      "beginner",
+      "advanced",
+      "english",
+      "مبتدی",
+      "متوسط",
+      "پیشرفته",
+    ]);
+    const isDisplayableSkillValue = (value = "") => {
+      const normalized = String(value || "").trim();
+      if (!normalized) return false;
+      if (hiddenSkillValues.has(normalized.toLowerCase())) return false;
+      if (normalized.startsWith("/uploads/")) return false;
+      if (/^https?:\/\//i.test(normalized)) return false;
+      if (/\.pdf($|\?)/i.test(normalized)) return false;
+      return true;
+    };
+
+    const teacherApplication = teacher?.teacherApplication || {};
+    const appStatus = String(teacherApplication?.status || "").toLowerCase();
+    const formProfessionalTitle = String(teacherApplication?.professionalTitle || "").trim();
+    const formEducation = String(teacherApplication?.education || "").trim();
+    const formIntroVideoUrl = String(teacherApplication?.introVideoUrl || "").trim();
+    const rawYearsExperience = Number(teacherApplication?.yearsExperience);
+    const formYearsExperience = Number.isFinite(rawYearsExperience)
+      ? Math.max(0, Math.round(rawYearsExperience))
+      : 0;
+    const formExpertiseAreas = normalizeList(teacherApplication?.expertiseAreas || []);
+    const formCertifications = normalizeList(teacherApplication?.certifications || []);
+    const formLanguages = normalizeList(teacherApplication?.languages || []);
+    const formSkillRatings = (Array.isArray(teacherApplication?.skillRatings)
+      ? teacherApplication.skillRatings
+      : [])
+      .map((item) => ({
+        name: String(item?.name || "").trim(),
+        percentage: Math.max(0, Math.min(100, Math.round(Number(item?.percentage || 0)))),
+      }))
+      .filter((item) => item.name && Number.isFinite(item.percentage));
+
+    const publishedCourses = Array.isArray(teacher.publishedCourses) ? teacher.publishedCourses : [];
+    const endedCourses = Array.isArray(teacher.endedCourses) ? teacher.endedCourses : [];
+
+    const mappedCourses = publishedCourses.map((course) => {
+      const maxStudents = Number(course.maxStudents || 0);
+      const enrolled = Number(course.enrolledStudentsCount || 0);
+      const remaining = Math.max(0, maxStudents - enrolled);
+
+      return {
+        ...course,
+        _id: course._id || course.id,
+        id: course.id || course._id,
+        maxStudents,
+        enrolledStudentsCount: enrolled,
+        seats: maxStudents > 0 ? `${numberFormatter.format(remaining)} / ${numberFormatter.format(maxStudents)}` : numberFormatter.format(remaining),
+        rating: Number(course.rating || 0),
+        ratingCount: Math.max(0, Number(course.ratingCount || 0)),
+        teacherId: String(teacher?._id || teacherIdParam || ""),
+        teacher: teacher?.name || (isFa ? "مدرس" : "Instructor"),
+        teacherName: teacher?.name || (isFa ? "مدرس" : "Instructor"),
+        teacherAvatar: teacher?.avatar || "",
+        liveLabel: isFa ? "آنلاین" : "Live",
+        btnRegister: isFa ? "ثبت نام" : "Register",
+        btnDetails: isFa ? "مشاهده جزئیات" : "View Details",
+      };
+    });
+
+    const scheduleRows = publishedCourses
+      .flatMap((course) =>
+        (Array.isArray(course.scheduleRows) ? course.scheduleRows : []).map((slot) => ({
+          day: slot?.day || "-",
+          course: course.title || "-",
+          time: `${slot?.startTime || "-"} - ${slot?.endTime || "-"}`,
+          status: isFa ? "پیش‌رو" : "Upcoming",
+        })),
+      )
+      .slice(0, 12);
+
+    const languages = [
+      ...new Set(publishedCourses.map((course) => course.language).filter(Boolean)),
+    ];
+    const meetingTypes = [
+      ...new Set(publishedCourses.map((course) => meetingTypeLabel(course.meetingType)).filter(Boolean)),
+    ];
+    const teacherLanguages = normalizeList([...formLanguages, ...languages]);
+    const totalCourses = Math.max(1, publishedCourses.length);
+
+    const levelCounts = publishedCourses.reduce((acc, course) => {
+      const key = levelLabel(course.level);
+      if (!key) return acc;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const languageCounts = publishedCourses.reduce((acc, course) => {
+      const key = course.language;
+      if (!key) return acc;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const meetingCounts = publishedCourses.reduce((acc, course) => {
+      const key = meetingTypeLabel(course.meetingType);
+      if (!key) return acc;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const progressFromMap = (inputMap) =>
+      Object.entries(inputMap)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, count]) => ({
+          name,
+          percentage: Math.max(10, Math.round((count / totalCourses) * 100)),
+        }))
+        .filter((item) => isDisplayableSkillValue(item.name));
+
+    const backendProgressSkills = [
+      ...progressFromMap(levelCounts),
+      ...progressFromMap(languageCounts),
+      ...progressFromMap(meetingCounts),
+    ]
+      .filter((item, idx, arr) => arr.findIndex((row) => row.name === item.name) === idx)
+      .slice(0, 4);
+    const teacherDefinedProgressSkills = formSkillRatings
+      .filter((item) => isDisplayableSkillValue(item.name))
+      .slice(0, 12);
+
+    const backendTeachingStyles = isFa
+      ? [
+          {
+            title: "تحصیلات",
+            text: formEducation || "معلومات موجود نیست",
+          },
+          {
+            title: "حوزه تخصص",
+            text: formExpertiseAreas.length ? formExpertiseAreas.join("، ") : "معلومات موجود نیست",
+          },
+          {
+            title: "تجربه تدریس",
+            text: formYearsExperience > 0 ? `${numberFormatter.format(formYearsExperience)} سال` : "معلومات موجود نیست",
+          },
+          {
+            title: "زبان‌های تدریس",
+            text: teacherLanguages.length ? teacherLanguages.join("، ") : "معلومات موجود نیست",
+          },
+        ]
+      : [
+          {
+            title: "Education",
+            text: formEducation || "Not available",
+          },
+          {
+            title: "Expertise Areas",
+            text: formExpertiseAreas.length ? formExpertiseAreas.join(", ") : "Not available",
+          },
+          {
+            title: "Teaching Experience",
+            text: formYearsExperience > 0 ? `${numberFormatter.format(formYearsExperience)} years` : "Not available",
+          },
+          {
+            title: "Teaching Languages",
+            text: teacherLanguages.length ? teacherLanguages.join(", ") : "Not available",
+          },
+        ];
+
+    const featuredCourse = mappedCourses[0] || baseData.sidebar.featuredCourse;
+    const teacherBioText = typeof teacher.bio === "string" ? teacher.bio.trim() : "";
+    const fallbackAboutFromForm = isFa
+      ? [
+          formProfessionalTitle ? `${teacher.name || "این استاد"} به‌عنوان ${formProfessionalTitle} فعالیت دارد.` : "",
+          formEducation ? `تحصیلات: ${formEducation}.` : "",
+          formExpertiseAreas.length ? `حوزه‌های تخصص: ${formExpertiseAreas.join("، ")}.` : "",
+          `سابقه تدریس: ${numberFormatter.format(formYearsExperience)} سال.`,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : [
+          formProfessionalTitle ? `${teacher.name || "This teacher"} works as ${formProfessionalTitle}.` : "",
+          formEducation ? `Education: ${formEducation}.` : "",
+          formExpertiseAreas.length ? `Expertise areas: ${formExpertiseAreas.join(", ")}.` : "",
+          `Teaching experience: ${numberFormatter.format(formYearsExperience)} years.`,
+        ]
+          .filter(Boolean)
+          .join(" ");
+    const fallbackBioText = isFa
+      ? "این استاد هنوز بیوگرافی خود را ثبت نکرده است."
+      : "This teacher has not added a biography yet.";
+    const resolvedBioText = teacherBioText || fallbackAboutFromForm || fallbackBioText;
+
+    const skillBadges = normalizeList([
+      ...formExpertiseAreas,
+      ...teacherLanguages,
+      ...formCertifications,
+      ...teacherDefinedProgressSkills.map((item) => item.name),
+    ])
+      .filter((item) => isDisplayableSkillValue(item))
+      .slice(0, 20);
+
+    const dynamicFaqs = isFa
+      ? [
+          {
+            q: "این استاد چه زبان‌هایی را تدریس می‌کند؟",
+            a: teacherLanguages.length
+              ? `زبان‌های تدریس: ${teacherLanguages.join("، ")}.`
+              : "زبان‌های تدریس هنوز ثبت نشده است.",
+          },
+          {
+            q: "تجربه و تحصیلات استاد چگونه است؟",
+            a: `${formEducation ? `تحصیلات: ${formEducation}. ` : ""}سابقه تدریس: ${numberFormatter.format(formYearsExperience)} سال.`,
+          },
+          {
+            q: "چند کورس و چند شاگرد فعال دارد؟",
+            a: `${numberFormatter.format(Number(teacher.publishedCoursesCount || 0))} کورس منتشرشده و ${numberFormatter.format(Number(teacher.totalStudents || 0))} شاگرد.`,
+          },
+          {
+            q: "حالت برگزاری صنف‌ها چگونه است؟",
+            a: meetingTypes.length
+              ? `صنف‌ها به این حالت‌ها برگزار می‌شود: ${meetingTypes.join("، ")}.`
+              : "اطلاعات حالت تدریس هنوز ثبت نشده است.",
+          },
+        ]
+      : [
+          {
+            q: "Which languages does this teacher teach?",
+            a: teacherLanguages.length
+              ? `Teaching languages: ${teacherLanguages.join(", ")}.`
+              : "Teaching languages are not listed yet.",
+          },
+          {
+            q: "What are the teacher's education and experience?",
+            a: `${formEducation ? `Education: ${formEducation}. ` : ""}Teaching experience: ${numberFormatter.format(formYearsExperience)} years.`,
+          },
+          {
+            q: "How many courses and students does this teacher have?",
+            a: `${numberFormatter.format(Number(teacher.publishedCoursesCount || 0))} published courses and ${numberFormatter.format(Number(teacher.totalStudents || 0))} students.`,
+          },
+          {
+            q: "How are the classes delivered?",
+            a: meetingTypes.length
+              ? `Classes are delivered via: ${meetingTypes.join(", ")}.`
+              : "Teaching mode information is not available yet.",
+          },
+        ];
+
+    return {
+      ...baseData,
+      breadcrumbs: [baseData.breadcrumbs[0], baseData.breadcrumbs[1], teacher.name || baseData.breadcrumbs[2]],
+      hero: {
+        ...baseData.hero,
+        name: teacher.name || baseData.hero.name,
+        role:
+          formProfessionalTitle ||
+          (isFa ? "استاد" : "Instructor"),
+        bio: resolvedBioText,
+        avatar: teacher.avatar || "",
+        introVideoUrl: formIntroVideoUrl,
+        socialLinks: teacher.socialLinks || {},
+        teacherId: String(teacher._id || teacherIdParam),
+        profilePath: buildTeacherPath({
+          _id: teacher._id || teacherIdParam,
+          name: teacher.name,
+        }),
+      },
+      stats: [
+        {
+          label: baseData.stats[0].label,
+          value: Number(teacher.ratingCount || 0) > 0
+            ? Number(teacher.rating || 0).toFixed(1)
+            : isFa
+              ? "هنوز امتیازی نیست"
+              : "No ratings yet",
+        },
+        { label: baseData.stats[1].label, value: numberFormatter.format(Number(teacher.totalStudents || 0)) },
+        { label: baseData.stats[2].label, value: numberFormatter.format(Number(teacher.publishedCoursesCount || 0)) },
+        { label: baseData.stats[3].label, value: numberFormatter.format(formYearsExperience) },
+      ],
+      sections: {
+        ...baseData.sections,
+        aboutText: resolvedBioText,
+        teachingStyles:
+          publishedCourses.length || Number(teacher.totalStudents || 0)
+            ? backendTeachingStyles
+            : baseData.sections.teachingStyles,
+        progressSkills: teacherDefinedProgressSkills.length
+          ? teacherDefinedProgressSkills
+          : backendProgressSkills.length
+            ? backendProgressSkills
+            : baseData.sections.progressSkills,
+        skills: skillBadges.length ? skillBadges : baseData.sections.skills,
+        reviews: Array.isArray(teacher.reviews) ? teacher.reviews : [],
+        courses: mappedCourses,
+        endedCourses: endedCourses.map((course) => ({
+          ...course,
+          _id: course._id || course.id,
+          id: course.id || course._id,
+          teacher: teacher?.name || (isFa ? "مدرس" : "Instructor"),
+          teacherName: teacher?.name || (isFa ? "مدرس" : "Instructor"),
+          teacherAvatar: teacher?.avatar || "",
+        })),
+        schedule: scheduleRows,
+        faqs: dynamicFaqs.length ? dynamicFaqs : baseData.sections.faqs,
+      },
+      sidebar: {
+        ...baseData.sidebar,
+        quickInfo: isFa
+          ? [
+              { label: "زبان", value: teacherLanguages.length ? teacherLanguages.join("، ") : "فارسی، انگلیسی" },
+              { label: "حالت تدریس", value: meetingTypes.length ? meetingTypes.join("، ") : "آنلاین" },
+              { label: "پلتفرم", value: meetingTypes.includes("Google Meet") ? "Google Meet" : (meetingTypes[0] || "Google Meet") },
+              { label: "تجربه", value: `${numberFormatter.format(formYearsExperience)} سال` },
+            ]
+          : [
+              { label: "Language", value: teacherLanguages.length ? teacherLanguages.join(", ") : "Persian, English" },
+              { label: "Teaching Mode", value: meetingTypes.length ? meetingTypes.join(", ") : "Live Online" },
+              { label: "Platform", value: meetingTypes.includes("Google Meet") ? "Google Meet" : (meetingTypes[0] || "Google Meet") },
+              { label: "Experience", value: `${numberFormatter.format(formYearsExperience)} years` },
+            ],
+        featuredCourse,
+        teacherApplicationStatus: appStatus,
+      },
+    };
+  }, [teacher, baseData, isFa, teacherIdParam]);
+
+  useEffect(() => {
+    const panelCount = Array.isArray(data.tabs) ? data.tabs.length : 0;
+    if (activeTab > panelCount - 1) {
+      const timer = window.setTimeout(
+        () => setActiveTab(Math.max(0, panelCount - 1)),
+        0,
+      );
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [data.tabs, activeTab]);
+
+  useEffect(() => {
+    const el = panelRefs.current[activeTab];
+    if (!el) return;
+
+    const checkOverflow = () => {
+      const hasOverflow = el.scrollHeight > PANEL_COLLAPSED_HEIGHT + 2;
+      setPanelOverflow((prev) =>
+        prev[activeTab] === hasOverflow ? prev : { ...prev, [activeTab]: hasOverflow },
+      );
+    };
+
+    checkOverflow();
+
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(el);
+
+    return () => observer.disconnect();
+  }, [activeTab, data, expandedPanels]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setCurrentFeaturedCoursesPage(1), 0);
+    return () => window.clearTimeout(timer);
+  }, [id, language]);
+
+  const totalFeaturedCoursePages = Math.max(
+    1,
+    Math.ceil((data.sections.courses?.length || 0) / FEATURED_COURSES_PER_PAGE),
+  );
+  const activeFeaturedCoursesPage = Math.min(currentFeaturedCoursesPage, totalFeaturedCoursePages);
+  const paginatedFeaturedCourses = (data.sections.courses || []).slice(
+    (activeFeaturedCoursesPage - 1) * FEATURED_COURSES_PER_PAGE,
+    activeFeaturedCoursesPage * FEATURED_COURSES_PER_PAGE,
+  );
+  const introVideoUrl = String(data?.hero?.introVideoUrl || "").trim();
+  const introVideoEmbedUrl = getYouTubeEmbedUrl(introVideoUrl);
+
+  const renderPanel = (panelKey, content) => {
+    const isExpanded = Boolean(expandedPanels[panelKey]);
+    const hasOverflow = Boolean(panelOverflow[panelKey]);
+
+    return (
+      <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_35px_rgba(15,23,42,0.05)] md:p-8 animate-in fade-in duration-300">
+        <div
+          ref={(el) => {
+            panelRefs.current[panelKey] = el;
+          }}
+          className={`relative ${isExpanded ? "" : "max-h-[580px] overflow-hidden"}`}
+        >
+          {content}
+          {!isExpanded && hasOverflow ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-white to-transparent" />
+          ) : null}
+        </div>
+
+        {hasOverflow ? (
+          <button
+            className="mt-5 flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:border-primary-200 hover:text-primary-700"
+            onClick={() =>
+              setExpandedPanels((prev) => ({
+                ...prev,
+                [panelKey]: !prev[panelKey],
+              }))
+            }
+          >
+            {isExpanded ? (isFa ? "بستن" : "Collapse") : isFa ? "ادامه مطلب" : "Read more"}
+          </button>
+        ) : null}
+      </section>
+    );
+  };
+
+  if (loading && !teacher) {
+    return (
+      <section className="bg-slate-50 py-16">
+        <div className="mx-auto max-w-[1320px] px-4 sm:px-6 lg:px-8">
+          <FrontendPageLoader
+            label={isFa ? "در حال دریافت معلومات استاد" : "Loading teacher details"}
+          />
+        </div>
+      </section>
+    );
+  }
+
+  if (error && !teacher) {
+    return (
+      <section className="bg-slate-50 py-16">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 text-center">
+          <p className="text-lg font-black text-rose-600">{error}</p>
+          <Link
+            to="/teachers"
+            className="mt-4 inline-flex rounded-lg bg-primary-600 px-5 py-3 text-sm font-black text-white"
+          >
+            {isFa ? "بازگشت به مدرسان" : "Back to teachers"}
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <div
+      className="min-h-screen bg-slate-50 pb-16 pt-8 font-sans text-slate-900"
+      dir={dir}
+    >
+      <div className="mx-auto max-w-[1320px] px-4 sm:px-6 lg:px-8">
+        {/* Breadcrumbs */}
+        <nav className={`mb-6 px-1 sm:px-0 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-500 ${isFa ? "justify-start" : "justify-start"}`}>
+          {data.breadcrumbs.map((crumb, index) => {
+            const isLast = index === data.breadcrumbs.length - 1;
+            const crumbHref = index === 0 ? "/" : index === 1 ? "/teachers" : "";
+            return (
+              <div className="flex items-center gap-2" key={index}>
+                {isLast ? (
+                  <span className="text-slate-900">{crumb}</span>
+                ) : (
+                  <Link className="transition hover:text-primary-700" to={crumbHref}>
+                    {crumb}
+                  </Link>
+                )}
+                {!isLast && <span>/</span>}
+              </div>
+            );
+          })}
+        </nav>
+
+        <TeacherHero data={data.hero} dir={dir} />
+
+        {introVideoUrl ? (
+          <section className="mt-6 overflow-hidden rounded-[28px] border border-primary-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+            <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="bg-slate-950">
+                {introVideoEmbedUrl ? (
+                  <iframe
+                    className="aspect-video h-full min-h-[240px] w-full"
+                    src={introVideoEmbedUrl}
+                    title={isFa ? "ویدیوی معرفی مدرس" : "Teacher introduction video"}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                ) : (
+                  <div className="flex aspect-video min-h-[240px] items-center justify-center bg-slate-900 p-6 text-center text-sm font-bold text-white">
+                    {isFa ? "پیش‌نمایش ویدیو در دسترس نیست." : "Video preview is not available."}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col justify-center p-6 lg:p-8">
+                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-700">
+                  <PlayCircle size={26} />
+                </div>
+                <h2 className="text-2xl font-black text-slate-950">
+                  {isFa ? "با مدرس بیشتر آشنا شوید" : "Meet Your Teacher"}
+                </h2>
+                <p className="mt-3 text-sm font-semibold leading-7 text-slate-600">
+                  {isFa
+                    ? "این ویدیوی معرفی توسط مدرس اضافه شده تا قبل از انتخاب کورس، روش تدریس، شخصیت و تجربه او را بهتر بشناسید."
+                    : "This intro video was added by the teacher so you can understand their teaching style, personality, and experience before joining a course."}
+                </p>
+                <a
+                  href={introVideoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-5 inline-flex h-11 w-fit items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700"
+                >
+                  <ExternalLink size={16} />
+                  {isFa ? "باز کردن در YouTube" : "Open on YouTube"}
+                </a>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        <div className="mt-6">
+          <div className="min-w-0 space-y-6">
+            <TeacherStats stats={data.stats} />
+
+            {/* Tabs */}
+            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+              <div className="flex gap-2 overflow-x-auto px-4 border-b border-slate-100 scrollbar-hide">
+                {data.tabs.map((tab, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setActiveTab(idx)}
+                    className={`shrink-0 px-5 py-4 text-sm font-black transition-colors ${
+                      activeTab === idx
+                        ? "border-b-2 border-primary-600 text-primary-700"
+                        : "text-slate-600 hover:text-primary-700"
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tab Contents */}
+            {activeTab === 0 && (
+              renderPanel(0, (
+                <>
+                <h2 className="text-2xl font-black text-slate-950">
+                  {data.sections.aboutTitle}
+                </h2>
+                <p className="mt-4 break-words [overflow-wrap:anywhere] text-justify font-medium leading-8 text-slate-600">
+                  {data.sections.aboutText}
+                </p>
+                <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                  {data.sections.teachingStyles.map((style, idx) => {
+                    const icons = [MessageCircle, UsersRound, Smile, LineChart];
+                    const Icon = icons[idx];
+                    return (
+                      <div
+                        className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-5 transition hover:border-teal-200 hover:bg-teal-50/50"
+                        key={idx}
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-teal-600 shadow-sm">
+                          <Icon size={20} />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-slate-900">
+                            {style.title}
+                          </h4>
+                          <p className="mt-2 text-sm font-semibold text-slate-600 leading-6">
+                            {style.text}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                </>
+              ))
+            )}
+
+            {activeTab === 1 && (
+              renderPanel(1, (
+                <>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-2xl font-black text-slate-950">
+                    {data.sections.reviewsTitle}
+                  </h2>
+                  <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
+                    {pageNumberFormatter.format(Array.isArray(data.sections.reviews) ? data.sections.reviews.length : 0)}
+                  </span>
+                </div>
+                {data.sections.reviews?.length ? (
+                  <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                    {data.sections.reviews.map((review, index) => (
+                      <ReviewCard key={review._id || `${review.name}-${index}`} review={review} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">
+                    {isFa
+                      ? "هنوز نظری از شاگردان ثبت نشده است."
+                      : "No student reviews have been added yet."}
+                  </p>
+                )}
+                </>
+              ))
+            )}
+
+            {activeTab === 2 && (
+              renderPanel(2, (
+                <>
+                <h2 className="text-2xl font-black text-slate-950">
+                  {data.sections.skillsTitle}
+                </h2>
+                <div className="mt-8 space-y-6">
+                  {data.sections.progressSkills.map((skill, idx) => (
+                    <ProgressSkill
+                      dir={dir}
+                      key={idx}
+                      name={skill.name}
+                      percentage={skill.percentage}
+                    />
+                  ))}
+                </div>
+                {data.sections.skills?.length ? (
+                  <div className="mt-8">
+                    <div className="flex flex-wrap gap-3">
+                      {data.sections.skills.map((skill, idx) => (
+                        <SkillBadge key={idx} skill={skill} />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                </>
+              ))
+            )}
+
+            {activeTab === 3 && data.sections.schedule.length > 0 && (
+              renderPanel(3, (
+                <>
+                <h2 className="text-2xl font-black text-slate-950">
+                  {data.sections.scheduleTitle}
+                </h2>
+                <div className="mt-6">
+                  <TeacherScheduleTable
+                    labels={data.sections.scheduleLabels}
+                    schedule={data.sections.schedule}
+                  />
+                </div>
+                <p className="mt-4 flex items-center gap-3 rounded-xl bg-primary-50 p-4 text-sm font-semibold leading-7 text-primary-800">
+                  <Info className="shrink-0" size={18} />
+                  {data.sections.scheduleNote}
+                </p>
+                </>
+              ))
+            )}
+
+            {activeTab === 4 && (
+              renderPanel(4, (
+                <>
+                <h2 className="mb-6 text-2xl font-black text-slate-950">
+                  {data.sections.faqTitle}
+                </h2>
+                <div className="space-y-3">
+                  {data.sections.faqs.map((faq, idx) => (
+                    <FAQAccordion answer={faq.a} key={idx} question={faq.q} />
+                  ))}
+                </div>
+                </>
+              ))
+            )}
+          </div>
+
+        </div>
+
+        <section className="mt-6 rounded-[24px] border border-primary-100 bg-primary-50 p-6 shadow-[0_12px_35px_rgba(15,23,42,0.05)] md:p-8">
+          <h2 className="text-2xl font-black text-slate-950">
+            {data.sidebar.featuredTitle}
+          </h2>
+
+          {!data.sections.courses?.length ? (
+            <p className="mt-4 rounded-xl bg-white p-4 text-sm font-semibold text-slate-600">
+              {isFa
+                ? "این استاد فعلاً کورس منتشرشده ندارد."
+                : "This teacher has no published courses yet."}
+            </p>
+          ) : (
+            <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {paginatedFeaturedCourses.map((course, index) => (
+                <div key={course._id || course.id || course.slug || `${course.title}-${index}`}>
+                  <CourseCard
+                    course={course}
+                    dir={dir}
+                    isEnrolled={enrolledCourseIds.has(resolveCourseId(course))}
+                    language={isFa ? "fa" : "en"}
+                    labels={courseCardLabels}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {data.sections.courses?.length > FEATURED_COURSES_PER_PAGE ? (
+            <div className="mt-5 rounded-[20px] border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCurrentFeaturedCoursesPage(Math.max(1, activeFeaturedCoursesPage - 1))
+                  }
+                  disabled={activeFeaturedCoursesPage === 1}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isFa ? "قبلی" : "Previous"}
+                </button>
+                {Array.from({ length: totalFeaturedCoursePages }, (_, idx) => idx + 1).map((page) => (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => setCurrentFeaturedCoursesPage(page)}
+                    className={`h-9 min-w-9 rounded-lg px-3 text-xs font-black transition ${
+                      activeFeaturedCoursesPage === page
+                        ? "bg-primary-600 text-white"
+                        : "border border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {pageNumberFormatter.format(page)}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCurrentFeaturedCoursesPage(
+                      Math.min(totalFeaturedCoursePages, activeFeaturedCoursesPage + 1),
+                    )
+                  }
+                  disabled={activeFeaturedCoursesPage === totalFeaturedCoursePages}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isFa ? "بعدی" : "Next"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-2xl font-black text-slate-950">
+              {data.sections.endedCoursesTitle}
+            </h2>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
+              {pageNumberFormatter.format(Array.isArray(data.sections.endedCourses) ? data.sections.endedCourses.length : 0)}
+            </span>
+          </div>
+
+          {!data.sections.endedCourses?.length ? (
+            <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">
+              {data.sections.endedCoursesEmpty}
+            </p>
+          ) : (
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {data.sections.endedCourses.map((course, index) => (
+                <article
+                  key={course._id || course.id || course.slug || `${course.title}-${index}`}
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
+                >
+                  <div className="aspect-[16/9] overflow-hidden bg-white">
+                    <img
+                      src={course.thumbnail || "/logo-en.png"}
+                      alt={course.title || (isFa ? "کورس" : "Course")}
+                      className={`h-full w-full ${
+                        course.thumbnail ? "object-cover" : "object-contain p-8"
+                      }`}
+                    />
+                  </div>
+                  <div className="p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-800">
+                        {isFa ? "پایان‌یافته" : "Ended"}
+                      </span>
+                      {course.level ? (
+                        <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-black text-slate-700">
+                          {course.level}
+                        </span>
+                      ) : null}
+                    </div>
+                    <h3 className="mt-3 line-clamp-2 text-lg font-black text-slate-950">
+                      {course.title || (isFa ? "کورس بدون نام" : "Untitled course")}
+                    </h3>
+                    <p className="mt-2 line-clamp-3 text-sm font-semibold leading-6 text-slate-600">
+                      {course.description || (isFa ? "توضیحی برای این کورس ثبت نشده است." : "No description was added for this course.")}
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-3 text-xs font-bold text-slate-500">
+                      <span>
+                        {isFa ? "شاگردان" : "Students"}: {pageNumberFormatter.format(Number(course.enrolledStudentsCount || 0))}
+                      </span>
+                      <span>
+                        {isFa ? "امتیاز" : "Rating"}: {Number(course.rating || 0) > 0 ? Number(course.rating || 0).toFixed(1) : "-"}
+                      </span>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}

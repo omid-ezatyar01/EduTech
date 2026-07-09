@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="fa" dir="rtl" class="notranslate" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="./icons/favicon-32x32.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <title>EduTech Admin Panel</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+      body {
+        background: #f8fafc;
+      }
+      #app-boot-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background: #f8fafc;
+        transition: opacity 0.22s ease;
+      }
+      #app-boot-loader.app-boot-loader--hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .app-boot-loader__content {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        color: #475569;
+        font-family: "Plus Jakarta Sans", "Vazirmatn", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-size: 0.875rem;
+        font-weight: 700;
+      }
+      .app-boot-loader__spinner {
+        width: 18px;
+        height: 18px;
+        animation: app-loader-spin 0.75s linear infinite;
+        color: #0b4fd8;
+      }
+      @keyframes app-loader-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      body.app-ready #app-boot-loader {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
+    <script>
+      (function () {
+        var key = "edutech_admin_lang";
+        var normalize = function (value) {
+          if (typeof value !== "string") return null;
+          var cleaned = value.trim().replace(/^"(.*)"$/, "$1").toLowerCase();
+          return cleaned === "en" || cleaned === "fa" ? cleaned : null;
+        };
+        var stored = null;
+        try {
+          stored = normalize(window.localStorage.getItem(key));
+        } catch (err) {
+          stored = null;
+        }
+        var lang = stored === "en" ? "en" : "fa";
+        document.documentElement.lang = lang;
+        document.documentElement.dir = lang === "fa" ? "rtl" : "ltr";
+        document.documentElement.setAttribute("data-admin-lang", lang);
+        if (document.body) {
+          document.body.dir = lang === "fa" ? "rtl" : "ltr";
+        }
+      })();
+    </script>
+  </head>
+  <body class="notranslate bg-slate-50 text-slate-900 font-sans" translate="no">
+    <div id="app-boot-loader" aria-live="polite">
+      <div class="app-boot-loader__content">
+        <svg
+          class="app-boot-loader__spinner"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+        </svg>
+        <span id="app-boot-loader-label">در حال بارگذاری</span>
+      </div>
+    </div>
+    <script>
+      (function setBootLoaderLanguage() {
+        try {
+          var savedLanguage = window.localStorage.getItem("edutech_admin_lang");
+          var isPersian = savedLanguage !== "en";
+          var label = document.getElementById("app-boot-loader-label");
+          if (!label) return;
+          label.textContent = isPersian ? "در حال بارگذاری" : "Loading";
+        } catch (_error) {}
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

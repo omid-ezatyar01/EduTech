@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en" class="notranslate" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="/icons/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/icons/site.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <meta name="application-name" content="EduTech Instructor" />
+    <meta name="apple-mobile-web-app-title" content="EduTech Instructor" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Vazirmatn:wght@400;500;600;700;800;900&display=swap"
+    />
+    <title>EduTech Instructor</title>
+    <script>
+      (() => {
+        const key = "edutech_teacher_language";
+        let language = "fa";
+        try {
+          language = window.localStorage.getItem(key) === "en" ? "en" : "fa";
+        } catch {
+          language = "fa";
+        }
+        const isRtl = language === "fa";
+        document.documentElement.lang = isRtl ? "fa" : "en";
+        document.documentElement.dir = isRtl ? "rtl" : "ltr";
+      })();
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+      body {
+        background: #f8fafc;
+      }
+      #app-boot-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background: #f8fafc;
+        transition: opacity 0.22s ease;
+      }
+      #app-boot-loader.app-boot-loader--hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .app-boot-loader__content {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        color: #475569;
+        font-family: "Plus Jakarta Sans", "Vazirmatn", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-size: 0.875rem;
+        font-weight: 700;
+      }
+      .app-boot-loader__spinner {
+        width: 18px;
+        height: 18px;
+        animation: app-loader-spin 0.75s linear infinite;
+        color: #0b4fd8;
+      }
+      @keyframes app-loader-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      body.app-ready #app-boot-loader {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body class="notranslate" translate="no">
+    <script>
+      document.body.dir =
+        document.documentElement.getAttribute("dir") === "rtl" ? "rtl" : "ltr";
+    </script>
+    <div id="app-boot-loader" aria-live="polite">
+      <div class="app-boot-loader__content">
+        <svg
+          class="app-boot-loader__spinner"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+        </svg>
+        <span id="app-boot-loader-label">در حال بارگذاری</span>
+      </div>
+    </div>
+    <script>
+      (function setBootLoaderLanguage() {
+        try {
+          var savedLanguage = window.localStorage.getItem("edutech_teacher_language");
+          var isPersian = savedLanguage !== "en";
+          var label = document.getElementById("app-boot-loader-label");
+          if (!label) return;
+          label.textContent = isPersian ? "در حال بارگذاری" : "Loading";
+        } catch (_error) {}
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

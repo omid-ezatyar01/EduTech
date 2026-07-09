@@ -1,0 +1,1013 @@
+import {
+  BookOpen,
+  ClipboardList,
+  Plus,
+  Users,
+  CheckCircle2,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import TeacherLayout from "../layouts/TeacherLayout";
+import TeacherPageLoader from "../components/common/TeacherPageLoader";
+import useTeacherLanguage from "../hooks/useTeacherLanguage";
+import TeacherCourseStatsCard from "../components/courses/TeacherCourseStatsCard";
+import TeacherCourseFilterBar from "../components/courses/TeacherCourseFilterBar";
+import TeacherCoursesTable from "../components/courses/TeacherCoursesTable";
+import CreateCourseModal from "../components/courses/CreateCourseModal";
+import EditCourseModal from "../components/courses/EditCourseModal";
+import CourseDetailsModal from "../components/courses/CourseDetailsModal";
+import useLiveDataRefresh from "../hooks/useLiveDataRefresh";
+import {
+  calculateCourseProgress,
+  formatProgressLabel,
+} from "../utils/courseProgress";
+import {
+  createTeacherCourse,
+  endTeacherCourseClass,
+  fetchCategories,
+  fetchTeacherCourseById,
+  fetchTeacherCoursePricingSettings,
+  fetchTeacherCourses,
+  requestTeacherCourseCancellation,
+  startTeacherCourseClass,
+  updateTeacherCourse,
+} from "../../services/courseService";
+import {
+  fetchGoogleAccountStatus,
+  fetchGoogleAuthUrl,
+} from "../../services/liveSessionService";
+import { getApiBase } from "../../services/http";
+import { getAuthUser } from "../../services/portal";
+import {
+  clearTeacherPageCache,
+  getTeacherPageCacheKey,
+  readTeacherPageCache,
+  writeTeacherPageCache,
+} from "../utils/teacherPageCache";
+import { formatCategoryPathLabel } from "../utils/categoryTree";
+import { buildCourseQueryValue } from "../utils/routePaths";
+
+const resolveAssetUrl = (rawPath = "") => {
+  const value = String(rawPath || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value) || value.startsWith("data:")) return value;
+  if (value.startsWith("/")) {
+    const backendOrigin = getApiBase().replace(/\/api\/v\d+$/i, "").replace(/\/+$/, "");
+    return `${backendOrigin}${value}`;
+  }
+  return value;
+};
+
+function getStatusLabel(status, language) {
+  const map = {
+    draft: { fa: "پیش‌نویس", en: "Draft" },
+    pending: { fa: "در انتظار", en: "Pending" },
+    approved: { fa: "تایید شده", en: "Approved" },
+    published: { fa: "منتشر شده", en: "Published" },
+    rejected: { fa: "رد شده", en: "Rejected" },
+    cancelled: { fa: "لغو شده", en: "Cancelled" },
+  };
+
+  return map[status]?.[language] || (language === "fa" ? "پیش‌نویس" : "Draft");
+}
+
+function getTeacherTeachingLanguages(teacher) {
+  const rows = Array.isArray(teacher?.teacherApplication?.languages)
+    ? teacher.teacherApplication.languages
+    : [];
+  const seen = new Set();
+  return rows
+    .map((item) => String(item || "").trim())
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+const localDateKey = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const isTodayDate = (value) => Boolean(localDateKey(value)) && localDateKey(value) === localDateKey(new Date());
+
+const isPastOrNow = (value) => {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date <= new Date();
+};
+
+const DEFAULT_PRICING_SETTINGS = {
+  minTeacherCoursePrice: null,
+  teacherDeductionPercentage: 0,
+  globalCourseDiscountPercentage: 0,
+};
+const TEACHER_COURSES_PAGE_SIZE = 3;
+const COURSE_AUX_CACHE_TTL_MS = 5 * 60 * 1000;
+const COURSE_CATEGORIES_CACHE_KEY = getTeacherPageCacheKey("courses-categories");
+const COURSE_PRICING_CACHE_KEY = getTeacherPageCacheKey("courses-pricing");
+const COURSE_GOOGLE_STATUS_CACHE_KEY = getTeacherPageCacheKey("courses-google-status");
+
+const getCoursesCacheKey = ({ search, category, status, page, language }) =>
+  getTeacherPageCacheKey("courses", {
+    search: String(search || "").trim(),
+    category,
+    status,
+    page,
+    language,
+  });
+
+const normalizeNumberSetting = (value, fallback = 0) => {
+  const rawValue = value ?? fallback;
+  const numeric = Number(rawValue);
+  if (Number.isFinite(numeric)) return numeric;
+
+  const fallbackNumeric = Number(fallback);
+  return Number.isFinite(fallbackNumeric) ? fallbackNumeric : 0;
+};
+
+const normalizePricingSettings = (settings = {}, fallback = DEFAULT_PRICING_SETTINGS) => ({
+  minTeacherCoursePrice: normalizeNumberSetting(
+    settings?.minTeacherCoursePrice,
+    fallback?.minTeacherCoursePrice ?? 0,
+  ),
+  teacherDeductionPercentage: normalizeNumberSetting(
+    settings?.teacherDeductionPercentage,
+    fallback?.teacherDeductionPercentage ?? 0,
+  ),
+  globalCourseDiscountPercentage: normalizeNumberSetting(
+    settings?.globalCourseDiscountPercentage,
+    fallback?.globalCourseDiscountPercentage ?? 0,
+  ),
+});
+
+const clampPercentage = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(100, numeric));
+};
+
+function resolveTeacherDiscountPercentage(course) {
+  const basePrice = Number(course?.price || 0);
+  const rawTeacherDiscount = Number(course?.teacherDiscountPercentage);
+  if (Number.isFinite(rawTeacherDiscount)) {
+    return clampPercentage(rawTeacherDiscount);
+  }
+
+  const discountPrice = Number(course?.discountPrice || 0);
+  if (basePrice > 0 && discountPrice > 0 && discountPrice <= basePrice) {
+    return clampPercentage(((basePrice - discountPrice) / basePrice) * 100);
+  }
+
+  return 0;
+}
+
+function resolveTeacherReceiveAmount(course, pricingSettings = {}) {
+  const basePrice = Number(course?.price || 0);
+  if (Boolean(course?.isFree) || basePrice <= 0) {
+    return {
+      teacherDiscountPercentage: 0,
+      teacherEffectivePrice: 0,
+      finalPriceForStudents: 0,
+      teacherReceiveAmount: 0,
+    };
+  }
+
+  const teacherDiscountPercentage = resolveTeacherDiscountPercentage(course);
+  const globalDiscountPercentage = clampPercentage(
+    pricingSettings?.globalCourseDiscountPercentage,
+  );
+  const deductionPercentage = clampPercentage(
+    pricingSettings?.teacherDeductionPercentage,
+  );
+  const teacherEffectivePrice = Math.max(
+    0,
+    Math.round((basePrice - ((basePrice * teacherDiscountPercentage) / 100)) * 100) / 100,
+  );
+  const totalDiscountPercentage = Math.min(100, teacherDiscountPercentage + globalDiscountPercentage);
+  const finalPriceForStudents = Math.max(
+    0,
+    Math.round((basePrice - ((basePrice * totalDiscountPercentage) / 100)) * 100) / 100,
+  );
+  const platformDeductionAmount =
+    Math.round(((finalPriceForStudents * deductionPercentage) / 100) * 100) / 100;
+
+  return {
+    teacherDiscountPercentage,
+    teacherEffectivePrice,
+    finalPriceForStudents,
+    teacherReceiveAmount:
+      Math.round(Math.max(0, finalPriceForStudents - platformDeductionAmount) * 100) / 100,
+  };
+}
+
+function mapCourse(course, language, pricingSettings = {}) {
+  const students = Number(course.enrolledStudentsCount || 0);
+  const maxStudents = Number(course.maxStudents || 0);
+  const minimumStudentsToStart = Math.max(1, Number(course.minimumStudentsToStart || 1));
+  const classEndedAt = course.classEndedAt || null;
+  const classStartedAt = course.classStartedAt || null;
+  const classCancelledAt = course.classCancelledAt || null;
+  const cancellationRequest = course.cancellationRequest || {};
+  const progress = calculateCourseProgress(course);
+  const receivePricing = resolveTeacherReceiveAmount(course, pricingSettings);
+
+  return {
+    ...course,
+    id: course._id,
+    title: course.title,
+    category: course.subcategory?.name
+      ? `${course.category?.name || "General"} / ${course.subcategory.name}`
+      : course.category?.name || "General",
+    categoryId:
+      typeof course.category === "object"
+        ? (course.category?._id || "")
+        : (course.category || ""),
+    subcategoryId:
+      typeof course.subcategory === "object"
+        ? (course.subcategory?._id || "")
+        : (course.subcategory || ""),
+    categoryPathLabel:
+      course.subcategory
+        ? formatCategoryPathLabel({
+            pathLabel: `${course.category?.name || "General"} / ${course.subcategory?.name || ""}`,
+          })
+        : course.category?.name || "General",
+    students,
+    progress,
+    progressLabel: formatProgressLabel(progress, language),
+    status: course.status,
+    statusLabel: course.status === "cancelled" || classCancelledAt
+      ? language === "fa"
+        ? "صنف لغو شد"
+        : "Class cancelled"
+      : cancellationRequest?.status === "pending"
+        ? language === "fa"
+          ? "درخواست لغو در انتظار"
+          : "Cancellation pending"
+      : classEndedAt
+      ? language === "fa"
+        ? "صنف پایان یافت"
+        : "Class ended"
+      : classStartedAt
+        ? language === "fa"
+          ? "صنف شروع شد"
+          : "Class started"
+      : getStatusLabel(course.status, language),
+    createdAt: new Date(course.createdAt).toLocaleDateString(),
+    thumbnailUrl: resolveAssetUrl(course.thumbnail),
+    thumbnailType: course.level === "advanced" ? "python" : course.level === "intermediate" ? "api" : "mern",
+    price: course.price || 0,
+    paymentPlan:
+      course.paymentPlan === "whole_period" ? "whole_period" : "monthly",
+    duration: course.duration || "",
+    level: course.level || "beginner",
+    language: course.language || "English",
+    maxStudents: maxStudents || 30,
+    minimumStudentsToStart,
+    minimumStudentsReached: students >= minimumStudentsToStart,
+    globalCourseDiscountPercentage: Number(course.globalCourseDiscountPercentage || 0),
+    teacherDiscountPercentage: Number(
+      course.teacherDiscountPercentage ?? receivePricing.teacherDiscountPercentage,
+    ),
+    teacherEffectivePrice: Number(
+      course.teacherEffectivePrice ?? receivePricing.teacherEffectivePrice,
+    ),
+    finalPriceForStudents: Number(
+      course.finalPriceForStudents ?? receivePricing.finalPriceForStudents,
+    ),
+    teacherReceiveAmount: Number(
+      course.teacherReceiveAmount ?? receivePricing.teacherReceiveAmount,
+    ),
+    endDate: course.endDate || null,
+    canStartToday: isTodayDate(course.startDate),
+    canEndNow: Boolean(classStartedAt) && !classEndedAt && isPastOrNow(course.endDate),
+    cancellationRequest,
+    classCancelledAt,
+    classStartedAt,
+    classEndedAt,
+    previewVideoUrls: Array.isArray(course.previewVideoUrls) && course.previewVideoUrls.length
+      ? course.previewVideoUrls
+      : course.promoVideo
+        ? [course.promoVideo]
+        : [],
+  };
+}
+
+export default function TeacherCourses() {
+  const navigate = useNavigate();
+  const { language, isRTL, setLanguage } = useTeacherLanguage();
+
+  const teacher = useMemo(
+    () => getAuthUser() || { name: "Teacher", email: "teacher@edutech.study" },
+    [],
+  );
+  const teacherLanguages = useMemo(() => getTeacherTeachingLanguages(teacher), [teacher]);
+  const initialCoursesCache = readTeacherPageCache(getCoursesCacheKey({
+    search: "",
+    category: "all",
+    status: "all",
+    page: 1,
+    language,
+  }));
+
+  const [courses, setCourses] = useState(initialCoursesCache?.courses || []);
+  const [categories, setCategories] = useState([]);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(initialCoursesCache?.pagination || {
+    page: 1,
+    limit: TEACHER_COURSES_PAGE_SIZE,
+    total: 0,
+    totalPages: 1,
+  });
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createFormSession, setCreateFormSession] = useState(0);
+  const [editingCourse, setEditingCourse] = useState(null);
+  const [detailsCourse, setDetailsCourse] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [cancellationCourse, setCancellationCourse] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [cancellationSubmitting, setCancellationSubmitting] = useState(false);
+  const [toast, setToast] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(!initialCoursesCache);
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState({ connected: false, googleEmail: "" });
+  const [pricingSettings, setPricingSettings] = useState(DEFAULT_PRICING_SETTINGS);
+  const [refreshSeed, setRefreshSeed] = useState(0);
+  const pricingSettingsRef = useRef(
+    normalizePricingSettings(initialCoursesCache?.pricingSettings, DEFAULT_PRICING_SETTINGS),
+  );
+
+  useLiveDataRefresh(() => setRefreshSeed((prev) => prev + 1), {
+    intervalMs: 0,
+    refreshOnFocus: false,
+    refreshOnVisible: false,
+  });
+
+  const applyPricingSettings = (settings, fallback = pricingSettingsRef.current) => {
+    const nextPricingSettings = normalizePricingSettings(settings, fallback);
+    const currentPricingSettings = normalizePricingSettings(
+      pricingSettingsRef.current,
+      DEFAULT_PRICING_SETTINGS,
+    );
+
+    const isSameSettings =
+      currentPricingSettings.minTeacherCoursePrice === nextPricingSettings.minTeacherCoursePrice &&
+      currentPricingSettings.teacherDeductionPercentage === nextPricingSettings.teacherDeductionPercentage &&
+      currentPricingSettings.globalCourseDiscountPercentage === nextPricingSettings.globalCourseDiscountPercentage;
+
+    if (!isSameSettings) {
+      pricingSettingsRef.current = nextPricingSettings;
+      setPricingSettings(nextPricingSettings);
+      return nextPricingSettings;
+    }
+
+    return currentPricingSettings;
+  };
+
+  const refreshPricingSettings = async () => {
+    try {
+      const settings = await fetchTeacherCoursePricingSettings();
+      return applyPricingSettings(settings);
+    } catch {
+      return pricingSettingsRef.current;
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const loadCourses = async () => {
+        const cacheKey = getCoursesCacheKey({ search, category, status, page, language });
+        const cached = readTeacherPageCache(cacheKey);
+        if (cached) {
+          setCourses(cached.courses || []);
+          setPagination((previous) => cached.pagination || previous);
+          if (cached.pricingSettings) applyPricingSettings(cached.pricingSettings);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
+
+        try {
+          setError("");
+
+          const { courses: rows, meta, extra } = await fetchTeacherCourses({
+            search,
+            category: category === "all" ? undefined : category,
+            status: status === "all" ? undefined : status,
+            page,
+            limit: TEACHER_COURSES_PAGE_SIZE,
+          });
+
+          let nextPricingSettings = pricingSettingsRef.current;
+          if (extra && typeof extra === "object") {
+            nextPricingSettings = applyPricingSettings(extra);
+          }
+
+          const nextCourses = rows.map((course) =>
+            mapCourse(course, language, nextPricingSettings),
+          );
+          const nextPagination = {
+            page: Number(meta?.page || page),
+            limit: Number(meta?.limit || TEACHER_COURSES_PAGE_SIZE),
+            total: Number(meta?.total || rows.length),
+            totalPages: Math.max(1, Number(meta?.totalPages || 1)),
+          };
+
+          setCourses(nextCourses);
+          setPagination(nextPagination);
+          writeTeacherPageCache(cacheKey, {
+            courses: nextCourses,
+            pagination: nextPagination,
+            pricingSettings: nextPricingSettings,
+          });
+        } catch (err) {
+          setError(err.message || "Failed to load courses");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      loadCourses();
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [category, language, page, refreshSeed, search, status]);
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      const cached = readTeacherPageCache(COURSE_CATEGORIES_CACHE_KEY, {
+        maxAgeMs: COURSE_AUX_CACHE_TTL_MS,
+      });
+      if (cached) {
+        setCategories(cached);
+        return;
+      }
+      try {
+        const rows = await fetchCategories();
+        setCategories(rows);
+        writeTeacherPageCache(COURSE_CATEGORIES_CACHE_KEY, rows);
+      } catch {
+        setCategories([]);
+      }
+    };
+
+    loadCategories();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      const loadPricingSettings = async () => {
+        const cached = readTeacherPageCache(COURSE_PRICING_CACHE_KEY, {
+          maxAgeMs: COURSE_AUX_CACHE_TTL_MS,
+        });
+        if (cached) {
+          applyPricingSettings(cached);
+          return;
+        }
+        try {
+          const settings = await fetchTeacherCoursePricingSettings();
+          if (!active) return;
+          applyPricingSettings(settings);
+          writeTeacherPageCache(COURSE_PRICING_CACHE_KEY, settings);
+        } catch {
+          // Ignore pricing settings refresh failures and keep the latest known values.
+        }
+      };
+
+      loadPricingSettings();
+    }, 0);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadGoogleStatus = async () => {
+      const cached = readTeacherPageCache(COURSE_GOOGLE_STATUS_CACHE_KEY, {
+        maxAgeMs: COURSE_AUX_CACHE_TTL_MS,
+      });
+      if (cached) {
+        setGoogleStatus(cached);
+      }
+      try {
+        const status = await fetchGoogleAccountStatus();
+        const nextStatus = {
+          connected: Boolean(status?.connected),
+          googleEmail: status?.googleEmail || "",
+        };
+        setGoogleStatus(nextStatus);
+        writeTeacherPageCache(COURSE_GOOGLE_STATUS_CACHE_KEY, nextStatus);
+      } catch {
+        setGoogleStatus({ connected: false, googleEmail: "" });
+      }
+    };
+
+    loadGoogleStatus();
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timeout = setTimeout(() => setToast(""), 2400);
+    return () => clearTimeout(timeout);
+  }, [toast]);
+
+  const stats = useMemo(() => {
+    const publishedCourses = courses.filter((course) => course.status === "published").length;
+    const totalStudents = courses.reduce((sum, course) => sum + course.students, 0);
+
+    return [
+      {
+        id: "published-courses",
+        title: language === "fa" ? "کورس‌های منتشر شده" : "Published Courses",
+        value: String(publishedCourses),
+        subtitle: language === "fa" ? `از مجموع ${courses.length} کورس` : `${courses.length} courses in total`,
+        icon: BookOpen,
+        tone: "teal",
+      },
+      {
+        id: "students",
+        title: language === "fa" ? "شاگردان کل" : "Total Students",
+        value: String(totalStudents),
+        subtitle: language === "fa" ? "در همه کورس‌ها" : "Across all courses",
+        icon: Users,
+        tone: "purple",
+      },
+      {
+        id: "pending-courses",
+        title: language === "fa" ? "کورس‌های در انتظار" : "Pending Courses",
+        value: String(courses.filter((course) => course.status === "pending").length),
+        subtitle: language === "fa" ? "منتظر تایید مدیر" : "Waiting admin approval",
+        icon: ClipboardList,
+        tone: "orange",
+      },
+    ];
+  }, [courses, language]);
+
+  const handleCreateCourse = async (form) => {
+    try {
+      setCreateSubmitting(true);
+      await createTeacherCourse(form);
+      clearTeacherPageCache("teacher:courses");
+      setRefreshSeed((prev) => prev + 1);
+
+      setCreateFormSession((previous) => previous + 1);
+      setCreateOpen(false);
+      setToast(language === "fa" ? "کورس ایجاد شد" : "Course created");
+      window.dispatchEvent(new Event("edutech_data_changed"));
+    } catch (err) {
+      setToast(err.message || "Create failed");
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
+  const handleOpenCreateCourse = async () => {
+    await refreshPricingSettings();
+    setCreateOpen(true);
+  };
+
+  const handleConnectGoogle = async () => {
+    try {
+      const url = await fetchGoogleAuthUrl();
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      setToast(err?.message || "Failed to open Google OAuth");
+    }
+  };
+
+  const handleEditCourse = async (payload) => {
+    if (!editingCourse?.id) return;
+
+    try {
+      const updatedCourse = await updateTeacherCourse(editingCourse.id, payload);
+      clearTeacherPageCache("teacher:courses");
+      if (updatedCourse?._id) {
+        const mappedCourse = mapCourse(updatedCourse, language, pricingSettings);
+        setCourses((prevCourses) =>
+          prevCourses.map((course) => (course.id === mappedCourse.id ? mappedCourse : course)),
+        );
+        if (detailsCourse?.id === mappedCourse.id) {
+          setDetailsCourse(mappedCourse);
+        }
+      }
+      setRefreshSeed((prev) => prev + 1);
+      setEditingCourse(null);
+      setToast(language === "fa" ? "تغییرات ذخیره شد" : "Changes saved");
+      window.dispatchEvent(new Event("edutech_data_changed"));
+    } catch (err) {
+      setToast(err.message || "Update failed");
+    }
+  };
+
+  const handleEndCourseClass = async (course) => {
+    if (!course?.id) return;
+    if (course?.classEndedAt) {
+      setToast(language === "fa" ? "این صنف قبلاً پایان یافته است." : "This class is already ended.");
+      return;
+    }
+    if (!course?.classStartedAt) {
+      setToast(language === "fa" ? "اول صنف را شروع کنید." : "Start the class first.");
+      return;
+    }
+    if (!course?.canEndNow) {
+      setToast(
+        language === "fa"
+          ? "صنف فقط بعد از رسیدن تاریخ و زمان ختم کورس قابل پایان دادن است."
+          : "Class can only be ended after the scheduled end date and time.",
+      );
+      return;
+    }
+
+    const shouldEnd = window.confirm(
+      language === "fa"
+        ? "آیا مطمئن هستید که می‌خواهید این صنف را پایان دهید؟ پس از این کار، شاگردان تکمیل می‌شوند و سرتیفیکیت دریافت می‌کنند."
+        : "Are you sure you want to end this class? Students will be marked completed and certificates will be issued.",
+    );
+    if (!shouldEnd) return;
+
+    try {
+      const result = await endTeacherCourseClass(course.id);
+      const completedCount = Number(result?.completedStudents || 0);
+      setToast(
+        language === "fa"
+          ? `صنف پایان یافت. ${completedCount} شاگرد تکمیل شد و سرتیفیکیت دریافت کرد.`
+          : `Class ended. ${completedCount} students were completed and issued certificates.`,
+      );
+      window.dispatchEvent(new Event("edutech_data_changed"));
+    } catch (err) {
+      setToast(err?.message || (language === "fa" ? "پایان صنف ناموفق بود" : "Failed to end class"));
+    }
+  };
+
+  const handleStartCourseClass = async (course) => {
+    if (!course?.id) return;
+    if (course?.classStartedAt) {
+      setToast(language === "fa" ? "این صنف قبلاً شروع شده است." : "This class has already started.");
+      return;
+    }
+    if (course?.classEndedAt) {
+      setToast(language === "fa" ? "این صنف قبلاً پایان یافته است." : "This class is already ended.");
+      return;
+    }
+    if (course?.status !== "published") {
+      setToast(language === "fa" ? "فقط کورس منتشرشده قابل شروع است." : "Only published courses can be started.");
+      return;
+    }
+    if (!course?.canStartToday) {
+      setToast(
+        language === "fa"
+          ? "صنف فقط در همان تاریخ شروع کورس قابل شروع است."
+          : "Class can only be started on the scheduled course start date.",
+      );
+      return;
+    }
+
+    const shouldStart = window.confirm(
+      !course?.minimumStudentsReached
+        ? language === "fa"
+          ? "حداقل شاگرد برای شروع این کورس هنوز تکمیل نشده است، اما شما می‌توانید صنف را دستی شروع کنید. اگر ادامه دهید، تاریخ و زمان شروع دیگر قابل تغییر نیست. آیا مطمئن هستید؟"
+          : "The minimum students required for this course has not been reached yet, but you can still start the class manually. If you continue, the start date and start time cannot be changed. Are you sure?"
+        : language === "fa"
+          ? "اگر این صنف را شروع کنید، تاریخ شروع و زمان شروع درس دیگر هرگز قابل تغییر نیست و صنف جریان پیدا می‌کند. آیا مطمئن هستید؟"
+          : "If you start this class, the course start date and lesson start time can never be changed again and the class will begin. Are you sure?",
+    );
+    if (!shouldStart) return;
+
+    try {
+      await startTeacherCourseClass(course.id);
+      setToast(language === "fa" ? "صنف شروع شد و تاریخ/زمان شروع قفل شد." : "Class started and start date/time is locked.");
+      window.dispatchEvent(new Event("edutech_data_changed"));
+    } catch (err) {
+      setToast(err?.message || (language === "fa" ? "شروع صنف ناموفق بود" : "Failed to start class"));
+    }
+  };
+
+  const openCancellationRequest = (course) => {
+    if (!course?.id) return;
+    if (course?.status === "cancelled" || course?.classCancelledAt) {
+      setToast(language === "fa" ? "این صنف قبلاً لغو شده است." : "This class is already cancelled.");
+      return;
+    }
+    if (course?.classEndedAt) {
+      setToast(language === "fa" ? "صنف پایان‌یافته قابل لغو نیست." : "Ended classes cannot be cancelled.");
+      return;
+    }
+    if (course?.cancellationRequest?.status === "pending") {
+      setToast(language === "fa" ? "درخواست لغو قبلاً به مدیر ارسال شده است." : "A cancellation request is already pending.");
+      return;
+    }
+    setCancellationCourse(course);
+    setCancellationReason("");
+  };
+
+  const submitCancellationRequest = async (event) => {
+    event.preventDefault();
+    if (!cancellationCourse?.id || cancellationSubmitting) return;
+    const reason = String(cancellationReason || "").trim();
+    if (reason.length < 10) {
+      setToast(language === "fa" ? "دلیل لغو باید حداقل ۱۰ کاراکتر باشد." : "Cancellation reason must be at least 10 characters.");
+      return;
+    }
+
+    try {
+      setCancellationSubmitting(true);
+      await requestTeacherCourseCancellation(cancellationCourse.id, reason);
+      setToast(language === "fa" ? "درخواست لغو به مدیر ارسال شد." : "Cancellation request sent to admin.");
+      setCancellationCourse(null);
+      setCancellationReason("");
+      window.dispatchEvent(new Event("edutech_data_changed"));
+    } catch (err) {
+      setToast(err?.message || (language === "fa" ? "ارسال درخواست لغو ناموفق بود" : "Failed to send cancellation request"));
+    } finally {
+      setCancellationSubmitting(false);
+    }
+  };
+
+  const handleFilterSearchChange = (value) => {
+    setSearch(value);
+    setPage(1);
+  };
+
+  const handleFilterCategoryChange = (value) => {
+    setCategory(value);
+    setPage(1);
+  };
+
+  const handleFilterStatusChange = (value) => {
+    setStatus(value);
+    setPage(1);
+  };
+
+  const handleManageCourseStudents = (course) => {
+    if (!course?.title) return;
+    setDetailsCourse(null);
+    navigate(`/teacher/students?course=${encodeURIComponent(course.title)}`);
+  };
+
+  const handleManageCourseContent = (course) => {
+    if (!course?.id) return;
+    const params = new URLSearchParams({
+      course: buildCourseQueryValue(course),
+    });
+    setDetailsCourse(null);
+    navigate(`/teacher/resources?${params.toString()}`);
+  };
+
+  const handleOpenCourseDetails = async (course) => {
+    if (!course?.id) return;
+
+    setDetailsCourse(course);
+    setDetailsLoading(true);
+
+    try {
+      const latestPricingSettings = await refreshPricingSettings();
+      const fullCourse = await fetchTeacherCourseById(course.id);
+      if (!fullCourse) {
+        setToast(language === "fa" ? "اطلاعات کامل کورس پیدا نشد" : "Full course data not found");
+        return;
+      }
+      setDetailsCourse(mapCourse(fullCourse, language, latestPricingSettings));
+    } catch (err) {
+      setToast(
+        err?.message ||
+          (language === "fa"
+            ? "بارگذاری جزئیات کورس ناموفق بود"
+            : "Failed to load course details"),
+      );
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const handleOpenEditCourse = async (course) => {
+    if (!course?.id) return;
+
+    try {
+      const latestPricingSettings = await refreshPricingSettings();
+      const fullCourse = await fetchTeacherCourseById(course.id);
+      if (!fullCourse) {
+        setToast(language === "fa" ? "اطلاعات کورس پیدا نشد" : "Course data not found");
+        return;
+      }
+      const mappedCourse = mapCourse(fullCourse, language, latestPricingSettings);
+      if (mappedCourse?.classStartedAt) {
+        setToast(
+          language === "fa"
+            ? "قیمت کورس قفل است، چون صنف قبلاً شروع شده است."
+            : "Course price is locked because the class has already started.",
+        );
+      }
+      setEditingCourse(mappedCourse);
+    } catch (err) {
+      setToast(err?.message || (language === "fa" ? "بارگذاری کورس ناموفق بود" : "Failed to load course"));
+    }
+  };
+
+  return (
+    <TeacherLayout teacher={teacher} language={language} onLanguageChange={setLanguage}>
+      <div className={isRTL ? "text-right" : "text-left"}>
+        <section className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm sm:p-6">
+          <p className="text-xs font-extrabold text-slate-500">{language === "fa" ? "داشبورد / کورس‌های من" : "Dashboard / My Courses"}</p>
+
+          <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-lg bg-[#0B4FD8]/10 p-2 text-[#0B4FD8]"><BookOpen size={18} /></span>
+                <h1 className="text-2xl font-black text-[#0F172A]">{language === "fa" ? "کورس‌های من" : "My Courses"}</h1>
+              </div>
+              <p className="mt-3 max-w-3xl text-sm font-medium text-slate-600">
+                {language === "fa" ? "مدیریت کامل کورس‌ها و محتوای آموزشی" : "Manage and organize your courses and content."}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOpenCreateCourse}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#0B4FD8] to-[#00B8A9] px-4 text-sm font-bold text-white"
+            >
+              <Plus size={16} />
+              {language === "fa" ? "ایجاد کورس جدید" : "Create New Course"}
+            </button>
+          </div>
+          <p className="mt-3 text-xs font-semibold text-slate-500">
+            {googleStatus.connected
+              ? language === "fa"
+                ? `Google متصل است: ${googleStatus.googleEmail}`
+                : `Google connected: ${googleStatus.googleEmail}`
+              : language === "fa"
+                ? "Google متصل نیست. برای تولید خودکار لینک Meet، حساب Google را وصل کنید."
+                : "Google not connected. Connect it to auto-generate Meet links."}
+          </p>
+          {!googleStatus.connected ? (
+            <button
+              type="button"
+              onClick={handleConnectGoogle}
+              className="mt-2 inline-flex h-9 items-center justify-center rounded-lg border border-[#0B4FD8]/30 px-3 text-xs font-bold text-[#0B4FD8]"
+            >
+              {language === "fa" ? "وصل کردن Google" : "Connect Google Account"}
+            </button>
+          ) : null}
+        </section>
+
+        <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {stats.map((item) => (
+            <TeacherCourseStatsCard key={item.id} title={item.title} value={item.value} subtitle={item.subtitle} icon={item.icon} tone={item.tone} />
+          ))}
+        </section>
+
+        <TeacherCourseFilterBar
+          search={search}
+          setSearch={handleFilterSearchChange}
+          category={category}
+          setCategory={handleFilterCategoryChange}
+          status={status}
+          setStatus={handleFilterStatusChange}
+          language={language}
+          isRTL={isRTL}
+          categories={categories}
+        />
+
+        {error ? <p className="mt-3 text-sm font-bold text-rose-600">{error}</p> : null}
+        {loading ? (
+          <TeacherPageLoader
+            label={language === "fa" ? "در حال بارگذاری کورس‌ها" : "Loading courses"}
+            className="mt-5"
+          />
+        ) : null}
+
+        {!loading ? (
+          <TeacherCoursesTable
+            courses={courses}
+            language={language}
+            onEdit={handleOpenEditCourse}
+            onDetails={handleOpenCourseDetails}
+            onStartClass={handleStartCourseClass}
+            onEndClass={handleEndCourseClass}
+            onRequestCancel={openCancellationRequest}
+            pagination={pagination}
+            onPageChange={setPage}
+          />
+        ) : null}
+
+      </div>
+
+      <CreateCourseModal
+        key={createFormSession}
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={handleCreateCourse}
+        isSubmitting={createSubmitting}
+        language={language}
+        isRTL={isRTL}
+        categories={categories}
+        pricingSettings={pricingSettings}
+        teacherLanguages={teacherLanguages}
+      />
+
+      {editingCourse ? (
+        <EditCourseModal
+          key={editingCourse.id}
+          open={Boolean(editingCourse)}
+          course={editingCourse}
+          categories={categories}
+          onClose={() => setEditingCourse(null)}
+          onSubmit={handleEditCourse}
+          language={language}
+          isRTL={isRTL}
+          pricingSettings={pricingSettings}
+          teacherLanguages={teacherLanguages}
+        />
+      ) : null}
+
+      <CourseDetailsModal
+        open={Boolean(detailsCourse)}
+        course={detailsCourse}
+        isLoading={detailsLoading}
+        onClose={() => setDetailsCourse(null)}
+        language={language}
+        isRTL={isRTL}
+        onManageStudents={() => handleManageCourseStudents(detailsCourse)}
+        onManageContent={() => handleManageCourseContent(detailsCourse)}
+      />
+
+      {cancellationCourse ? (
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-[#0F172A]/55 p-0 sm:items-center sm:p-4">
+          <form
+            onSubmit={submitCancellationRequest}
+            className="w-full max-w-lg rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl"
+            dir={isRTL ? "rtl" : "ltr"}
+          >
+            <h3 className="text-lg font-black text-[#0F172A]">
+              {language === "fa" ? "درخواست لغو صنف" : "Request Class Cancellation"}
+            </h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+              {language === "fa"
+                ? "دلیل لغو را بنویسید. مدیر این درخواست را تایید یا رد می‌کند."
+                : "Write the cancellation reason. Admin will approve or reject this request."}
+            </p>
+            <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
+              {cancellationCourse.title}
+            </p>
+            <textarea
+              value={cancellationReason}
+              onChange={(event) => setCancellationReason(event.target.value)}
+              className="mt-3 min-h-[120px] w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 text-sm font-semibold outline-none"
+              placeholder={language === "fa" ? "دلیل لغو صنف..." : "Cancellation reason..."}
+              minLength={10}
+              maxLength={1000}
+              required
+            />
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCancellationCourse(null);
+                  setCancellationReason("");
+                }}
+                className="h-11 rounded-xl border border-[#E2E8F0] bg-white text-sm font-bold text-slate-700"
+              >
+                {language === "fa" ? "لغو" : "Cancel"}
+              </button>
+              <button
+                type="submit"
+                disabled={cancellationSubmitting}
+                className="h-11 rounded-xl bg-rose-600 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {cancellationSubmitting
+                  ? language === "fa"
+                    ? "در حال ارسال"
+                    : "Sending"
+                  : language === "fa"
+                    ? "ارسال به مدیر"
+                    : "Send to Admin"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {toast ? (
+        <div className={`fixed bottom-5 z-[110] inline-flex items-center gap-2 rounded-xl bg-[#10B981] px-4 py-2 text-sm font-bold text-white shadow-xl ${isRTL ? "right-5" : "left-5"}`}>
+          <CheckCircle2 size={16} />
+          {toast}
+        </div>
+      ) : null}
+    </TeacherLayout>
+  );
+}

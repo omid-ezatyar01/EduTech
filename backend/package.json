@@ -1,0 +1,42 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "NODE_ENV=development nodemon src/server.js",
+    "start": "NODE_ENV=development node src/server.js",
+    "start:prod": "NODE_ENV=production node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "axios": "^1.16.1",
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "decimal.js": "^10.6.0",
+    "dotenv": "^16.6.1",
+    "ethers": "^6.17.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "googleapis": "^172.0.0",
+    "helmet": "^8.1.0",
+    "joi": "^18.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "luxon": "^3.7.2",
+    "mongodb-memory-server": "^11.2.0",
+    "mongoose": "^9.6.2",
+    "morgan": "^1.10.1",
+    "multer": "^2.1.1",
+    "nock": "^14.0.15",
+    "resend": "^6.12.3",
+    "sharp": "^0.34.5",
+    "supertest": "^7.2.2",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "mockingoose": "^3.0.0",
+    "nodemon": "^3.1.10"
+  }
+}

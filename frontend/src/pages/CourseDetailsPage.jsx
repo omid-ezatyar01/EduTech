@@ -1,0 +1,1438 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  CreditCard,
+  Download,
+  ExternalLink,
+  Languages,
+  Loader2,
+  PlayCircle,
+  Share2,
+  Star,
+  UsersRound,
+  Video,
+} from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { createCheckout, createHesabPaySession } from "../../services/paymentGateway.js";
+import {
+  enrollCourse,
+  fetchPublishedCourseBySlug,
+  fetchStudentEnrollments,
+} from "../../services/courseService.js";
+import { getLocalizedRequestErrorMessage } from "../../services/http.js";
+import PaymentMethodModal from "../components/PaymentMethodModal.jsx";
+import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
+import ReviewCard from "../components/ReviewCard.jsx";
+import { calculateCourseProgressSnapshot } from "../utils/courseProgress.js";
+import {
+  buildCoursePath,
+  buildTeacherPath,
+  extractRouteIdentifier,
+} from "../utils/routePaths.js";
+import { shareContent } from "../utils/share.js";
+import {
+  useCryptoUsdtQuoteLabel,
+  useRegionalCoursePrice,
+  useRegionalPricing,
+} from "../context/RegionalPricingContext.jsx";
+
+function getYouTubeEmbedUrl(value = "") {
+  try {
+    const url = new URL(String(value || "").trim());
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    let videoId = "";
+
+    if (hostname === "youtu.be") {
+      videoId = url.pathname.split("/").filter(Boolean)[0] || "";
+    } else if (hostname === "youtube.com" || hostname.endsWith(".youtube.com")) {
+      if (url.pathname.startsWith("/watch")) {
+        videoId = url.searchParams.get("v") || "";
+      } else if (url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/embed/")) {
+        videoId = url.pathname.split("/").filter(Boolean)[1] || "";
+      }
+    }
+
+    return videoId ? `https://www.youtube.com/embed/${encodeURIComponent(videoId)}` : "";
+  } catch {
+    return "";
+  }
+}
+
+function extractYouTubeUrls(value = "") {
+  const matches = String(value || "").match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  return matches
+    .map((url) => url.replace(/[),.;،؛]+$/g, ""))
+    .filter((url) => Boolean(getYouTubeEmbedUrl(url)));
+}
+
+function hasYouTubeUrl(value = "") {
+  return extractYouTubeUrls(value).length > 0;
+}
+
+function filterDisplayList(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((item) => String(item || "").trim())
+    .filter((item) => item && !hasYouTubeUrl(item));
+}
+
+function normalizePreviewVideoLinks(course = {}) {
+  const rows = [
+    ...(Array.isArray(course?.previewVideoUrls) ? course.previewVideoUrls : []),
+    ...(course?.promoVideo ? [course.promoVideo] : []),
+    ...(Array.isArray(course?.targetAudience) ? course.targetAudience : []),
+    ...(Array.isArray(course?.whatYouWillLearn) ? course.whatYouWillLearn : []),
+    ...(Array.isArray(course?.requirements) ? course.requirements : []),
+    ...(Array.isArray(course?.curriculumTopics) ? course.curriculumTopics : []),
+  ].flatMap((item) => {
+    const value = String(item || "").trim();
+    if (!value) return [];
+    const extracted = extractYouTubeUrls(value);
+    return extracted.length ? extracted : [value];
+  });
+  const seen = new Set();
+  return rows
+    .map((item) => String(item || "").trim())
+    .filter((item) => {
+      const embedUrl = getYouTubeEmbedUrl(item);
+      const key = embedUrl || item.toLowerCase();
+      if (!embedUrl || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((url) => ({
+      url,
+      embedUrl: getYouTubeEmbedUrl(url),
+    }));
+}
+const COURSE_IMAGE_ASPECT_RATIO = "750 / 422";
+const COURSE_IMAGE_FALLBACK = "/logo-en.png";
+const WEEK_DAY_ORDER = [
+  "saturday",
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+];
+
+function normalizeScheduleDayKey(dayValue) {
+  const key = String(dayValue || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  const map = {
+    saturday: "saturday",
+    sunday: "sunday",
+    monday: "monday",
+    tuesday: "tuesday",
+    wednesday: "wednesday",
+    thursday: "thursday",
+    friday: "friday",
+    شنبه: "saturday",
+    یکشنبه: "sunday",
+    دوشنبه: "monday",
+    "سه‌شنبه": "tuesday",
+    "سه شنبه": "tuesday",
+    چهارشنبه: "wednesday",
+    "چهار شنبه": "wednesday",
+    پنجشنبه: "thursday",
+    "پنج شنبه": "thursday",
+    جمعه: "friday",
+  };
+
+  return map[key] || "";
+}
+
+function formatMeetingType(type, language) {
+  const key = String(type || "").toLowerCase();
+  const mapFa = {
+    google_meet: "Google Meet",
+    zoom: "Zoom",
+    physical: "حضوری",
+    recorded: "Google Meet",
+  };
+  const mapEn = {
+    google_meet: "Google Meet",
+    zoom: "Zoom",
+    physical: "In Person",
+    recorded: "Google Meet",
+  };
+
+  if (!key) return null;
+  return language === "fa" ? mapFa[key] || key : mapEn[key] || key;
+}
+
+function formatLevel(level, language) {
+  if (!level) return null;
+  const key = String(level || "").toLowerCase();
+  const mapFa = {
+    beginner: "مبتدی",
+    intermediate: "متوسط",
+    advanced: "پیشرفته",
+  };
+  const mapEn = {
+    beginner: "Beginner",
+    intermediate: "Intermediate",
+    advanced: "Advanced",
+  };
+
+  return language === "fa" ? mapFa[key] || key : mapEn[key] || key;
+}
+
+function formatCourseLanguage(languageValue, language) {
+  const value = String(languageValue || "").trim();
+  if (!value) return null;
+
+  const mapFa = {
+    english: "English",
+    persian: "فارسی",
+    pashto: "پشتو",
+    arabic: "عربی",
+  };
+  const mapEn = {
+    english: "English",
+    persian: "Persian",
+    pashto: "Pashto",
+    arabic: "Arabic",
+  };
+  const key = value.toLowerCase();
+
+  return language === "fa" ? mapFa[key] || value : mapEn[key] || value;
+}
+
+function formatStartDate(dateValue, language, fallback) {
+  if (!dateValue) return fallback;
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return fallback;
+
+  if (language === "fa") {
+    const formatter = new Intl.DateTimeFormat("fa-AF-u-ca-persian", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const parts = formatter.formatToParts(date);
+    const partValue = (type) =>
+      parts.find((part) => part.type === type)?.value || "";
+
+    const year = partValue("year");
+    const month = partValue("month");
+    const day = partValue("day");
+    const weekday = partValue("weekday");
+    const value = `${year} ${month} ${day}، ${weekday}`.trim();
+    return value || fallback;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatDayLabel(dayValue, language) {
+  const key = String(dayValue || "").trim().toLowerCase();
+  const map = {
+    saturday: { fa: "شنبه", en: "Saturday" },
+    sunday: { fa: "یکشنبه", en: "Sunday" },
+    monday: { fa: "دوشنبه", en: "Monday" },
+    tuesday: { fa: "سه‌شنبه", en: "Tuesday" },
+    wednesday: { fa: "چهارشنبه", en: "Wednesday" },
+    thursday: { fa: "پنجشنبه", en: "Thursday" },
+    friday: { fa: "جمعه", en: "Friday" },
+  };
+
+  if (map[key]) {
+    return language === "fa" ? map[key].fa : map[key].en;
+  }
+
+  return dayValue || "-";
+}
+
+function formatDurationLabel(durationValue, language) {
+  const raw = String(durationValue || "").trim();
+  if (!raw) return null;
+
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    const amount = Number(raw);
+    const unitEn = amount > 1 ? "weeks" : "week";
+    return language === "fa" ? `${raw} هفته` : `${raw} ${unitEn}`;
+  }
+
+  return raw;
+}
+
+function resolveCourseStartAt(course = {}) {
+  if (!course?.startDate) return null;
+  const date = new Date(course.startDate);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const firstSlot = Array.isArray(course.scheduleRows) ? course.scheduleRows[0] : null;
+  const timeMatch = String(firstSlot?.startTime || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (timeMatch) {
+    date.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
+  }
+
+  return date;
+}
+
+function formatCountdown(targetDate, nowMs, language) {
+  if (!targetDate) return "";
+  const diffMs = targetDate.getTime() - nowMs;
+  if (diffMs <= 0) {
+    return language === "fa" ? "کورس شروع شده است" : "Course has started";
+  }
+
+  const totalMinutes = Math.ceil(diffMs / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const locale = language === "fa" ? "fa-AF" : "en-US";
+  const formatNumber = (value) => Number(value).toLocaleString(locale);
+
+  if (language === "fa") {
+    if (days > 0) return `${formatNumber(days)} روز ${formatNumber(hours)} ساعت تا شروع`;
+    if (hours > 0) return `${formatNumber(hours)} ساعت ${formatNumber(minutes)} دقیقه تا شروع`;
+    return `${formatNumber(minutes)} دقیقه تا شروع`;
+  }
+
+  if (days > 0) return `${formatNumber(days)}d ${formatNumber(hours)}h until start`;
+  if (hours > 0) return `${formatNumber(hours)}h ${formatNumber(minutes)}m until start`;
+  return `${formatNumber(minutes)}m until start`;
+}
+
+function hasActiveEnrollmentAccess(row = {}) {
+  const status = String(row?.enrollmentStatus || "").toLowerCase();
+  if (!["active", "completed"].includes(status)) return false;
+  if (String(row?.accessStatus || "").toLowerCase() !== "allowed") return false;
+  if (!row?.accessExpiresAt) return true;
+  const expiresAt = new Date(row.accessExpiresAt);
+  return Number.isNaN(expiresAt.getTime()) || expiresAt > new Date();
+}
+
+export default function CourseDetailsPage({ t }) {
+  const { id: slugParam } = useParams();
+  const courseIdentifier = extractRouteIdentifier(slugParam);
+  const navigate = useNavigate();
+  const dir = t.meta.dir;
+  const language = t.meta.lang === "fa" ? "fa" : "en";
+  const { countryCode, rates } = useRegionalPricing();
+  const detail = t.courseDetail;
+  const ArrowIcon = dir === "rtl" ? ArrowLeft : ArrowRight;
+
+  const [course, setCourse] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [isStartingPayment, setIsStartingPayment] = useState(false);
+  const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
+  const [hesabPayAmountLabel, setHesabPayAmountLabel] = useState("");
+  const [cryptoPreviewLabel, setCryptoPreviewLabel] = useState("");
+  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [expandedDescriptionSlug, setExpandedDescriptionSlug] = useState("");
+  const quotedPriceLabel = useRegionalCoursePrice(Number(course?.price || 0), language);
+  const cryptoAmountLabel = useCryptoUsdtQuoteLabel(Number(course?.price || 0), language);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPaymentPreviewLabels = async () => {
+      const rawPrice = Number(course?.price || 0);
+      if (!isPaymentMethodModalOpen || !rawPrice || course?.isFree) return;
+
+      try {
+        if (!mounted) return;
+        const afnRate = Number(rates?.AFN || 0);
+        const hesabAmount = afnRate > 0 ? rawPrice * afnRate : 0;
+
+        setHesabPayAmountLabel(
+          `${language === "fa" ? "پرداخت کارتی:" : "Card payment:"} ${new Intl.NumberFormat(
+            language === "fa" ? "fa-AF" : "en-US",
+            { maximumFractionDigits: 0 },
+          ).format(Number(hesabAmount || 0))} ${language === "fa" ? "افغانی" : "AFN"}`,
+        );
+
+        setCryptoPreviewLabel(cryptoAmountLabel);
+      } catch {
+        if (!mounted) return;
+        setHesabPayAmountLabel("");
+        setCryptoPreviewLabel(cryptoAmountLabel);
+      }
+    };
+
+    loadPaymentPreviewLabels();
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    course?._id,
+    course?.id,
+    course?.isFree,
+    course?.price,
+    cryptoAmountLabel,
+    isPaymentMethodModalOpen,
+    language,
+    rates?.AFN,
+  ]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const loadedCourse = await fetchPublishedCourseBySlug(courseIdentifier);
+        if (!loadedCourse) {
+          throw new Error("Course not found");
+        }
+
+        const canonicalPath = buildCoursePath(loadedCourse);
+        if (canonicalPath !== `/course/${slugParam}`) {
+          navigate(canonicalPath, { replace: true });
+        }
+
+        let enrolled = false;
+        if (localStorage.getItem("edutech_auth") === "true") {
+          try {
+            const enrollments = await fetchStudentEnrollments();
+            const targetCourseId = String(loadedCourse?._id || loadedCourse?.id || "");
+            const excludedStatuses = new Set([
+              "cancelled",
+              "canceled",
+              "failed",
+              "rejected",
+              "refunded",
+            ]);
+
+            enrolled = Array.isArray(enrollments)
+              ? enrollments.some((item) => {
+                  const status = String(item?.enrollmentStatus || "").toLowerCase();
+                  if (excludedStatuses.has(status) || !hasActiveEnrollmentAccess(item)) return false;
+
+                  const rawCourse = item?.courseId;
+                  const enrolledCourseId =
+                    typeof rawCourse === "object"
+                      ? rawCourse?._id || rawCourse?.id
+                      : rawCourse;
+
+                  return String(enrolledCourseId || "") === targetCourseId;
+                })
+              : false;
+          } catch {
+            enrolled = false;
+          }
+        }
+
+        if (!mounted) return;
+        setCourse(loadedCourse);
+        setIsEnrolled(enrolled);
+      } catch (err) {
+        if (!mounted) return;
+        setError(
+          getLocalizedRequestErrorMessage(
+            err,
+            language,
+            "بارگذاری کورس انجام نشد.",
+            "Unable to load course.",
+          ),
+        );
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [courseIdentifier, language, navigate, slugParam]);
+
+  const startHesabPayPurchase = async () => {
+    if (!course || isStartingPayment) return;
+
+    const courseId = course?._id || course?.id;
+    if (!courseId) {
+      alert(language === "fa" ? "شناسه کورس یافت نشد." : "Course ID not found.");
+      return;
+    }
+
+    try {
+      setIsStartingPayment(true);
+      setIsPaymentMethodModalOpen(false);
+      if (course?.isFree) {
+        await enrollCourse(courseId);
+        window.dispatchEvent(new Event("edutech_data_changed"));
+        navigate("/student/courses");
+        return;
+      }
+
+      const session = await createHesabPaySession(courseId);
+      if (session?.paymentUrl) {
+        window.location.href = session.paymentUrl;
+        return;
+      }
+    } catch (err) {
+      if (err.message === "NOT_AUTHENTICATED") {
+        navigate("/login");
+        return;
+      }
+      if (String(err.message || "").toLowerCase().includes("already enrolled")) {
+        navigate("/student/courses");
+        return;
+      }
+      alert(
+        getLocalizedRequestErrorMessage(
+          err,
+          language,
+          "شروع پرداخت ممکن نشد.",
+          "Unable to start payment.",
+        ),
+      );
+    } finally {
+      setIsStartingPayment(false);
+    }
+  };
+
+  const startNowPaymentsPurchase = async () => {
+    if (!course || isStartingPayment) return;
+
+    const courseId = course?._id || course?.id;
+    if (!courseId) return;
+
+    try {
+      setIsStartingPayment(true);
+      setIsPaymentMethodModalOpen(false);
+
+      const session = await createCheckout({
+        courseId,
+        paymentMethod: "USDT_BSC_DIRECT",
+      });
+      if (session?.paymentAttemptId) {
+        navigate(`/payment/crypto?attemptId=${encodeURIComponent(session.paymentAttemptId)}`);
+        return;
+      }
+    } catch (err) {
+      if (err.message === "NOT_AUTHENTICATED") {
+        navigate("/login");
+        return;
+      }
+      if (String(err.message || "").toLowerCase().includes("already enrolled")) {
+        navigate("/student/courses");
+        return;
+      }
+      alert(
+        getLocalizedRequestErrorMessage(
+          err,
+          language,
+          "شروع پرداخت ممکن نشد.",
+          "Unable to start payment.",
+        ),
+      );
+    } finally {
+      setIsStartingPayment(false);
+    }
+  };
+
+  const handlePurchase = () => {
+    if (!course || isStartingPayment) return;
+
+    if (localStorage.getItem("edutech_auth") === "true") {
+      if (course?.isFree) {
+        startHesabPayPurchase();
+        return;
+      }
+
+      setIsPaymentMethodModalOpen(true);
+      return;
+    }
+
+    navigate("/login");
+  };
+
+  const weeklyScheduleRows = useMemo(() => {
+    const byDay = new Map();
+    const scheduleRows = Array.isArray(course?.scheduleRows)
+      ? course.scheduleRows
+          .map((row) => ({
+            day: row?.day || "",
+            startTime: row?.startTime || "",
+            endTime: row?.endTime || "",
+          }))
+          .filter((row) => row.day)
+      : [];
+
+    scheduleRows.forEach((row) => {
+      const dayKey = normalizeScheduleDayKey(row.day);
+      if (!dayKey || !WEEK_DAY_ORDER.includes(dayKey)) return;
+      if (byDay.has(dayKey)) return;
+      byDay.set(dayKey, {
+        day: dayKey,
+        startTime: row.startTime || "-",
+        endTime: row.endTime || "-",
+      });
+    });
+
+    return WEEK_DAY_ORDER.map((dayKey) => {
+      return (
+        byDay.get(dayKey) || {
+          day: dayKey,
+          startTime: "-",
+          endTime: "-",
+        }
+      );
+    });
+  }, [course]);
+
+  const seatInfo = useMemo(() => {
+    const maxStudents = Number(course?.maxStudents || 0);
+    const enrolledStudents = Number(course?.enrolledStudentsCount || 0);
+    const remainingSeats = Math.max(0, maxStudents - enrolledStudents);
+    const minimumStudentsToStart = Math.max(1, Number(course?.minimumStudentsToStart || 1));
+
+    return {
+      maxStudents,
+      minimumStudentsToStart,
+      enrolledStudents,
+      minimumReached: enrolledStudents >= minimumStudentsToStart,
+      remainingSeats,
+      label:
+        maxStudents > 0
+          ? `${remainingSeats} / ${maxStudents}`
+          : String(remainingSeats),
+    };
+  }, [course?.maxStudents, course?.enrolledStudentsCount, course?.minimumStudentsToStart]);
+
+  const sessionProgress = useMemo(() => {
+    if (!course) return null;
+    return calculateCourseProgressSnapshot(
+      {
+        ...course,
+        schedule: Array.isArray(course.scheduleRows)
+          ? course.scheduleRows
+          : [],
+      },
+      new Date(nowMs),
+    );
+  }, [course, nowMs]);
+
+  const priceText = course?.isFree
+    ? language === "fa"
+      ? "رایگان"
+      : "Free"
+    : quotedPriceLabel;
+  const paymentPlan =
+    course?.paymentPlan === "whole_period" ? "whole_period" : "monthly";
+  const paymentPlanLabel =
+    paymentPlan === "monthly"
+      ? language === "fa"
+        ? "پرداخت ماهانه"
+        : "Monthly payment"
+      : language === "fa"
+        ? "پرداخت یک‌باره برای تمام دوره"
+        : "One payment for the whole period";
+  const paymentPlanDescription =
+    paymentPlan === "monthly"
+      ? language === "fa"
+        ? "این مبلغ هر ماه برای تمدید دسترسی پرداخت می‌شود."
+        : "This amount is paid each month to renew course access."
+      : language === "fa"
+        ? "این مبلغ یک‌بار پرداخت می‌شود و دسترسی تا پایان کورس ادامه دارد."
+        : "Pay once and keep access through the end of the course.";
+  const startDateText = formatStartDate(course?.startDate, language, null);
+  const courseStartAt = resolveCourseStartAt(course);
+  const countdownText = formatCountdown(courseStartAt, nowMs, language);
+  const levelText = formatLevel(course?.level, language);
+  const courseLanguageText = formatCourseLanguage(course?.language, language);
+  const durationText = formatDurationLabel(course?.duration, language);
+  const platformText = formatMeetingType(course?.meetingType, language);
+  const rawTeacherId = course?.teacherId;
+  const teacherId = String(
+    (rawTeacherId && typeof rawTeacherId === "object"
+      ? rawTeacherId?._id || rawTeacherId?.id
+      : rawTeacherId) ||
+      (course?.teacher && typeof course?.teacher === "object"
+        ? course.teacher?._id || course.teacher?.id
+        : ""),
+  ).trim();
+  const teacherProfilePath = teacherId
+    ? buildTeacherPath({ _id: teacherId, name: course?.teacher })
+    : "";
+  const teacherName = String(course?.teacher || "").trim() || null;
+  const courseImage = course?.thumbnail || COURSE_IMAGE_FALLBACK;
+  const isHeroDescriptionExpanded = expandedDescriptionSlug === slugParam;
+  const courseDescriptionSource = [
+    course?.description,
+    course?.shortDescription,
+    course?.about,
+    detail?.aboutText,
+  ].find((value) => String(value || "").trim());
+  const courseDescription = String(courseDescriptionSource || "").replace(/\r\n/g, "\n");
+  const learningOutcomes = filterDisplayList(
+    course?.whatYouWillLearn?.length ? course.whatYouWillLearn : [],
+  );
+  const syllabusItems = filterDisplayList(
+    course?.curriculumTopics?.length
+      ? course.curriculumTopics
+      : course?.requirements?.length
+        ? course.requirements
+        : [],
+  );
+  const suitableAudience = filterDisplayList(
+    course?.targetAudience?.length ? course.targetAudience : [],
+  );
+  const requirements = filterDisplayList(
+    course?.requirements?.length ? course.requirements : [],
+  );
+  const previewVideos = normalizePreviewVideoLinks(course);
+  const isSpecialCourse = course?.courseType === "special";
+  const courseReviews = Array.isArray(course?.reviews) ? course.reviews : [];
+  const quickFacts = []
+    .concat(
+      teacherName
+        ? [{
+          icon: UsersRound,
+          label: language === "fa" ? "مدرس" : "Teacher",
+          value: teacherName,
+          href: teacherProfilePath,
+        }]
+      : [],
+    )
+    .concat(
+      startDateText
+        ? [{
+            icon: CalendarDays,
+            label: detail.nextBatch,
+            value: startDateText,
+          }]
+        : [],
+    )
+    .concat(
+      platformText
+        ? [{ icon: Video, label: detail.stats.platform, value: platformText }]
+        : [],
+    )
+    .concat(
+      levelText
+        ? [{ icon: BookOpen, label: language === "fa" ? "سطح دوره" : "Course level", value: levelText }]
+        : [],
+    )
+    .concat(
+      courseLanguageText
+        ? [{ icon: Languages, label: language === "fa" ? "زبان تدریس" : "Teaching language", value: courseLanguageText }]
+        : [],
+    )
+    .concat(
+      sessionProgress
+        ? [{
+            icon: BookOpen,
+            label: language === "fa" ? "مجموع جلسات" : "Total sessions",
+            value: String(sessionProgress.totalLessons),
+          }]
+        : [],
+    )
+    .concat(
+      !course?.isFree
+        ? [{
+            icon: CreditCard,
+            label: language === "fa" ? "روش پرداخت" : "Payment plan",
+            value: paymentPlanLabel,
+          }]
+        : [],
+    )
+    .concat(
+      seatInfo.maxStudents > 0
+        ? [{ icon: UsersRound, label: detail.stats.remaining, value: seatInfo.label }]
+        : [],
+    )
+    .concat(
+      seatInfo.minimumStudentsToStart > 0
+        ? [{
+            icon: UsersRound,
+            label: language === "fa" ? "حداقل شاگرد برای شروع" : "Minimum to start",
+            value: `${seatInfo.enrolledStudents} / ${seatInfo.minimumStudentsToStart}`,
+          }]
+        : [],
+    );
+
+  const handleShare = async () => {
+    const shared = await shareContent({
+      title: course?.title || "Course",
+      text: courseDescription,
+      path: window.location.pathname,
+      previewPath: `/share/course/${encodeURIComponent(course?.slug || course?._id || course?.id || "")}`,
+    });
+
+    if (shared && !navigator.share) {
+      alert(language === "fa" ? "لینک کپی شد." : "Link copied.");
+    }
+  };
+
+  const handleDownloadSyllabus = () => {
+    const lines = [
+      course?.title || "Course",
+      "",
+      `${language === "fa" ? "سطح" : "Level"}: ${levelText}`,
+      `${language === "fa" ? "زبان تدریس" : "Teaching language"}: ${courseLanguageText || "-"}`,
+      `${language === "fa" ? "مدت" : "Duration"}: ${durationText || "-"}`,
+      `${language === "fa" ? "مجموع جلسات" : "Total sessions"}: ${sessionProgress?.totalLessons || "-"}`,
+      `${language === "fa" ? "پلتفرم" : "Platform"}: ${platformText || "-"}`,
+      "",
+      language === "fa" ? "آنچه یاد می‌گیرید:" : "What you will learn:",
+      ...(learningOutcomes.length ? learningOutcomes.map((item) => `- ${item}`) : ["-"]),
+      "",
+      language === "fa" ? "سرفصل:" : "Syllabus:",
+      ...(syllabusItems.length ? syllabusItems.map((item) => `- ${item}`) : ["-"]),
+    ];
+
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${course?.slug || "course"}-syllabus.txt`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) {
+    return (
+      <section className="bg-slate-50 py-16">
+        <div className="mx-auto max-w-[1160px] px-4 sm:px-6 lg:px-8">
+          <FrontendPageLoader
+            label={language === "fa" ? "در حال بارگذاری جزئیات کورس" : "Loading course details"}
+          />
+        </div>
+      </section>
+    );
+  }
+
+  if (error || !course) {
+    return (
+      <section className="bg-slate-50 py-16">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 text-center">
+          <p className="text-lg font-black text-rose-600">{error || "Course not found"}</p>
+          <Link
+            to="/live-courses"
+            className="mt-4 inline-flex rounded-lg bg-primary-600 px-5 py-3 text-sm font-black text-white"
+          >
+            Back to courses
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  const purchaseButtonLabel = course?.isFree
+    ? language === "fa"
+      ? "ثبت‌نام رایگان"
+      : "Join for free"
+    : language === "fa"
+      ? "ثبت‌نام و پرداخت"
+      : "Enroll & pay";
+
+  return (
+    <section className="overflow-x-hidden bg-slate-100 pb-24 pt-5 sm:pt-6">
+      <div className="mx-auto max-w-[1160px] px-4 sm:px-6 lg:px-8">
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-500">
+          <Link className="hover:text-primary-700" to="/">
+            {detail.breadcrumbs[0]}
+          </Link>
+          <span>/</span>
+          <Link className="hover:text-primary-700" to="/live-courses">
+            {detail.breadcrumbs[1]}
+          </Link>
+          <span>/</span>
+          <span className="break-words [overflow-wrap:anywhere] text-slate-900">{course.title}</span>
+        </div>
+
+        {!isEnrolled ? (
+          <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-900">
+            {language === "fa"
+              ? "شما هنوز در این کورس ثبت‌نام نکرده‌اید."
+              : "You are not enrolled in this course yet."}
+          </div>
+        ) : (
+          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900">
+            {language === "fa"
+              ? "شما در این کورس ثبت‌نام هستید."
+              : "You are already enrolled in this course."}
+          </div>
+        )}
+
+        <div
+          className={`grid gap-6 ${
+            isEnrolled ? "" : "xl:grid-cols-[minmax(0,1fr)_340px]"
+          }`}
+        >
+          <div className="flex flex-col gap-5">
+            <div
+              className={`order-[-3] mx-auto w-full overflow-hidden rounded-3xl border border-primary-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)] ${
+                isEnrolled ? "max-w-none" : "max-w-[1040px]"
+              }`}
+            >
+              <div className="flex flex-col gap-5 p-4 sm:p-6">
+                <div className="order-2 min-w-0 space-y-4">
+                  <div>
+                    <h1 className="break-words whitespace-normal text-start text-xl font-black leading-snug text-slate-950 [overflow-wrap:anywhere] sm:text-2xl md:text-3xl">
+                      {course.title}
+                    </h1>
+                    {isSpecialCourse ? (
+                      <span className="mt-3 inline-flex h-7 items-center gap-1.5 rounded-md bg-amber-500 px-3 text-xs font-black leading-none text-white shadow-sm">
+                        <Star size={14} fill="currentColor" className="shrink-0" />
+                        <span className="leading-none">
+                          {language === "fa" ? "کورس ویژه" : "Special course"}
+                        </span>
+                      </span>
+                    ) : null}
+                    {courseDescription ? (
+                      <>
+                        <p
+                          dir="auto"
+                          className={`edutech-prose-justify mt-3 whitespace-pre-wrap break-words text-start text-[15px] leading-7 text-slate-600 [overflow-wrap:anywhere] ${
+                            isHeroDescriptionExpanded
+                              ? ""
+                              : "max-h-[84px] overflow-hidden sm:max-h-none"
+                          }`}
+                        >
+                          {courseDescription}
+                        </p>
+                        <button
+                          type="button"
+                          className="mt-2 flex w-full items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-primary-700 shadow-sm sm:hidden"
+                          onClick={() =>
+                            setExpandedDescriptionSlug((prev) =>
+                              prev === slugParam ? "" : slugParam,
+                            )
+                          }
+                        >
+                          {isHeroDescriptionExpanded
+                            ? language === "fa"
+                              ? "نمایش کمتر"
+                              : "Show less"
+                            : language === "fa"
+                              ? "نمایش بیشتر"
+                              : "Show more"}
+                        </button>
+                      </>
+                    ) : null}
+                    {countdownText ? (
+                      <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-black text-sky-800">
+                        <Clock3 size={16} />
+                        <span>{countdownText}</span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                </div>
+
+                <div className="order-1 min-w-0 space-y-3">
+                  <div
+                    className="flex w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 sm:p-3"
+                    style={{ aspectRatio: COURSE_IMAGE_ASPECT_RATIO }}
+                  >
+                    <img
+                      className={`block max-h-full max-w-full object-contain object-center ${
+                        courseImage === COURSE_IMAGE_FALLBACK ? "p-8 sm:p-10" : ""
+                      }`}
+                      src={courseImage}
+                      alt={course.title}
+                      onError={(event) => {
+                        event.currentTarget.onerror = null;
+                        event.currentTarget.src = COURSE_IMAGE_FALLBACK;
+                        event.currentTarget.className =
+                          "block max-h-full max-w-full object-contain object-center p-8 sm:p-10";
+                      }}
+                    />
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+            {quickFacts.length ? (
+              <div className="order-[-2] grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {quickFacts.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div
+                      key={item.label}
+                      className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_10px_20px_rgba(15,23,42,0.05)]"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 grid h-9 w-9 place-items-center rounded-full bg-primary-50 text-primary-700">
+                          <Icon size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-500">{item.label}</p>
+                          {item.href ? (
+                            <Link
+                              className="mt-1 inline-flex break-words text-sm font-black text-primary-700 underline-offset-2 transition [overflow-wrap:anywhere] hover:text-primary-800 hover:underline"
+                              to={item.href}
+                            >
+                              {item.value}
+                            </Link>
+                          ) : (
+                            <p className="mt-1 break-words text-sm font-black text-slate-900 [overflow-wrap:anywhere]">
+                              {item.value}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {previewVideos.length ? (
+              <div className="overflow-hidden rounded-2xl border border-red-100 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+                <div className="border-b border-red-100 bg-gradient-to-r from-red-50 via-white to-white p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="inline-flex items-center gap-2 rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">
+                        <PlayCircle size={14} />
+                        YouTube
+                      </p>
+                      <h2 className="mt-3 text-xl font-black text-slate-950">
+                        {language === "fa" ? "قبل از خرید، کورس را ببینید" : "Preview The Course Before You Enroll"}
+                      </h2>
+                      <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-600">
+                        {language === "fa"
+                          ? "این ویدیوها توسط استاد اضافه شده‌اند تا سبک تدریس، سطح درس و فضای کورس را قبل از ثبت‌نام بهتر بشناسید."
+                          : "These videos were added by the teacher so you can understand the teaching style, lesson level, and course feel before enrolling."}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-red-100 bg-white px-3 py-1 text-xs font-black text-red-700">
+                      {language === "fa"
+                        ? `${previewVideos.length} ویدیو`
+                        : `${previewVideos.length} videos`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
+                  {previewVideos.map((videoItem, index) => (
+                    <div
+                      key={`${videoItem.url}-${index}`}
+                      className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950"
+                    >
+                      <div className="aspect-video bg-slate-900">
+                        {videoItem.embedUrl ? (
+                          <iframe
+                            className="h-full w-full"
+                            src={videoItem.embedUrl}
+                            title={`${course.title} preview video ${index + 1}`}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                          />
+                        ) : (
+                          <div className="grid h-full place-items-center p-6 text-center text-sm font-bold text-white">
+                            {language === "fa" ? "پیش‌نمایش مستقیم این لینک در دسترس نیست." : "Direct preview is not available for this link."}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between gap-3 bg-white p-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-slate-500">
+                            {language === "fa" ? `ویدیوی ${index + 1}` : `Preview ${index + 1}`}
+                          </p>
+                          <p className="truncate text-sm font-bold text-slate-900" dir="ltr">{videoItem.url}</p>
+                        </div>
+                        <a
+                          href={videoItem.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-lg border border-red-100 px-3 text-xs font-black text-red-700 transition hover:bg-red-50"
+                        >
+                          <ExternalLink size={14} />
+                          {language === "fa" ? "باز کردن" : "Open"}
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="contents">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                <h2 className="text-xl font-black text-slate-950">
+                  {detail.suitableTitle}
+                </h2>
+                <div className="mt-4 space-y-2.5">
+                  {suitableAudience.length ? suitableAudience.map((item, idx) => (
+                    <p
+                      key={`${item}-${idx}`}
+                      className="flex items-start gap-2 text-sm font-semibold text-slate-700"
+                    >
+                      <CheckCircle2
+                        className="mt-0.5 shrink-0 text-emerald-600"
+                        size={16}
+                      />
+                      <span className="break-words [overflow-wrap:anywhere]">{item}</span>
+                    </p>
+                  )) : (
+                    <p className="text-sm font-semibold text-slate-500">
+                      {language === "fa" ? "هنوز ثبت نشده است." : "Not added yet."}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="-order-1 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                <h2 className="text-xl font-black text-slate-950">
+                  {detail.scheduleTitle}
+                </h2>
+                {sessionProgress ? (
+                  <div className="mt-4 rounded-2xl border border-blue-100 bg-[linear-gradient(135deg,#EFF6FF_0%,#F0FDFA_100%)] p-4">
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div>
+                        <p className="text-[11px] font-black text-slate-500">
+                          {language === "fa" ? "جلسات گذشته" : "Passed"}
+                        </p>
+                        <p className="mt-1 text-xl font-black text-blue-800">
+                          {sessionProgress.completedLessons}
+                        </p>
+                      </div>
+                      <div className="border-x border-blue-100">
+                        <p className="text-[11px] font-black text-slate-500">
+                          {language === "fa" ? "باقی‌مانده" : "Remaining"}
+                        </p>
+                        <p className="mt-1 text-xl font-black text-teal-700">
+                          {Math.max(
+                            0,
+                            sessionProgress.totalLessons -
+                              sessionProgress.completedLessons,
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-black text-slate-500">
+                          {language === "fa" ? "مجموع جلسات" : "Total"}
+                        </p>
+                        <p className="mt-1 text-xl font-black text-slate-950">
+                          {sessionProgress.totalLessons}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-blue-700 to-teal-500 transition-[width] duration-700"
+                        style={{ width: `${sessionProgress.progressPercent}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-center text-[11px] font-bold text-slate-500">
+                      {language === "fa"
+                        ? `${sessionProgress.progressPercent}٪ از جلسات کورس گذشته است`
+                        : `${sessionProgress.progressPercent}% of course sessions have passed`}
+                    </p>
+                  </div>
+                ) : null}
+                <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                  {weeklyScheduleRows.map((row, idx) => (
+                    <div
+                      key={`${row.day}-${idx}`}
+                      className="grid grid-cols-3 gap-2 border-b border-slate-100 px-3 py-3 text-xs font-semibold text-slate-700 last:border-b-0"
+                    >
+                      <span className="truncate">{formatDayLabel(row.day, language)}</span>
+                      <span className="truncate">{row.startTime || "-"}</span>
+                      <span className="truncate text-teal-700">{row.endTime || "-"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                <h2 className="text-xl font-black text-slate-950">
+                  {detail.outcomesTitle}
+                </h2>
+                <div className="mt-4 space-y-2.5">
+                  {learningOutcomes.length ? learningOutcomes.map((item, idx) => (
+                    <p
+                      key={`${item}-${idx}`}
+                      className="flex items-start gap-2 text-sm font-semibold text-slate-700"
+                    >
+                      <CheckCircle2
+                        className="mt-0.5 shrink-0 text-primary-700"
+                        size={16}
+                      />
+                      <span className="break-words [overflow-wrap:anywhere]">{item}</span>
+                    </p>
+                  )) : (
+                    <p className="text-sm font-semibold text-slate-500">
+                      {language === "fa" ? "هنوز ثبت نشده است." : "Not added yet."}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                <h2 className="text-xl font-black text-slate-950">
+                  {detail.requirementsTitle}
+                </h2>
+                <div className="mt-4 space-y-2">
+                  {requirements.length ? requirements.map((item, idx) => (
+                    <div
+                      key={`${item}-${idx}`}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700"
+                    >
+                      <span className="break-words [overflow-wrap:anywhere]">{item}</span>
+                    </div>
+                  )) : (
+                    <p className="text-sm font-semibold text-slate-500">
+                      {language === "fa" ? "هنوز ثبت نشده است." : "Not added yet."}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+              <h2 className="text-xl font-black text-slate-950">{detail.tabs[1]}</h2>
+              <div
+                className={`mt-3 max-h-[520px] space-y-2 overflow-y-auto pe-1 ${
+                  dir === "rtl" ? "[direction:ltr]" : ""
+                }`}
+              >
+                {syllabusItems.length ? syllabusItems.map((item, index) => (
+                  <div
+                    key={`${item}-${index}`}
+                    className={`flex min-h-11 items-center justify-between gap-4 rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-800 ${
+                      dir === "rtl" ? "[direction:rtl]" : ""
+                    }`}
+                  >
+                    <span className="break-words [overflow-wrap:anywhere]">{item}</span>
+                  </div>
+                )) : (
+                  <p className="text-sm font-semibold text-slate-500">
+                    {language === "fa" ? "هنوز ثبت نشده است." : "Not added yet."}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-xl font-black text-slate-950">
+                  {language === "fa" ? "نظریات شاگردان درباره کورس" : "Student Reviews About This Course"}
+                </h2>
+                <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
+                  {courseReviews.length}
+                </span>
+              </div>
+              {courseReviews.length ? (
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  {courseReviews.map((review, index) => (
+                    <ReviewCard key={review._id || `${review.name}-${index}`} review={review} />
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">
+                  {language === "fa"
+                    ? "هنوز نظری برای این کورس ثبت نشده است."
+                    : "No reviews have been posted for this course yet."}
+                </p>
+              )}
+            </div>
+
+          </div>
+
+          {!isEnrolled ? (
+            <aside className="hidden xl:block">
+              <div className="sticky top-24 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+                <p className="text-center text-xs font-black uppercase tracking-wide text-slate-500">
+                  {detail.priceLabel}
+                </p>
+                <p className="mt-1 text-center text-3xl font-black text-slate-950" dir="ltr">
+                  {priceText}
+                </p>
+                {!course?.isFree ? (
+                  <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-center">
+                    <p className="text-xs font-black text-blue-900">
+                      {paymentPlanLabel}
+                    </p>
+                    <p className="mt-1 text-[11px] font-semibold leading-5 text-blue-700">
+                      {paymentPlanDescription}
+                    </p>
+                  </div>
+                ) : null}
+
+                <button
+                  className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+                  onClick={handlePurchase}
+                  disabled={isStartingPayment}
+                >
+                  {isStartingPayment ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      {language === "fa" ? "در حال انتقال" : "Redirecting"}
+                    </>
+                  ) : (
+                    <>
+                      {purchaseButtonLabel}
+                      <ArrowIcon size={16} />
+                    </>
+                  )}
+                </button>
+
+                <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
+                  {seatInfo.maxStudents > 0 ? (
+                    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                        <UsersRound size={15} className="text-primary-700" />
+                        {detail.stats.remaining}
+                      </div>
+                      <span className="text-sm font-black text-slate-900">
+                        {seatInfo.label}
+                      </span>
+                    </div>
+                  ) : null}
+                  {seatInfo.minimumStudentsToStart > 0 ? (
+                    <div className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${
+                      seatInfo.minimumReached ? "bg-emerald-50" : "bg-amber-50"
+                    }`}>
+                      <div className={`flex items-center gap-2 text-sm font-semibold ${
+                        seatInfo.minimumReached ? "text-emerald-800" : "text-amber-800"
+                      }`}>
+                        <UsersRound size={15} className={seatInfo.minimumReached ? "text-emerald-700" : "text-amber-700"} />
+                        {language === "fa" ? "حداقل شاگرد برای شروع" : "Minimum students to start"}
+                      </div>
+                      <span className={`text-xs font-black ${
+                        seatInfo.minimumReached ? "text-emerald-900" : "text-amber-900"
+                      }`}>
+                        {seatInfo.enrolledStudents} / {seatInfo.minimumStudentsToStart}
+                      </span>
+                    </div>
+                  ) : null}
+                  {!seatInfo.minimumReached ? (
+                    <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold leading-6 text-amber-900">
+                      {language === "fa"
+                        ? "کورس بعد از رسیدن به حداقل شاگردها آماده شروع می‌شود، اما مدرس می‌تواند خودش زودتر صنف را شروع کند."
+                        : "The course becomes ready once the minimum student count is reached, but the teacher can still start the class manually earlier."}
+                    </div>
+                  ) : null}
+                  {startDateText ? (
+                    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                        <CalendarDays size={15} className="text-primary-700" />
+                        {detail.nextBatch}
+                      </div>
+                      <span className="text-xs font-black text-slate-900">
+                        {startDateText}
+                      </span>
+                    </div>
+                  ) : null}
+                  {countdownText ? (
+                    <div className="flex items-center justify-between gap-3 rounded-lg bg-sky-50 px-3 py-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-sky-800">
+                        <Clock3 size={15} className="text-sky-700" />
+                        {language === "fa" ? "زمان تا شروع" : "Starts in"}
+                      </div>
+                      <span className="text-xs font-black text-sky-900">
+                        {countdownText}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-primary-300 hover:text-primary-700"
+                    onClick={handleDownloadSyllabus}
+                  >
+                    <Download size={14} />
+                    {detail.download}
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-primary-300 hover:text-primary-700"
+                    onClick={handleShare}
+                  >
+                    <Share2 size={14} />
+                    {detail.share}
+                  </button>
+                </div>
+              </div>
+            </aside>
+          ) : null}
+        </div>
+      </div>
+
+      {!isEnrolled ? (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur xl:hidden">
+          <div className="mx-auto flex max-w-[1160px] items-center gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                {detail.priceLabel}
+              </p>
+              <p className="truncate text-lg font-black text-slate-950" dir="ltr">
+                {priceText}
+              </p>
+              {!course?.isFree ? (
+                <p className="truncate text-[10px] font-bold text-blue-700">
+                  {paymentPlanLabel}
+                </p>
+              ) : null}
+            </div>
+            <button
+              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+              onClick={handlePurchase}
+              disabled={isStartingPayment}
+            >
+              {isStartingPayment ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  {language === "fa" ? "در حال انتقال" : "Redirecting"}
+                </>
+              ) : (
+                <>
+                  {purchaseButtonLabel}
+                  <ArrowIcon size={15} />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <PaymentMethodModal
+        isOpen={isPaymentMethodModalOpen}
+        onClose={() => setIsPaymentMethodModalOpen(false)}
+        onSelectHesabPay={startHesabPayPurchase}
+        onSelectNowPayments={startNowPaymentsPurchase}
+        language={language}
+        courseTitle={course?.title || ""}
+        hesabPayAmountLabel={hesabPayAmountLabel}
+        cryptoAmountLabel={cryptoPreviewLabel || cryptoAmountLabel}
+        showAfghanistanOptions={String(countryCode || "").toUpperCase() === "AF"}
+        isLoading={isStartingPayment}
+      />
+    </section>
+  );
+}

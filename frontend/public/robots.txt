@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /student/
+Disallow: /login
+Disallow: /register
+Disallow: /payment/success
+Disallow: /payment/failure
+
+Sitemap: https://edutech.study/sitemap.xml
+Host: https://edutech.study
