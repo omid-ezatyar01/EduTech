@@ -562,6 +562,7 @@ export const getOtpEmailStatuses = async (req, res) => {
         email: row.recipientEmail || row.email,
         userName: row.userId?.name || "",
         lastOtpRequestAt: row.lastRequestedAt || row.createdAt,
+        messageId: row.resendEmailId || "",
         resendEmailId: row.resendEmailId || "",
         status: row.emailStatus || "pending",
         reason: row.emailStatusReason || "",

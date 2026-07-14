@@ -56,6 +56,12 @@ const envSchema = Joi.object({
   APP_TIMEZONE: Joi.string().trim().default("Asia/Kabul"),
   MEET_LINK_VISIBLE_BEFORE_MINUTES: Joi.number().integer().min(0).default(0),
   MEET_LINK_DISABLE_AFTER_START_MINUTES: Joi.number().integer().min(0).default(10),
+  SMTP_HOST: Joi.string().trim().allow("").default(""),
+  SMTP_PORT: Joi.number().integer().min(1).max(65535).default(465),
+  SMTP_SECURE: Joi.boolean().truthy("true").falsy("false").default(true),
+  SMTP_USER: Joi.string().trim().allow("").default(""),
+  SMTP_PASS: Joi.string().allow("").default(""),
+  SMTP_FROM_EMAIL: Joi.string().trim().allow("").default(""),
   RESEND_API_KEY: Joi.string().trim().allow("").default(""),
   RESEND_FROM_EMAIL: Joi.string().trim().allow("").default(""),
   RESEND_WEBHOOK_SECRET: Joi.string().trim().allow("").default(""),
@@ -132,8 +138,26 @@ export const validateEnv = () => {
     }
   }
 
-  if (String(value.RESEND_API_KEY || "").trim() && !String(value.RESEND_FROM_EMAIL || "").trim()) {
-    extraErrors.push("RESEND_FROM_EMAIL is required when RESEND_API_KEY is set");
+  const hasAnySmtpConfig = [
+    value.SMTP_HOST,
+    value.SMTP_USER,
+    value.SMTP_PASS,
+    value.SMTP_FROM_EMAIL,
+  ].some((entry) => String(entry || "").trim());
+
+  if (hasAnySmtpConfig) {
+    if (!String(value.SMTP_HOST || "").trim()) {
+      extraErrors.push("SMTP_HOST is required when SMTP email is enabled");
+    }
+    if (!String(value.SMTP_USER || "").trim()) {
+      extraErrors.push("SMTP_USER is required when SMTP email is enabled");
+    }
+    if (!String(value.SMTP_PASS || "").trim()) {
+      extraErrors.push("SMTP_PASS is required when SMTP email is enabled");
+    }
+    if (!String(value.SMTP_FROM_EMAIL || "").trim()) {
+      extraErrors.push("SMTP_FROM_EMAIL is required when SMTP email is enabled");
+    }
   }
 
   if (String(value.NOWPAYMENTS_API_KEY || "").trim()) {

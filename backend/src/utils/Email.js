@@ -1,7 +1,27 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-const getFromEmail = () => process.env.RESEND_FROM_EMAIL;
+const parsePort = (value, fallback = 465) => {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const getSmtpConfig = () => {
+  const port = parsePort(process.env.SMTP_PORT, 465);
+  const secure = String(process.env.SMTP_SECURE || (port === 465 ? "true" : "false")).toLowerCase() === "true";
+
+  return {
+    host: String(process.env.SMTP_HOST || "").trim(),
+    port,
+    secure,
+    auth: {
+      user: String(process.env.SMTP_USER || "").trim(),
+      pass: String(process.env.SMTP_PASS || ""),
+    },
+  };
+};
+
+const createTransporter = () => nodemailer.createTransport(getSmtpConfig());
+const getFromEmail = () => String(process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || "").trim();
 
 export class EmailSendError extends Error {
   constructor(message, { code = "EMAIL_SEND_FAILED", status = "failed", reason = "" } = {}) {
@@ -40,11 +60,13 @@ export const sendEduTechEmail = async ({
   body,
   footerNote = "This email was sent by EduTech.",
 }) => {
-  const { data, error } = await resend.emails.send({
-    from: getFromEmail(),
-    to: [to],
-    subject,
-    html: `
+  try {
+    const transport = createTransporter();
+    const result = await transport.sendMail({
+      from: getFromEmail(),
+      to,
+      subject,
+      html: `
       <!DOCTYPE html>
       <html>
         <head>
@@ -90,16 +112,21 @@ export const sendEduTechEmail = async ({
         </body>
       </html>
     `,
-  });
+    });
 
-  if (error) {
-    console.error("Resend email error:", error);
-    throw new EmailSendError(error.message || "Failed to send email", {
-      reason: error.message || "",
+    return {
+      id: result?.messageId || "",
+      messageId: result?.messageId || "",
+      accepted: result?.accepted || [],
+      rejected: result?.rejected || [],
+      response: result?.response || "",
+    };
+  } catch (error) {
+    console.error("SMTP email error:", error);
+    throw new EmailSendError(error?.message || "Failed to send email", {
+      reason: error?.message || "",
     });
   }
-
-  return data;
 };
 
 export const sendOtpEmail = async ({
@@ -109,13 +136,15 @@ export const sendOtpEmail = async ({
   purpose = "registration",
 }) => {
   const isPasswordReset = purpose === "password_reset";
-  const { data, error } = await resend.emails.send({
-    from: getFromEmail(),
-    to: [to],
-    subject: isPasswordReset
-      ? "Reset your EduTech teacher password"
-      : "Verify your EduTech account",
-    html: `
+  try {
+    const transport = createTransporter();
+    const result = await transport.sendMail({
+      from: getFromEmail(),
+      to,
+      subject: isPasswordReset
+        ? "Reset your EduTech teacher password"
+        : "Verify your EduTech account",
+      html: `
       <!DOCTYPE html>
       <html>
         <head>
@@ -209,22 +238,27 @@ export const sendOtpEmail = async ({
         </body>
       </html>
     `,
-  });
-
-  if (error) {
-    console.error("Resend OTP email error:", {
-      message: error.message,
-      name: error.name,
-      statusCode: error.statusCode,
     });
-    const message = error.message || "Failed to send OTP email";
-    const normalized = String(message).toLowerCase();
+
+    return {
+      id: result?.messageId || "",
+      messageId: result?.messageId || "",
+      accepted: result?.accepted || [],
+      rejected: result?.rejected || [],
+      response: result?.response || "",
+    };
+  } catch (error) {
+    console.error("SMTP OTP email error:", {
+      message: error?.message,
+      name: error?.name,
+      code: error?.code,
+      response: error?.response,
+    });
+    const message = error?.message || "Failed to send OTP email";
     throw new EmailSendError(message, {
-      code: normalized.includes("suppress") ? "OTP_EMAIL_SUPPRESSED" : "OTP_EMAIL_SEND_FAILED",
-      status: normalized.includes("suppress") ? "suppressed" : "failed",
+      code: "OTP_EMAIL_SEND_FAILED",
+      status: "failed",
       reason: message,
     });
   }
-
-  return data;
 };

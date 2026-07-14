@@ -113,9 +113,15 @@ const apiLimiter = rateLimit({
 });
 app.use("/api/", apiLimiter);
 
-const resendWebhookRawBody = express.raw({ type: "application/json" });
-app.post("/api/webhooks/resend", resendWebhookRawBody, handleResendWebhook);
-app.post("/api/v1/webhooks/resend", resendWebhookRawBody, handleResendWebhook);
+const resendWebhookSecret = String(
+  process.env.RESEND_WEBHOOK_SECRET || process.env.RESEND_WEBHOOK_SIGNING_SECRET || "",
+).trim();
+
+if (resendWebhookSecret) {
+  const resendWebhookRawBody = express.raw({ type: "application/json" });
+  app.post("/api/webhooks/resend", resendWebhookRawBody, handleResendWebhook);
+  app.post("/api/v1/webhooks/resend", resendWebhookRawBody, handleResendWebhook);
+}
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "1mb" }));
 app.use(express.urlencoded({

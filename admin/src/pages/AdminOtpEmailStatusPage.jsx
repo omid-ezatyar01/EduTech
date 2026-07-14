@@ -146,7 +146,7 @@ export default function AdminOtpEmailStatusPage() {
                 setPage(1);
                 setSearch(event.target.value);
               }}
-              placeholder="Search email or Resend ID..."
+              placeholder="Search email or message ID..."
               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-10 text-sm font-semibold outline-none focus:border-blue-500 focus:bg-white"
             />
           </div>
@@ -179,7 +179,7 @@ export default function AdminOtpEmailStatusPage() {
               <tr>
                 <th className="rounded-s-xl px-4 py-3">Email</th>
                 <th className="px-4 py-3">Last OTP request</th>
-                <th className="px-4 py-3">Resend email ID</th>
+                <th className="px-4 py-3">Provider message ID</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="rounded-e-xl px-4 py-3">Reason</th>
               </tr>
@@ -203,7 +203,7 @@ export default function AdminOtpEmailStatusPage() {
                       ) : null}
                     </td>
                     <td className="px-4 py-4">{formatDate(row.lastOtpRequestAt, language)}</td>
-                    <td className="px-4 py-4 font-mono text-xs">{row.resendEmailId || "-"}</td>
+                    <td className="px-4 py-4 font-mono text-xs">{row.messageId || row.resendEmailId || "-"}</td>
                     <td className="px-4 py-4">
                       <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black ${statusClasses[row.status] || statusClasses.pending}`}>
                         {row.status}

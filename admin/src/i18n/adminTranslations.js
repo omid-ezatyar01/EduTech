@@ -217,7 +217,7 @@ export const adminTranslations = {
       },
       otpEmailStatus: {
         title: "OTP Email Status",
-        subtitle: "Track Resend delivery status for registration OTP emails",
+        subtitle: "Track OTP email sending status for registration emails",
       },
       reports: {
         title: "Reports",
