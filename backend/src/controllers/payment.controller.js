@@ -37,6 +37,7 @@ import {
   notifyTeacherBankTransferProof,
 } from "../services/webPush.service.js";
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
+import { sendCourseEnrollmentCongratsEmail } from "../utils/Email.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 const DIRECT_CRYPTO_VERIFY_COOLDOWN_AFTER_FAILED_ATTEMPTS = 5;
@@ -1240,6 +1241,8 @@ const approveExternalBankTransferPayment = async ({
     enrollmentId: enrollment._id,
     paymentStatus: "paid",
   });
+  const shouldSendEnrollmentEmail =
+    enrollment.enrollmentStatus !== "active" || enrollment.accessStatus !== "allowed";
   const shouldIncrement = !hasPreviousPaidPayment;
   if (shouldIncrement && course.maxStudents && course.enrolledStudentsCount >= course.maxStudents) {
     throw new Error("Course is full, cannot verify this payment");
@@ -1280,6 +1283,20 @@ const approveExternalBankTransferPayment = async ({
   }
 
   await ensureCourseAutoStarted(course);
+
+  if (shouldSendEnrollmentEmail) {
+    const student = await User.findById(enrollment.studentId).select("name email").lean();
+    if (student?.email) {
+      sendCourseEnrollmentCongratsEmail({
+        to: student.email,
+        name: student.name,
+        courseTitle: course.title,
+        teacherName: teacher?.name || "",
+      }).catch((error) => {
+        console.warn(`Failed to send enrollment email: ${error.message}`);
+      });
+    }
+  }
 
   notifyStudentBankTransferApproved({
     studentId: enrollment.studentId,

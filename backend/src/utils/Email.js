@@ -262,3 +262,32 @@ export const sendOtpEmail = async ({
     });
   }
 };
+
+export const sendCourseEnrollmentCongratsEmail = async ({
+  to,
+  name,
+  courseTitle,
+  teacherName = "",
+}) => {
+  const normalizedCourseTitle = String(courseTitle || "").trim() || "your course";
+  const normalizedTeacherName = String(teacherName || "").trim();
+
+  const bodyParts = [
+    `You are officially enrolled in ${normalizedCourseTitle}, and we are excited to welcome you.`,
+    normalizedTeacherName
+      ? `Your teacher for this course is ${normalizedTeacherName}, and your learning journey can begin now.`
+      : "",
+    "You can sign in to your EduTech student dashboard, open My Courses, and start learning anytime.",
+    "If you need help along the way, the EduTech team is here for you.",
+    "Wishing you a great learning experience and lots of success.",
+  ].filter(Boolean);
+
+  return sendEduTechEmail({
+    to,
+    subject: "Welcome to your EduTech course",
+    heading: "Your enrollment is confirmed",
+    greetingName: name,
+    body: bodyParts.join("\n\n"),
+    footerNote: "This enrollment confirmation was sent by EduTech.",
+  });
+};

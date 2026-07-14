@@ -3,9 +3,11 @@ import Order from "../models/Order.js";
 import PaymentAttempt from "../models/PaymentAttempt.js";
 import Course from "../models/Course.js";
 import Enrollment from "../models/Enrollment.js";
+import User from "../models/User.js";
 import { resolveCourseAccessWindow } from "../utils/courseAccess.js";
 import { syncLegacyPaymentRecord } from "./paymentSync.service.js";
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
+import { sendCourseEnrollmentCongratsEmail } from "../utils/Email.js";
 
 const ACTIVE_STATUS = new Set(["PENDING", "SUCCEEDED", "DUPLICATE_PAYMENT", "MANUAL_REVIEW", "FAILED", "EXPIRED"]);
 const NON_TRANSACTIONAL_MONGO_PATTERNS = [
@@ -113,6 +115,10 @@ export const completePayment = async ({
         studentId: order.userId,
         courseId: order.courseId,
       }), session);
+      const shouldSendEnrollmentEmail =
+        !existingEnrollment ||
+        existingEnrollment.enrollmentStatus !== "active" ||
+        existingEnrollment.accessStatus !== "allowed";
 
       const accessWindow = resolveCourseAccessWindow({
         course,
@@ -159,7 +165,14 @@ export const completePayment = async ({
 
       await ensureCourseAutoStarted(course, { session });
 
-      result = { order: lockedOrder, attempt, payment, enrollment, duplicate: false };
+      result = {
+        order: lockedOrder,
+        attempt,
+        payment,
+        enrollment,
+        duplicate: false,
+        shouldSendEnrollmentEmail,
+      };
     };
 
     if (session) {
@@ -174,10 +187,46 @@ export const completePayment = async ({
   let session = null;
   try {
     session = await mongoose.startSession();
-    return await runCompletion(session);
+    const result = await runCompletion(session);
+    if (result?.enrollment && result?.shouldSendEnrollmentEmail) {
+      const [student, course] = await Promise.all([
+        User.findById(result.order?.userId).select("name email").lean(),
+        Course.findById(result.order?.courseId).select("title").populate("teacher createdBy", "name").lean(),
+      ]);
+      const teacherName = String(course?.teacher?.name || course?.createdBy?.name || "").trim();
+      if (student?.email) {
+        sendCourseEnrollmentCongratsEmail({
+          to: student.email,
+          name: student.name,
+          courseTitle: course?.title || "",
+          teacherName,
+        }).catch((error) => {
+          console.warn(`Failed to send enrollment email: ${error.message}`);
+        });
+      }
+    }
+    return result;
   } catch (error) {
     if (session && usesStandaloneMongo(error)) {
-      return runCompletion(null);
+      const result = await runCompletion(null);
+      if (result?.enrollment && result?.shouldSendEnrollmentEmail) {
+        const [student, course] = await Promise.all([
+          User.findById(result.order?.userId).select("name email").lean(),
+          Course.findById(result.order?.courseId).select("title").populate("teacher createdBy", "name").lean(),
+        ]);
+        const teacherName = String(course?.teacher?.name || course?.createdBy?.name || "").trim();
+        if (student?.email) {
+          sendCourseEnrollmentCongratsEmail({
+            to: student.email,
+            name: student.name,
+            courseTitle: course?.title || "",
+            teacherName,
+          }).catch((sendError) => {
+            console.warn(`Failed to send enrollment email: ${sendError.message}`);
+          });
+        }
+      }
+      return result;
     }
     throw error;
   } finally {

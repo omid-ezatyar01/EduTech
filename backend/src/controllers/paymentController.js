@@ -6,6 +6,7 @@ import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { resolveCourseAccessWindow } from "../utils/courseAccess.js";
+import { sendCourseEnrollmentCongratsEmail } from "../utils/Email.js";
 
 const isPaidStatus = (payment) => {
   return payment.status === "paid" || payment.paymentStatus === "paid";
@@ -149,6 +150,8 @@ export const verifyPaymentByAdmin = asyncHandler(async (req, res) => {
     enrollmentId: enrollment._id,
     paymentStatus: "paid",
   });
+  const shouldSendEnrollmentEmail =
+    enrollment.enrollmentStatus !== "active" || enrollment.accessStatus !== "allowed";
   const shouldIncrement = !hasPreviousPaidPayment;
   if (shouldIncrement && course.maxStudents && course.enrolledStudentsCount >= course.maxStudents) {
     throw new ApiError(400, "Course is full, cannot verify this payment");
@@ -188,6 +191,21 @@ export const verifyPaymentByAdmin = asyncHandler(async (req, res) => {
     await Course.findByIdAndUpdate(course._id, {
       $inc: { enrolledStudentsCount: 1 },
     });
+  }
+
+  if (shouldSendEnrollmentEmail && payment?.studentId) {
+    const student = await User.findById(payment.studentId).select("name email").lean();
+    const teacher = course?.teacher ? await User.findById(course.teacher).select("name").lean() : null;
+    if (student?.email) {
+      sendCourseEnrollmentCongratsEmail({
+        to: student.email,
+        name: student.name,
+        courseTitle: course.title,
+        teacherName: teacher?.name || "",
+      }).catch((error) => {
+        console.warn(`Failed to send enrollment email: ${error.message}`);
+      });
+    }
   }
 
   return res.json(
