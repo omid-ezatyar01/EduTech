@@ -86,7 +86,10 @@ const mapTeacherCourse = (course = {}) => {
     maxStudents: Number(course.maxStudents || 0),
     enrolledStudentsCount: Number(course.enrolledStudentsCount || 0),
     classEndedAt: course.classEndedAt || null,
-    thumbnail: resolveAvatarUrl(course.thumbnail || ""),
+    thumbnail: resolveAvatarUrl(
+      course.thumbnail || "",
+      course?.updatedAt || course?.createdAt || "",
+    ),
   };
 };
 

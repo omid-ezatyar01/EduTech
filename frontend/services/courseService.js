@@ -58,7 +58,7 @@ const mapCourse = (course = {}) => {
     teacherRole: teacherProfile?.role || "",
     teacherAvatar: resolveAvatarUrl(teacherProfile?.avatar || ""),
     bankPaymentAvailable: Boolean(course?.bankPaymentAvailable),
-    thumbnail: resolveAvatarUrl(course?.thumbnail || ""),
+    thumbnail: resolveAvatarUrl(course?.thumbnail || "", course?.updatedAt || course?.createdAt || ""),
     promoVideo: course?.promoVideo || "",
     previewVideoUrls: Array.isArray(course?.previewVideoUrls) && course.previewVideoUrls.length
       ? course.previewVideoUrls

@@ -216,7 +216,10 @@ function mapEnrollmentToCourse(enrollment = {}, language = "fa") {
     description: course.shortDescription || course.description || "",
     teacher: teacher.name || "Teacher",
     teacherAvatar: resolveAvatarUrl(teacher.avatar || ""),
-    thumbnail: resolveAvatarUrl(course.thumbnail || ""),
+    thumbnail: resolveAvatarUrl(
+      course.thumbnail || "",
+      course?.updatedAt || course?.createdAt || "",
+    ),
     courseSlug: course.slug || "",
     courseLink: course.slug || course._id ? buildCoursePath(course) : "/live-courses",
     status,
