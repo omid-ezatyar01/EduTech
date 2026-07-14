@@ -90,6 +90,30 @@ export const updateTeacherProfile = async (payload = {}) => {
     }
 
     if (typeof value === "object" && !(value instanceof Blob)) {
+      if (key === "bankPaymentInfo") {
+        const normalizedBankPaymentInfo = value || {};
+        formData.append(key, JSON.stringify(normalizedBankPaymentInfo));
+        formData.append(
+          "bankAccountHolderName",
+          String(normalizedBankPaymentInfo.accountHolderName || ""),
+        );
+        formData.append(
+          "bankBankName",
+          String(normalizedBankPaymentInfo.bankName || ""),
+        );
+        formData.append(
+          "bankAccountNumber",
+          String(normalizedBankPaymentInfo.accountNumber || ""),
+        );
+        formData.append(
+          "bankCardNumber",
+          String(normalizedBankPaymentInfo.cardNumber || ""),
+        );
+        formData.append("bankIban", String(normalizedBankPaymentInfo.iban || ""));
+        formData.append("bankNote", String(normalizedBankPaymentInfo.note || ""));
+        return;
+      }
+
       formData.append(key, JSON.stringify(value));
       return;
     }

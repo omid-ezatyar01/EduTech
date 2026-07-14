@@ -137,6 +137,126 @@ const normalizeLocaleDigits = (value = "") =>
     return char;
   });
 
+const normalizeDigitsOnly = (value = "") =>
+  normalizeLocaleDigits(value).replace(/[^\d]/g, "");
+
+const normalizeLimitedDigits = (value = "", maxLength = 16) =>
+  normalizeDigitsOnly(value).slice(0, maxLength);
+
+const normalizeBankFreeText = (value = "") =>
+  String(value || "").trim();
+
+const normalizeIbanValue = (value = "") =>
+  normalizeLocaleDigits(value).replace(/\s+/g, "").toUpperCase();
+
+const ibanLengthByCountry = {
+  AF: 24,
+  IR: 26,
+};
+
+const isValidLuhnNumber = (value = "") => {
+  const digits = normalizeDigitsOnly(value);
+  if (!digits) return false;
+
+  let sum = 0;
+  let shouldDouble = false;
+
+  for (let index = digits.length - 1; index >= 0; index -= 1) {
+    let digit = Number(digits[index]);
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+
+  return sum % 10 === 0;
+};
+
+const isValidIbanChecksum = (value = "") => {
+  const iban = normalizeIbanValue(value);
+  if (!/^[A-Z]{2}[0-9A-Z]{13,32}$/.test(iban)) return false;
+
+  const expectedLength = ibanLengthByCountry[iban.slice(0, 2)];
+  if (expectedLength && iban.length !== expectedLength) return false;
+
+  const rearranged = `${iban.slice(4)}${iban.slice(0, 4)}`;
+  let remainder = 0;
+
+  for (const char of rearranged) {
+    const expanded = /\d/.test(char) ? char : String(char.charCodeAt(0) - 55);
+    for (const digit of expanded) {
+      remainder = (remainder * 10 + Number(digit)) % 97;
+    }
+  }
+
+  return remainder === 1;
+};
+
+const normalizeBankPaymentInfo = (value = {}) => ({
+  accountHolderName: normalizeBankFreeText(value?.accountHolderName || ""),
+  bankName: normalizeBankFreeText(value?.bankName || ""),
+  accountNumber: normalizeLimitedDigits(value?.accountNumber || "", 16),
+  cardNumber: normalizeLimitedDigits(value?.cardNumber || "", 16),
+  iban: normalizeIbanValue(value?.iban || ""),
+  note: normalizeBankFreeText(value?.note || ""),
+});
+
+const validateAndNormalizeBankPaymentInfo = (value = {}, helpers = null) => {
+  const normalized = normalizeBankPaymentInfo(value);
+  const hasAnyValue = Object.values(normalized).some(Boolean);
+
+  if (!hasAnyValue) return normalized;
+
+  if (normalized.accountHolderName.length < 3) {
+    return helpers
+      ? helpers.message("Account holder name must be at least 3 characters")
+      : { error: "Account holder name must be at least 3 characters" };
+  }
+
+  if (normalized.bankName.length < 2) {
+    return helpers
+      ? helpers.message("Bank name must be at least 2 characters")
+      : { error: "Bank name must be at least 2 characters" };
+  }
+
+  if (!normalized.cardNumber && !normalized.accountNumber && !normalized.iban) {
+    return helpers
+      ? helpers.message("Add at least one valid card number, account number, or IBAN")
+      : { error: "Add at least one valid card number, account number, or IBAN" };
+  }
+
+  if (normalized.cardNumber) {
+    if (normalized.cardNumber.length !== 16) {
+      return helpers
+        ? helpers.message("Card number must be exactly 16 digits")
+        : { error: "Card number must be exactly 16 digits" };
+    }
+    if (!isValidLuhnNumber(normalized.cardNumber)) {
+      return helpers
+        ? helpers.message("Card number is not valid")
+        : { error: "Card number is not valid" };
+    }
+  }
+
+  if (normalized.accountNumber) {
+    if (normalized.accountNumber.length < 8 || normalized.accountNumber.length > 16) {
+      return helpers
+        ? helpers.message("Account number must be between 8 and 16 digits")
+        : { error: "Account number must be between 8 and 16 digits" };
+    }
+  }
+
+  if (normalized.iban && !isValidIbanChecksum(normalized.iban)) {
+    return helpers
+      ? helpers.message("IBAN is not valid")
+      : { error: "IBAN is not valid" };
+  }
+
+  return normalized;
+};
+
 const matchPasswordInput = async (user, password = "") => {
   const rawPassword = String(password ?? "");
   if (await user.matchPassword(rawPassword)) return true;
@@ -258,6 +378,14 @@ const publicUserPayload = (req, user, includeToken = false) => {
       whatsapp: user.socialLinks?.whatsapp || "",
       twitter: user.socialLinks?.twitter || "",
       github: user.socialLinks?.github || "",
+    },
+    bankPaymentInfo: {
+      accountHolderName: user.bankPaymentInfo?.accountHolderName || "",
+      bankName: user.bankPaymentInfo?.bankName || "",
+      accountNumber: user.bankPaymentInfo?.accountNumber || "",
+      cardNumber: user.bankPaymentInfo?.cardNumber || "",
+      iban: user.bankPaymentInfo?.iban || "",
+      note: user.bankPaymentInfo?.note || "",
     },
     teacherApplication: {
       status: user.teacherApplication?.status || "draft",
@@ -412,6 +540,20 @@ const updateProfileSchema = Joi.object({
     twitter: Joi.string().trim().max(250).allow(""),
     github: Joi.string().trim().max(250).allow(""),
   }),
+  bankPaymentInfo: Joi.object({
+    accountHolderName: Joi.string().trim().max(160).allow(""),
+    bankName: Joi.string().trim().max(160).allow(""),
+    accountNumber: Joi.string().trim().max(80).allow(""),
+    cardNumber: Joi.string().trim().max(80).allow(""),
+    iban: Joi.string().trim().max(80).allow(""),
+    note: Joi.string().trim().max(500).allow(""),
+  }).custom((value, helpers) => validateAndNormalizeBankPaymentInfo(value, helpers)),
+  bankAccountHolderName: Joi.string().trim().max(160).allow(""),
+  bankBankName: Joi.string().trim().max(160).allow(""),
+  bankAccountNumber: Joi.string().trim().max(80).allow(""),
+  bankCardNumber: Joi.string().trim().max(80).allow(""),
+  bankIban: Joi.string().trim().max(80).allow(""),
+  bankNote: Joi.string().trim().max(500).allow(""),
   teacherApplication: Joi.object({
     professionalTitle: Joi.string().trim().min(3).max(120).allow(""),
     yearsExperience: Joi.number().min(0).max(80),
@@ -1849,6 +1991,29 @@ export const updateUserProfile = async (req, res) => {
     const rawBody = {
       ...req.body,
       socialLinks: parsePossiblyJson(req.body.socialLinks),
+      bankPaymentInfo: (() => {
+        const parsedBankPaymentInfo = parsePossiblyJson(req.body.bankPaymentInfo);
+        const flatBankPaymentInfo = {
+          accountHolderName: req.body.bankAccountHolderName,
+          bankName: req.body.bankBankName,
+          accountNumber: req.body.bankAccountNumber,
+          cardNumber: req.body.bankCardNumber,
+          iban: req.body.bankIban,
+          note: req.body.bankNote,
+        };
+        const hasFlatBankFields = Object.values(flatBankPaymentInfo).some((item) =>
+          String(item || "").trim(),
+        );
+
+        if (parsedBankPaymentInfo && typeof parsedBankPaymentInfo === "object") {
+          return {
+            ...parsedBankPaymentInfo,
+            ...(hasFlatBankFields ? flatBankPaymentInfo : {}),
+          };
+        }
+
+        return hasFlatBankFields ? flatBankPaymentInfo : parsedBankPaymentInfo;
+      })(),
       teacherApplication: parsePossiblyJson(req.body.teacherApplication),
       notifications: parsePossiblyJson(req.body.notifications),
       removeAvatar:
@@ -1919,6 +2084,10 @@ export const updateUserProfile = async (req, res) => {
         twitter: normalizeText(value.socialLinks.twitter || ""),
         github: normalizeText(value.socialLinks.github || ""),
       };
+    }
+
+    if (value.bankPaymentInfo) {
+      user.bankPaymentInfo = validateAndNormalizeBankPaymentInfo(value.bankPaymentInfo);
     }
 
     if (value.teacherApplication || value.teacherApplicationAction) {

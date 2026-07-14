@@ -5,6 +5,7 @@ import Course from "../models/Course.js";
 import Enrollment from "../models/Enrollment.js";
 import Order from "../models/Order.js";
 import PaymentAttempt from "../models/PaymentAttempt.js";
+import User from "../models/User.js";
 import { createPaymentSession, verifyWebhookSignature } from "../services/hesabpay.service.js";
 import {
   createNowPaymentsPayment,
@@ -1189,6 +1190,69 @@ export const getStudentPaymentStatus = async (req, res) => {
   } catch (error) {
     console.error("getStudentPaymentStatus error:", error.message || error);
     return apiError(res, 500, "Internal server error");
+  }
+};
+
+export const getCourseBankPaymentDetails = async (req, res) => {
+  try {
+    const courseId = String(req.params.courseId || "").trim();
+    if (!isValidObjectId(courseId)) {
+      return apiError(res, 400, "Invalid course ID");
+    }
+
+    const course = await Course.findById(courseId)
+      .select("title teacher teacherId createdBy status isPublished")
+      .lean();
+
+    if (!course || !isCoursePurchasable(course)) {
+      return apiError(res, 404, "Course not found");
+    }
+
+    const teacherId = String(course.teacher || course.teacherId || course.createdBy || "").trim();
+    if (!isValidObjectId(teacherId)) {
+      return apiError(res, 404, "Teacher payment information was not found");
+    }
+
+    const teacher = await User.findOne({
+      _id: teacherId,
+      role: "teacher",
+      status: "active",
+      "teacherApplication.status": "approved",
+    })
+      .select("name bankPaymentInfo")
+      .lean();
+
+    if (!teacher) {
+      return apiError(res, 404, "Teacher payment information was not found");
+    }
+
+    const bankPaymentInfo = {
+      accountHolderName: String(teacher.bankPaymentInfo?.accountHolderName || "").trim(),
+      bankName: String(teacher.bankPaymentInfo?.bankName || "").trim(),
+      accountNumber: String(teacher.bankPaymentInfo?.accountNumber || "").trim(),
+      cardNumber: String(teacher.bankPaymentInfo?.cardNumber || "").trim(),
+      iban: String(teacher.bankPaymentInfo?.iban || "").trim(),
+      note: String(teacher.bankPaymentInfo?.note || "").trim(),
+    };
+
+    const hasBankInfo = Object.values(bankPaymentInfo).some((value) => Boolean(String(value || "").trim()));
+    if (!hasBankInfo) {
+      return apiError(res, 404, "This teacher has not added bank payment details yet");
+    }
+
+    return apiSuccess(res, {
+      course: {
+        _id: course._id,
+        title: course.title || "",
+      },
+      teacher: {
+        _id: teacher._id,
+        name: teacher.name || "",
+      },
+      bankPaymentInfo,
+    });
+  } catch (error) {
+    return apiError(res, 500, error.message || "Unable to load bank payment details");
   }
 };
 

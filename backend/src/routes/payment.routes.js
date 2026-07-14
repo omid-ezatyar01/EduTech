@@ -3,6 +3,7 @@ import {
   confirmStudentPaymentRedirect,
   createCheckout,
   createHesabPaySession,
+  getCourseBankPaymentDetails,
   getUsdExchangeQuote,
   getUsdExchangeRates,
   getUsdToAfnQuote,
@@ -18,6 +19,7 @@ import requireApprovedTeacher from "../middlewares/requireApprovedTeacher.js";
 import validateRequest from "../middlewares/validateRequest.js";
 import {
   checkoutSchema,
+  courseIdParamSchema,
   teacherIncomeQuerySchema,
   paymentAttemptIdParamSchema,
   paymentStatusParamSchema,
@@ -29,6 +31,13 @@ const router = express.Router();
 router.get("/exchange/quote", getUsdExchangeQuote);
 router.get("/exchange/rates", getUsdExchangeRates);
 router.get("/exchange/usd-afn", getUsdToAfnQuote);
+router.get(
+  "/payments/course-bank-details/:courseId",
+  protect,
+  allowRoles("student"),
+  validateRequest(courseIdParamSchema, "params"),
+  getCourseBankPaymentDetails,
+);
 router.post("/payments/checkout", protect, allowRoles("student"), validateRequest(checkoutSchema), createCheckout);
 router.get("/payments/:paymentAttemptId/status", protect, allowRoles("student"), validateRequest(paymentAttemptIdParamSchema, "params"), getStudentPaymentStatus);
 router.post(

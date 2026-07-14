@@ -12,12 +12,17 @@ import {
   UsersRound,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { createCheckout, createHesabPaySession } from "../../services/paymentGateway.js";
+import {
+  createCheckout,
+  createHesabPaySession,
+  getCourseBankPaymentDetails,
+} from "../../services/paymentGateway.js";
 import { enrollCourse } from "../../services/courseService.js";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 import { resolveAvatarUrl } from "../utils/avatar";
 import { buildCoursePath, buildTeacherPath } from "../utils/routePaths.js";
 import PaymentMethodModal from "./PaymentMethodModal.jsx";
+import BankPaymentDetailsModal from "./BankPaymentDetailsModal.jsx";
 import { shareContent } from "../utils/share";
 import {
   useCryptoUsdtQuoteLabel,
@@ -115,6 +120,9 @@ export default function CourseCard({
   const ArrowIcon = dir === "rtl" ? ArrowLeft : ArrowRight;
   const navigate = useNavigate();
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
+  const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
+  const [isBankDetailsLoading, setIsBankDetailsLoading] = useState(false);
+  const [bankPaymentDetails, setBankPaymentDetails] = useState(null);
   const [hesabPayAmountLabel, setHesabPayAmountLabel] = useState("");
   const [cryptoPreviewLabel, setCryptoPreviewLabel] = useState("");
   const buyLabel = course?.isFree
@@ -329,6 +337,36 @@ export default function CourseCard({
     navigate("/login");
   };
 
+  const handleOpenBankDetails = async () => {
+    if (isBankDetailsLoading) return;
+
+    const courseId = course?._id || course?.id;
+    if (!courseId) return;
+
+    try {
+      setIsBankDetailsLoading(true);
+      const details = await getCourseBankPaymentDetails(courseId);
+      setBankPaymentDetails(details);
+      setIsPaymentMethodModalOpen(false);
+      setIsBankDetailsModalOpen(true);
+    } catch (err) {
+      if (err.message === "NOT_AUTHENTICATED") {
+        navigate("/login");
+        return;
+      }
+      alert(
+        getLocalizedRequestErrorMessage(
+          err,
+          language,
+          "اطلاعات پرداخت بانکی در دسترس نیست.",
+          "Bank payment details are not available.",
+        ),
+      );
+    } finally {
+      setIsBankDetailsLoading(false);
+    }
+  };
+
   return (
     <article
       className={`group relative mx-auto flex h-full w-full max-w-[390px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.08)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_32px_rgba(15,23,42,0.14)] ${
@@ -518,12 +556,20 @@ export default function CourseCard({
           onClose={() => setIsPaymentMethodModalOpen(false)}
           onSelectHesabPay={startHesabPayPurchase}
           onSelectNowPayments={startNowPaymentsPurchase}
+          onSelectBank={handleOpenBankDetails}
           language={language}
           courseTitle={course?.title || ""}
           hesabPayAmountLabel={hesabPayAmountLabel}
           cryptoAmountLabel={cryptoPreviewLabel || cryptoAmountLabel}
-          showAfghanistanOptions={String(countryCode || "").toUpperCase() === "AF"}
+          bankOptionCountryCode={countryCode}
           isLoading={isStartingPayment}
+          isBankLoading={isBankDetailsLoading}
+        />
+        <BankPaymentDetailsModal
+          isOpen={isBankDetailsModalOpen}
+          onClose={() => setIsBankDetailsModalOpen(false)}
+          details={bankPaymentDetails}
+          language={language}
         />
     </article>
   );

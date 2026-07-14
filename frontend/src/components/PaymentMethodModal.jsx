@@ -1,4 +1,4 @@
-import { Coins, CreditCard, Landmark, Sparkles, Store, X } from "lucide-react";
+import { Coins, CreditCard, Landmark, Sparkles, X } from "lucide-react";
 import { createPortal } from "react-dom";
 
 export default function PaymentMethodModal({
@@ -6,15 +6,29 @@ export default function PaymentMethodModal({
   onClose,
   onSelectHesabPay,
   onSelectNowPayments,
+  onSelectBank,
   language = "fa",
   courseTitle = "",
   hesabPayAmountLabel = "",
   cryptoAmountLabel = "",
-  showAfghanistanOptions = false,
+  bankOptionCountryCode = "",
   isLoading = false,
+  isBankLoading = false,
 }) {
   const isFa = language === "fa";
   if (!isOpen) return null;
+  const normalizedCountryCode = String(bankOptionCountryCode || "").trim().toUpperCase();
+  const showBankOption = normalizedCountryCode === "AF" || normalizedCountryCode === "IR";
+  const bankCountryLabel =
+    normalizedCountryCode === "AF"
+      ? isFa
+        ? "افغانستان"
+        : "Afghanistan"
+      : normalizedCountryCode === "IR"
+        ? isFa
+          ? "ایران"
+          : "Iran"
+        : "";
 
   const t = {
     title: isFa ? "روش پرداخت را انتخاب کنید" : "Choose a payment method",
@@ -28,18 +42,15 @@ export default function PaymentMethodModal({
       : "The course amount is converted from USD to AFN before redirecting to the portal.",
     cryptoGateway: isFa ? "پرداخت دالری روی شبکه BSC (BEP20)" : "Dollar payment on BSC (BEP20)",
     cryptoGatewayNote: isFa ? "پرداخت به واحد دالر" : "Pay in USD value",
-    localExchange: isFa ? "صرافی محلی" : "Local Exchange",
-    localExchangeNote: isFa
-      ? "ویژه کاربران افغانستان"
-      : "Available for Afghanistan users",
     bank: isFa ? "بانک" : "Bank",
     bankNote: isFa
-      ? "ویژه کاربران افغانستان"
-      : "Available for Afghanistan users",
+      ? `ویژه کاربران ${bankCountryLabel || "ایران"}`
+      : `Available for ${bankCountryLabel || "Iran"} users`,
     soon: isFa ? "به‌زودی" : "Soon",
     continue: isFa ? "ادامه" : "Continue",
     close: isFa ? "بستن" : "Close",
     loading: isFa ? "در حال آماده‌سازی" : "Preparing",
+    loadingBank: isFa ? "در حال دریافت" : "Loading",
   };
 
   const content = (
@@ -124,36 +135,16 @@ export default function PaymentMethodModal({
             </span>
           </button>
 
-          {showAfghanistanOptions ? (
+          {showBankOption ? (
             <>
               <button
                 type="button"
-                disabled
-                className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-start opacity-60 transition disabled:cursor-not-allowed"
+                onClick={onSelectBank}
+                disabled={isLoading || isBankLoading}
+                className="flex w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-start transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-600 shadow-sm">
-                    <Store size={20} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-black text-slate-950">{t.localExchange}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">
-                      {t.localExchangeNote}
-                    </p>
-                  </div>
-                </div>
-                <span className="text-sm font-black text-slate-500">
-                  {t.soon}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                disabled
-                className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-start opacity-60 transition disabled:cursor-not-allowed"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-600 shadow-sm">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-amber-600 shadow-sm">
                     <Landmark size={20} />
                   </div>
                   <div>
@@ -163,8 +154,8 @@ export default function PaymentMethodModal({
                     </p>
                   </div>
                 </div>
-                <span className="text-sm font-black text-slate-500">
-                  {t.soon}
+                <span className="text-sm font-black text-amber-700">
+                  {isBankLoading ? t.loadingBank : isFa ? "انتخاب" : "Select"}
                 </span>
               </button>
             </>

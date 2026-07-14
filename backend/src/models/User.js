@@ -257,6 +257,38 @@ const userSchema = new mongoose.Schema(
         default: true,
       },
     },
+    bankPaymentInfo: {
+      accountHolderName: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+      bankName: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+      accountNumber: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+      cardNumber: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+      iban: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+      note: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+    },
 
     teacherApplication: {
       status: {

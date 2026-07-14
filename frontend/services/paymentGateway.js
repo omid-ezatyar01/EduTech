@@ -101,6 +101,28 @@ export const createHesabPaySession = async (courseId) => {
   return createCheckout({ courseId, paymentMethod: "HESABPAY_HOSTED" });
 };
 
+export const getCourseBankPaymentDetails = async (courseId) => {
+  const token = getStudentToken();
+  if (!token) throw new Error("NOT_AUTHENTICATED");
+
+  const response = await fetchWithTimeout(
+    `${getApiBase()}/payments/course-bank-details/${encodeURIComponent(courseId)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || !data?.success) {
+    throw makeHttpError("Unable to load bank payment details", response, data);
+  }
+
+  return data;
+};
+
 export const getUsdExchangeQuote = async ({ amountUsd, currencyTo = "AFN" } = {}) => {
   const url = new URL(`${getApiBase()}/exchange/quote`);
   if (Number.isFinite(Number(amountUsd)) && Number(amountUsd) >= 0) {

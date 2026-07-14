@@ -1,13 +1,13 @@
 {
   "ratesBySymbol": {
-    "AFN": 65.725,
+    "AFN": 65.8433,
     "IRR": 42000,
-    "USDT": 1.0011012113324658
+    "USDT": 1.00133177125577
   },
   "savedAtBySymbol": {
-    "AFN": 1783583719218,
-    "IRR": 1783583719218,
-    "USDT": 1783583719218
+    "AFN": 1783999095203,
+    "IRR": 1783999095203,
+    "USDT": 1783999095204
   },
   "sourceBySymbol": {
     "AFN": "currencyfreaks",
@@ -15,8 +15,8 @@
     "USDT": "currencyfreaks"
   },
   "lastKnownGoodBySymbol": {
-    "AFN": 65.725,
+    "AFN": 65.8433,
     "IRR": 42000,
-    "USDT": 1.0011012113324658
+    "USDT": 1.00133177125577
   }
 }
