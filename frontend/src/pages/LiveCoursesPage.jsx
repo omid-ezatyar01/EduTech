@@ -642,7 +642,7 @@ export default function LiveCoursesPage({ t }) {
                 {courseRows.map((row, rowIndex) => (
                   <div
                     key={`course-row-${rowIndex + 1}`}
-                    className="edutech-scrollbar -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2"
+                    className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2"
                     dir={language === "fa" ? "rtl" : "ltr"}
                   >
                     {row.map((course, itemIndex) => (
