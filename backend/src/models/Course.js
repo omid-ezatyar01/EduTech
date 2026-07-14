@@ -3,6 +3,8 @@ import generateSlug from "../utils/generateSlug.js";
 import { deriveCourseSchedule } from "../utils/courseSchedule.js";
 import socialPostsSchema from "./schemas/socialPosts.schema.js";
 
+const SUPPORTED_COURSE_CURRENCIES = ["USD", "AFN", "IRR"];
+
 const scheduleSchema = new mongoose.Schema(
   {
     day: {
@@ -126,7 +128,7 @@ const courseSchema = new mongoose.Schema(
     },
     currency: {
       type: String,
-      enum: ["USD"],
+      enum: SUPPORTED_COURSE_CURRENCIES,
       default: "USD",
       trim: true,
       uppercase: true,
@@ -422,7 +424,7 @@ courseSchema.pre("validate", async function () {
     this.rejectionReason = "";
   }
 
-  if (!this.isFree && Number(this.price || 0) > 0) {
+  if (!this.isFree && Number(this.price || 0) > 0 && !this.currency) {
     this.currency = "USD";
   }
 });

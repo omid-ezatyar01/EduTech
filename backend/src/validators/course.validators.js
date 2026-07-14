@@ -16,6 +16,7 @@ const LANGUAGE_MIN_CHARS = 2;
 const LANGUAGE_MAX_CHARS = 60;
 const PREVIEW_VIDEO_MAX_ITEMS = 5;
 const COURSE_START_DATE_DAYS = [1, 15];
+const COURSE_CURRENCIES = ["USD", "AFN", "IRR"];
 const courseTypeSchema = Joi.string().valid("general", "special");
 const paymentPlanSchema = Joi.string().valid("monthly", "whole_period");
 
@@ -162,7 +163,7 @@ const baseCourseSchema = {
   price: Joi.number().min(0).max(PRICE_MAX_USD).required(),
   discountPrice: Joi.number().min(0).max(PRICE_MAX_USD).default(0),
   teacherDiscountPercentage: Joi.number().min(0).max(100).default(0),
-  currency: Joi.string().valid("USD").default("USD"),
+  currency: Joi.string().valid(...COURSE_CURRENCIES).default("USD"),
   isFree: Joi.boolean().default(false),
   paymentPlan: paymentPlanSchema.default("monthly"),
   duration: Joi.string().trim().max(DURATION_LABEL_MAX_CHARS).allow(""),
@@ -277,7 +278,7 @@ export const updateCourseByAdminSchema = Joi.object({
   price: Joi.number().min(0).max(PRICE_MAX_USD),
   discountPrice: Joi.number().min(0).max(PRICE_MAX_USD),
   teacherDiscountPercentage: Joi.number().min(0).max(100),
-  currency: Joi.string().valid("USD"),
+  currency: Joi.string().valid(...COURSE_CURRENCIES),
   isFree: Joi.boolean(),
   paymentPlan: paymentPlanSchema,
   meetingType: meetingTypeSchema,
@@ -331,7 +332,7 @@ export const updateCourseByTeacherSchema = Joi.object({
   price: Joi.number().min(0).max(PRICE_MAX_USD),
   discountPrice: Joi.number().min(0).max(PRICE_MAX_USD),
   teacherDiscountPercentage: Joi.number().min(0).max(100),
-  currency: Joi.string().valid("USD"),
+  currency: Joi.string().valid(...COURSE_CURRENCIES),
   isFree: Joi.boolean(),
   paymentPlan: paymentPlanSchema,
   duration: Joi.string().trim().max(DURATION_LABEL_MAX_CHARS).allow(""),

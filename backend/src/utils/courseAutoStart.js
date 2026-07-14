@@ -125,13 +125,6 @@ export const ensureCourseAutoStarted = async (course = null, options = {}) => {
   }
 
   const startedAt = options.now ? new Date(options.now) : new Date();
-
-  if (typeof course.save === "function") {
-    course.classStartedAt = startedAt;
-    await course.save(options.session ? { session: options.session } : undefined);
-    return course;
-  }
-
   const courseId = course?._id || course?.id;
   if (!courseId) return course;
 
