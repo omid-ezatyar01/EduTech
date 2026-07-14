@@ -402,9 +402,7 @@ export default function CourseCard({
 
   return (
     <article
-      className={`group relative mx-auto flex h-full w-full max-w-[390px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.08)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_32px_rgba(15,23,42,0.14)] ${
-        isEnrolled ? "min-h-[470px]" : "min-h-[520px]"
-      }`}
+      className="group relative mx-auto flex h-full w-full max-w-[390px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.08)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_32px_rgba(15,23,42,0.14)]"
     >
       <div
         className="relative w-full overflow-hidden bg-slate-100"
@@ -498,89 +496,91 @@ export default function CourseCard({
           {description}
         </p>
 
-        {!isEnrolled ? (
-          <div className={`mt-5 ${language === "fa" ? "text-right" : "text-left"}`}>
-            <p className="text-xs font-black tracking-wide text-slate-500">
-              {uiText.priceTitle}
-            </p>
-            <p className="text-[1.15rem] font-black text-slate-950" dir="ltr">
-              {course?.isFree ? uiText.free : priceLabel}
-            </p>
-            {hasDiscount ? (
-              <p className="text-sm font-bold text-slate-400 line-through" dir="ltr">
-                {oldPriceLabel}
+        <div className="mt-auto pt-4">
+          {!isEnrolled ? (
+            <div className={`${language === "fa" ? "text-right" : "text-left"}`}>
+              <p className="text-xs font-black tracking-wide text-slate-500">
+                {uiText.priceTitle}
               </p>
+              <p className="text-[1.15rem] font-black text-slate-950" dir="ltr">
+                {course?.isFree ? uiText.free : priceLabel}
+              </p>
+              {hasDiscount ? (
+                <p className="text-sm font-bold text-slate-400 line-through" dir="ltr">
+                  {oldPriceLabel}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">
+              {uiText.enrolled}
+            </p>
+          )}
+
+          {countdownText ? (
+            <div className="mt-4 inline-flex w-full items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-black text-sky-800">
+              <Clock3 size={14} />
+              <span>{countdownText}</span>
+            </div>
+          ) : null}
+
+          <div className={`mt-4 text-sm text-slate-500 ${language === "fa" ? "text-right" : "text-left"}`}>
+            <p className="inline-flex flex-wrap items-center gap-1.5">
+              <Star size={14} fill="currentColor" className="text-amber-500" />
+              <span className="font-black text-slate-700">
+                {ratingCount > 0
+                  ? `${uiText.rating} ${rating.toFixed(1)}`
+                  : language === "fa"
+                    ? "هنوز امتیازی نیست"
+                    : "No ratings yet"}
+              </span>
+              <span className="text-slate-300">|</span>
+              <span>
+                {uiText.level} {course?.level || "-"}
+              </span>
+              <span className="text-slate-300">|</span>
+              <span className="inline-flex items-center gap-1">
+                <UsersRound size={14} />
+                {uiText.students} {studentsCount.toLocaleString()}
+              </span>
+            </p>
+          </div>
+
+          <div
+            className={`mt-4 grid grid-cols-1 gap-2 border-t border-slate-100 pt-3 ${
+              isEnrolled ? "" : "sm:grid-cols-2"
+            }`}
+          >
+            <Link
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 transition hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700"
+              to={coursePath}
+            >
+              <CalendarDays size={15} />
+              {labels.details || uiText.seeDetails}
+              <ArrowIcon size={15} />
+            </Link>
+
+            {!isEnrolled ? (
+              <button
+                type="button"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-primary-700 to-primary-600 px-3 text-sm font-black text-white transition hover:from-primary-600 hover:to-primary-500 disabled:cursor-not-allowed disabled:opacity-70"
+                onClick={handleBuy}
+                disabled={isStartingPayment}
+              >
+                {isStartingPayment ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" />
+                    {language === "fa" ? "در حال انتقال" : "Redirecting"}
+                  </>
+                ) : (
+                  <>
+                    <CreditCard size={15} />
+                    {buyLabel}
+                  </>
+                )}
+              </button>
             ) : null}
           </div>
-        ) : (
-          <p className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">
-            {uiText.enrolled}
-          </p>
-        )}
-
-        {countdownText ? (
-          <div className="mt-4 inline-flex w-full items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-black text-sky-800">
-            <Clock3 size={14} />
-            <span>{countdownText}</span>
-          </div>
-        ) : null}
-
-        <div className={`mt-4 text-sm text-slate-500 ${language === "fa" ? "text-right" : "text-left"}`}>
-          <p className="inline-flex flex-wrap items-center gap-1.5">
-            <Star size={14} fill="currentColor" className="text-amber-500" />
-            <span className="font-black text-slate-700">
-              {ratingCount > 0
-                ? `${uiText.rating} ${rating.toFixed(1)}`
-                : language === "fa"
-                  ? "هنوز امتیازی نیست"
-                  : "No ratings yet"}
-            </span>
-            <span className="text-slate-300">|</span>
-            <span>
-              {uiText.level} {course?.level || "-"}
-            </span>
-            <span className="text-slate-300">|</span>
-            <span className="inline-flex items-center gap-1">
-              <UsersRound size={14} />
-              {uiText.students} {studentsCount.toLocaleString()}
-            </span>
-          </p>
-        </div>
-
-        <div
-          className={`mt-4 pt-3 grid grid-cols-1 gap-2 ${
-            isEnrolled ? "" : "sm:grid-cols-2"
-          }`}
-        >
-          <Link
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 transition hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700"
-            to={coursePath}
-          >
-            <CalendarDays size={15} />
-            {labels.details || uiText.seeDetails}
-            <ArrowIcon size={15} />
-          </Link>
-
-          {!isEnrolled ? (
-            <button
-              type="button"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-primary-700 to-primary-600 px-3 text-sm font-black text-white transition hover:from-primary-600 hover:to-primary-500 disabled:cursor-not-allowed disabled:opacity-70"
-              onClick={handleBuy}
-              disabled={isStartingPayment}
-            >
-              {isStartingPayment ? (
-                <>
-                  <Loader2 size={15} className="animate-spin" />
-                  {language === "fa" ? "در حال انتقال" : "Redirecting"}
-                </>
-              ) : (
-                <>
-                  <CreditCard size={15} />
-                  {buyLabel}
-                </>
-              )}
-            </button>
-          ) : null}
         </div>
       </div>
 
