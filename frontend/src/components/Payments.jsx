@@ -117,6 +117,10 @@ const formatPaymentMethod = (payment, language = "fa") => {
     return language === "fa" ? "کریپتو" : "Crypto";
   }
 
+  if (normalizedMethod === "bank_transfer") {
+    return language === "fa" ? "انتقال بانکی" : "Bank Transfer";
+  }
+
   if (payment?.provider) {
     return String(payment.provider).toUpperCase();
   }

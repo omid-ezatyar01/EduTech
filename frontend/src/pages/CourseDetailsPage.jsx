@@ -22,6 +22,7 @@ import {
   createCheckout,
   createHesabPaySession,
   getCourseBankPaymentDetails,
+  submitBankTransferPayment,
 } from "../../services/paymentGateway.js";
 import {
   enrollCourse,
@@ -341,6 +342,7 @@ export default function CourseDetailsPage({ t }) {
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
   const [isBankDetailsLoading, setIsBankDetailsLoading] = useState(false);
+  const [isSubmittingBankProof, setIsSubmittingBankProof] = useState(false);
   const [bankPaymentDetails, setBankPaymentDetails] = useState(null);
   const [hesabPayAmountLabel, setHesabPayAmountLabel] = useState("");
   const [cryptoPreviewLabel, setCryptoPreviewLabel] = useState("");
@@ -606,6 +608,37 @@ export default function CourseDetailsPage({ t }) {
       );
     } finally {
       setIsBankDetailsLoading(false);
+    }
+  };
+
+  const handleSubmitBankProof = async ({ senderAccount, note, paymentProof }) => {
+    const courseId = course?._id || course?.id;
+    if (!courseId) return;
+
+    try {
+      setIsSubmittingBankProof(true);
+      const response = await submitBankTransferPayment({
+        courseId,
+        countryCode,
+        paymentProof,
+        senderAccount,
+        note,
+      });
+      setBankPaymentDetails((current) => (current ? {
+        ...current,
+        submissionState: {
+          hasSubmission: true,
+          canResubmit: false,
+          status: "pending_review",
+          reviewStatus: response?.payment?.bankTransferReviewStatus || "pending_teacher_review",
+          paymentStatus: response?.payment?.paymentStatus || "pending",
+          submittedAt: response?.payment?.paymentProofSubmittedAt || new Date().toISOString(),
+          message: "Your previous bank transfer proof is still waiting for teacher review.",
+        },
+      } : current));
+      window.dispatchEvent(new Event("edutech_data_changed"));
+    } finally {
+      setIsSubmittingBankProof(false);
     }
   };
 
@@ -1470,6 +1503,7 @@ export default function CourseDetailsPage({ t }) {
         hesabPayAmountLabel={hesabPayAmountLabel}
         cryptoAmountLabel={cryptoPreviewLabel || cryptoAmountLabel}
         bankOptionCountryCode={countryCode}
+        isBankPaymentAvailable={Boolean(course?.bankPaymentAvailable)}
         isLoading={isStartingPayment}
         isBankLoading={isBankDetailsLoading}
       />
@@ -1478,6 +1512,8 @@ export default function CourseDetailsPage({ t }) {
         onClose={() => setIsBankDetailsModalOpen(false)}
         details={bankPaymentDetails}
         language={language}
+        onSubmitProof={handleSubmitBankProof}
+        isSubmittingProof={isSubmittingBankProof}
       />
     </section>
   );

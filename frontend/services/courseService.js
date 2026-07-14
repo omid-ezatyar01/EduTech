@@ -57,6 +57,7 @@ const mapCourse = (course = {}) => {
     teacherBio: teacherProfile?.bio || "",
     teacherRole: teacherProfile?.role || "",
     teacherAvatar: resolveAvatarUrl(teacherProfile?.avatar || ""),
+    bankPaymentAvailable: Boolean(course?.bankPaymentAvailable),
     thumbnail: resolveAvatarUrl(course?.thumbnail || ""),
     promoVideo: course?.promoVideo || "",
     previewVideoUrls: Array.isArray(course?.previewVideoUrls) && course.previewVideoUrls.length
@@ -117,11 +118,10 @@ export const fetchPublishedCourses = async (query = {}) => {
   });
 
   const suffix = params.toString() ? `?${params.toString()}` : "";
-  const data = await fetchJsonWithCache(
-    `${getApiBase()}/courses${suffix}`,
-    {},
-    { ttlMs: getApiCacheTtl() },
-  );
+  const response = await fetch(`${getApiBase()}/courses${suffix}`, {
+    cache: "no-store",
+  });
+  const data = await parseJsonResponse(response);
 
   const rows = Array.isArray(data?.data) ? data.data : [];
   const meta = data?.meta || {};
@@ -133,11 +133,10 @@ export const fetchPublishedCourses = async (query = {}) => {
 };
 
 export const fetchPublishedCourseBySlug = async (slug) => {
-  const data = await fetchJsonWithCache(
-    `${getApiBase()}/courses/${encodeURIComponent(slug)}`,
-    {},
-    { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_DETAIL_CACHE_TTL_MS }) },
-  );
+  const response = await fetch(`${getApiBase()}/courses/${encodeURIComponent(slug)}`, {
+    cache: "no-store",
+  });
+  const data = await parseJsonResponse(response);
   const row = data?.data || null;
   if (!row) return null;
   return mapCourse(row);

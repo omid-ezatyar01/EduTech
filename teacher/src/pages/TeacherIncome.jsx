@@ -10,6 +10,7 @@ import {
   Eye,
   Filter,
   Globe2,
+  Landmark,
   RefreshCw,
   Wallet,
   X,
@@ -19,7 +20,13 @@ import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPageLoader from "../components/common/TeacherPageLoader";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
 import useLiveDataRefresh from "../hooks/useLiveDataRefresh";
-import { fetchTeacherEarningsSummary } from "../../services/teacherPortalService";
+import {
+  approveTeacherBankTransferPayment,
+  fetchTeacherBankTransferPayments,
+  fetchTeacherEarningsSummary,
+  rejectTeacherBankTransferPayment,
+} from "../../services/teacherPortalService";
+import { getApiBase } from "../../services/http";
 import { getAuthUser } from "../../services/portal";
 import {
   getTeacherPageCacheKey,
@@ -77,6 +84,15 @@ const formatCompactDate = (value, language = "fa") => {
   }
 };
 
+const resolveProofUrl = (value = "") => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const apiBase = getApiBase();
+  const apiOrigin = apiBase.replace(/\/api\/v\d+$/i, "").replace(/\/+$/, "");
+  return `${apiOrigin}${raw.startsWith("/") ? raw : `/${raw}`}`;
+};
+
 const getPaymentSnapshotLabel = (item = {}) => {
   if (item?.pricingSnapshotLabel) return item.pricingSnapshotLabel;
 
@@ -113,6 +129,10 @@ const DEFAULT_SUMMARY = {
   totalRevenue: 0,
   platformCommission: 0,
   teacherEarnings: 0,
+  teacherPayoutDue: 0,
+  directToTeacherAmount: 0,
+  platformDeductionDue: 0,
+  externalCollectedRevenue: 0,
   paymentsCount: 0,
   paidRowsCount: 0,
   unpaidRowsCount: 0,
@@ -164,6 +184,8 @@ const applyTeacherIncomeFilters = (data, filters = {}) => {
         paymentsCount: 0,
         totalRevenue: 0,
         teacherEarnings: 0,
+        directToTeacherAmount: 0,
+        platformDeductionDue: 0,
       };
       extraKeys.forEach((extraKey) => {
         if (!(extraKey in existing)) existing[extraKey] = item[extraKey];
@@ -171,12 +193,16 @@ const applyTeacherIncomeFilters = (data, filters = {}) => {
       existing.paymentsCount += 1;
       existing.totalRevenue += Number(item.baseRevenue || item.totalRevenue || 0);
       existing.teacherEarnings += Number(item.teacherEarnings || 0);
+       existing.directToTeacherAmount += Number(item.directToTeacherAmount || 0);
+       existing.platformDeductionDue += Number(item.platformDeductionDue || 0);
       map.set(key, existing);
     });
     return Array.from(map.values()).map((row) => ({
       ...row,
       totalRevenue: Math.round(row.totalRevenue * 100) / 100,
       teacherEarnings: Math.round(row.teacherEarnings * 100) / 100,
+      directToTeacherAmount: Math.round(row.directToTeacherAmount * 100) / 100,
+      platformDeductionDue: Math.round(row.platformDeductionDue * 100) / 100,
     }));
   };
 
@@ -185,6 +211,10 @@ const applyTeacherIncomeFilters = (data, filters = {}) => {
     totalRevenue: settlementRows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0),
     platformCommission: settlementRows.reduce((sum, row) => sum + Number(row.platformCommission || 0), 0),
     teacherEarnings: settlementRows.reduce((sum, row) => sum + Number(row.teacherEarnings || 0), 0),
+    teacherPayoutDue: settlementRows.reduce((sum, row) => sum + Number(row.teacherPayoutDue || 0), 0),
+    directToTeacherAmount: settlementRows.reduce((sum, row) => sum + Number(row.directToTeacherAmount || 0), 0),
+    platformDeductionDue: settlementRows.reduce((sum, row) => sum + Number(row.platformDeductionDue || 0), 0),
+    externalCollectedRevenue: settlementRows.reduce((sum, row) => sum + Number(row.externalCollectedRevenue || 0), 0),
     paymentsCount: settlementRows.reduce((sum, row) => sum + Number(row.salesCount || 0), 0),
     paidRowsCount: settlementRows.filter((row) => row.status === "paid").length,
     unpaidRowsCount: settlementRows.filter((row) => row.status === "unpaid").length,
@@ -200,6 +230,8 @@ const applyTeacherIncomeFilters = (data, filters = {}) => {
       paymentsCount: row.paymentsCount,
       totalRevenue: row.totalRevenue,
       teacherEarnings: row.teacherEarnings,
+      directToTeacherAmount: row.directToTeacherAmount,
+      platformDeductionDue: row.platformDeductionDue,
     })),
     regionBreakdown: summarizeBy(
       settlementRows.flatMap((row) => row.paymentDetails || []),
@@ -213,6 +245,8 @@ const applyTeacherIncomeFilters = (data, filters = {}) => {
       paymentsCount: row.paymentsCount,
       totalRevenue: row.totalRevenue,
       teacherEarnings: row.teacherEarnings,
+      directToTeacherAmount: row.directToTeacherAmount,
+      platformDeductionDue: row.platformDeductionDue,
     })),
   };
 };
@@ -230,6 +264,9 @@ export default function TeacherIncome() {
     payoutStatus: "",
   });
   const [selectedRow, setSelectedRow] = useState(null);
+  const [pendingBankPayments, setPendingBankPayments] = useState([]);
+  const [bankPaymentsLoading, setBankPaymentsLoading] = useState(false);
+  const [bankReviewLoadingId, setBankReviewLoadingId] = useState("");
 
   const teacher = useMemo(() => {
     const user = getAuthUser();
@@ -316,7 +353,35 @@ export default function TeacherIncome() {
       mounted = false;
       controller.abort();
     };
-  }, [filters.courseId, filters.month, filters.paymentPlan, filters.payoutStatus, refreshSeed]);
+  }, [filters, language, refreshSeed]);
+
+  useEffect(() => {
+    let mounted = true;
+    const controller = new AbortController();
+
+    const loadPendingBankPayments = async () => {
+      try {
+        setBankPaymentsLoading(true);
+        const rows = await fetchTeacherBankTransferPayments({
+          signal: controller.signal,
+          status: "pending_teacher_review",
+        });
+        if (!mounted) return;
+        setPendingBankPayments(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (!mounted) return;
+        setPendingBankPayments([]);
+      } finally {
+        if (mounted) setBankPaymentsLoading(false);
+      }
+    };
+
+    loadPendingBankPayments();
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
+  }, [refreshSeed]);
 
   const filterSummary = useMemo(() => {
     if (filters.month || filters.courseId || filters.paymentPlan || filters.payoutStatus) {
@@ -354,29 +419,34 @@ export default function TeacherIncome() {
     [language, summary.regionBreakdown],
   );
 
+  const paymentSourceSummary = useMemo(() => {
+    return summary.recentPayments.reduce(
+      (acc, row) => {
+        if (row?.isExternalCollection) {
+          acc.directCount += 1;
+          acc.directAmount += Number(row.directToTeacherAmount || row.teacherEarnings || 0);
+          acc.deductionDue += Number(row.platformDeductionDue || 0);
+        } else {
+          acc.platformCount += 1;
+          acc.platformRevenue += Number(row.totalRevenue || 0);
+          acc.platformTeacherShare += Number(row.teacherEarnings || 0);
+        }
+        return acc;
+      },
+      {
+        directCount: 0,
+        directAmount: 0,
+        deductionDue: 0,
+        platformCount: 0,
+        platformRevenue: 0,
+        platformTeacherShare: 0,
+      },
+    );
+  }, [summary.recentPayments]);
+
   const paidSettlementSummary = useMemo(() => {
     return summary.settlementRows
       .filter((row) => row.status === "paid")
-      .reduce(
-        (acc, row) => {
-          acc.totalRevenue += Number(row.totalRevenue || 0);
-          acc.platformCommission += Number(row.platformCommission || 0);
-          acc.teacherEarnings += Number(row.teacherEarnings || 0);
-          acc.paymentsCount += Number(row.salesCount || 0);
-          return acc;
-        },
-        {
-          totalRevenue: 0,
-          platformCommission: 0,
-          teacherEarnings: 0,
-          paymentsCount: 0,
-        },
-      );
-  }, [summary.settlementRows]);
-
-  const unpaidSettlementSummary = useMemo(() => {
-    return summary.settlementRows
-      .filter((row) => row.status === "unpaid")
       .reduce(
         (acc, row) => {
           acc.totalRevenue += Number(row.totalRevenue || 0);
@@ -428,12 +498,32 @@ export default function TeacherIncome() {
     {
       icon: CircleDollarSign,
       title: language === "fa" ? "در انتظار تسویه" : "Awaiting Payout",
-      value: formatMoney(unpaidSettlementSummary.teacherEarnings, language),
+      value: formatMoney(summary.teacherPayoutDue, language),
       description:
         language === "fa"
-          ? `${unpaidSettlementSummary.paymentsCount || 0} پرداخت در ${summary.unpaidRowsCount || 0} دوره`
-          : `${unpaidSettlementSummary.paymentsCount || 0} payments across ${summary.unpaidRowsCount || 0} waiting cycles`,
+          ? "فقط سهمی که باید از طرف پلتفرم به شما پرداخت شود"
+          : "Only the share still payable to you by the platform",
       tone: "violet",
+    },
+    {
+      icon: CreditCard,
+      title: language === "fa" ? "دریافت مستقیم بانکی" : "Direct Bank Collections",
+      value: formatMoney(summary.directToTeacherAmount, language),
+      description:
+        language === "fa"
+          ? "مبلغی که مستقیماً به کارت/حساب شما واریز شده است"
+          : "Amount students paid directly into your bank/card",
+      tone: "amber",
+    },
+    {
+      icon: Percent,
+      title: language === "fa" ? "سهم قابل‌کسر سیستم" : "Platform Deduction Due",
+      value: formatMoney(summary.platformDeductionDue, language),
+      description:
+        language === "fa"
+          ? "مبلغی که از پرداخت‌های بانکی مستقیم باید به سیستم تعلق بگیرد"
+          : "Amount owed to the platform from direct bank payments",
+      tone: "blue",
     },
   ];
 
@@ -469,6 +559,30 @@ export default function TeacherIncome() {
       paymentPlan: "",
       payoutStatus: "",
     });
+  };
+
+  const handleBankPaymentReview = async (paymentId, action) => {
+    if (!paymentId) return;
+
+    try {
+      setBankReviewLoadingId(paymentId);
+      if (action === "approve") {
+        await approveTeacherBankTransferPayment(paymentId, "");
+      } else {
+        await rejectTeacherBankTransferPayment(paymentId, "");
+      }
+      setPendingBankPayments((prev) => prev.filter((item) => String(item?._id || "") !== String(paymentId)));
+      setRefreshSeed((prev) => prev + 1);
+    } catch (err) {
+      setError(
+        err?.message ||
+          (language === "fa"
+            ? "بررسی پرداخت بانکی انجام نشد."
+            : "Unable to review bank transfer payment."),
+      );
+    } finally {
+      setBankReviewLoadingId("");
+    }
   };
 
   return (
@@ -621,6 +735,110 @@ export default function TeacherIncome() {
           />
         ) : (
           <>
+            <SectionCard
+              title={language === "fa" ? "رسیدهای بانکی در انتظار تایید" : "Pending Bank Transfer Proofs"}
+              subtitle={
+                language === "fa"
+                  ? "وقتی شاگرد رسید انتقال بانکی را می‌فرستد، از این بخش آن را تایید یا رد کنید."
+                  : "When a student sends a bank-transfer receipt, approve or reject it here."
+              }
+            >
+              <div className="space-y-3 p-4">
+                {bankPaymentsLoading ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-600">
+                    {language === "fa" ? "در حال بارگذاری رسیدها..." : "Loading proofs..."}
+                  </div>
+                ) : pendingBankPayments.length === 0 ? (
+                  <EmptyCard
+                    label={language === "fa" ? "فعلاً رسید بانکی در انتظار ندارید." : "No bank-transfer proofs are waiting right now."}
+                  />
+                ) : (
+                  pendingBankPayments.map((payment) => {
+                    const paymentId = String(payment?._id || "");
+                    const isSaving = bankReviewLoadingId === paymentId;
+                    const proofUrl = resolveProofUrl(payment?.paymentProof);
+                    return (
+                      <div key={paymentId} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                          <div className="min-w-0 flex-1 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <PaymentSourcePill isExternalCollection language={language} />
+                              <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-black text-slate-600">
+                                {language === "fa" ? "در انتظار بررسی شما" : "Waiting for your review"}
+                              </span>
+                            </div>
+                            <p className="text-base font-black text-slate-950">
+                              {payment?.courseId?.title || (language === "fa" ? "کورس" : "Course")}
+                            </p>
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                              <MiniValue label={language === "fa" ? "شاگرد" : "Student"} value={payment?.studentId?.name || payment?.studentId?.email || "-"} />
+                              <MiniValue label={language === "fa" ? "مرجع" : "Reference"} value={payment?.paymentReference || "-"} />
+                              <MiniValue label={language === "fa" ? "فروش پایه" : "Base revenue"} value={formatMoney(Number(payment?.baseAmountUsdCents || 0) / 100, language)} emphasize />
+                              <MiniValue label={language === "fa" ? "فرستنده" : "Sender"} value={payment?.senderAccount || "-"} />
+                            </div>
+                            {payment?.note ? (
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-600">
+                                <span className="font-black text-slate-800">{language === "fa" ? "یادداشت شاگرد:" : "Student note:"}</span> {payment.note}
+                              </div>
+                            ) : null}
+                            {payment?.paymentProof ? (
+                              <div className="space-y-3 xl:hidden">
+                                <a
+                                  href={proofUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-black text-blue-700 transition hover:bg-blue-100"
+                                >
+                                  <Eye size={14} />
+                                  {language === "fa" ? "دیدن رسید" : "View proof"}
+                                </a>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="w-full xl:w-[310px]">
+                            {payment?.paymentProof ? (
+                              <a
+                                href={proofUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mb-3 hidden overflow-hidden rounded-[22px] border border-slate-200 bg-slate-50 xl:block"
+                              >
+                                <img
+                                  src={proofUrl}
+                                  alt={language === "fa" ? "رسید پرداخت" : "Payment proof"}
+                                  className="block h-48 w-full object-cover"
+                                  loading="lazy"
+                                />
+                              </a>
+                            ) : null}
+                            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                              <button
+                                type="button"
+                                onClick={() => handleBankPaymentReview(paymentId, "approve")}
+                                disabled={isSaving}
+                                className="inline-flex min-h-[46px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+                              >
+                                {isSaving ? (language === "fa" ? "..." : "...") : language === "fa" ? "تایید و فعال‌سازی شاگرد" : "Approve and activate student"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleBankPaymentReview(paymentId, "reject")}
+                                disabled={isSaving}
+                                className="inline-flex min-h-[46px] items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
+                              >
+                                {language === "fa" ? "رد و اجازه ارسال دوباره" : "Reject and allow resubmission"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </SectionCard>
+
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {statCards.map((item) => (
                 <StatCard
@@ -633,6 +851,48 @@ export default function TeacherIncome() {
                 />
               ))}
             </div>
+
+            <SectionCard
+              title={language === "fa" ? "تفکیک روشن مسیر پول" : "Clear Money Flow Split"}
+              subtitle={
+                language === "fa"
+                  ? "یک بخش پول‌هایی است که پلتفرم جمع کرده و باید برای شما تسویه کند. بخش دیگر پول‌هایی است که مستقیم به حساب شما رسیده و فقط سهم سیستم از آن باقی مانده است."
+                  : "One side is money the platform collected and settles to you. The other side is money students paid directly to you, where only the platform deduction remains due."
+              }
+            >
+              <div className="grid gap-4 p-4 lg:grid-cols-2">
+                <MoneyFlowCard
+                  title={language === "fa" ? "پول‌های پلتفرمی" : "Platform-collected money"}
+                  amount={formatMoney(summary.teacherPayoutDue + paidSettlementSummary.teacherEarnings, language)}
+                  note={
+                    language === "fa"
+                      ? "این پرداخت‌ها اول به سیستم رسیده‌اند و سهم شما از همان‌جا برایتان پرداخت می‌شود."
+                      : "These payments were collected by the platform first, then your share is released from the platform."
+                  }
+                  accent="emerald"
+                  bullets={[
+                    `${language === "fa" ? "سهم پرداخت‌شده به شما" : "Already paid to you"}: ${formatMoney(paidSettlementSummary.teacherEarnings, language)}`,
+                    `${language === "fa" ? "در انتظار تسویه" : "Still awaiting payout"}: ${formatMoney(summary.teacherPayoutDue, language)}`,
+                    `${language === "fa" ? "تعداد این پرداخت‌ها" : "Payments in this flow"}: ${paymentSourceSummary.platformCount}`,
+                  ]}
+                />
+                <MoneyFlowCard
+                  title={language === "fa" ? "پول‌های مستقیم به شما" : "Direct-to-you money"}
+                  amount={formatMoney(summary.directToTeacherAmount, language)}
+                  note={
+                    language === "fa"
+                      ? "این مبلغ مستقیم به کارت یا حساب شما رفته و داخل موجودی پلتفرم نیست."
+                      : "This amount went straight to your own bank/card and is not held by the platform."
+                  }
+                  accent="amber"
+                  bullets={[
+                    `${language === "fa" ? "سهم قابل‌کسر سیستم" : "Platform deduction due"}: ${formatMoney(summary.platformDeductionDue, language)}`,
+                    `${language === "fa" ? "پرداخت‌های مستقیم" : "Direct payments"}: ${paymentSourceSummary.directCount}`,
+                    `${language === "fa" ? "مانده نزد شما بعد از کسر" : "Remaining with you after deduction"}: ${formatMoney(Math.max(0, summary.directToTeacherAmount - summary.platformDeductionDue), language)}`,
+                  ]}
+                />
+              </div>
+            </SectionCard>
 
             <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
               {insightCards.map((item) => (
@@ -694,13 +954,15 @@ export default function TeacherIncome() {
                       <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "مبلغ پرداختی" : "Charged Amount"}</th>
                       <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "فروش پایه" : "Base Revenue"}</th>
                       <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "سهم مدرس" : "Teacher Share"}</th>
+                      <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "دریافت مستقیم" : "Direct Collection"}</th>
+                      <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "کسر سیستم" : "Platform Deduction"}</th>
                       <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "تاریخ" : "Paid At"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {summary.recentPayments.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                        <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
                           {language === "fa" ? "هیچ پرداخت اخیر یافت نشد." : "No recent payments were found."}
                         </td>
                       </tr>
@@ -708,7 +970,13 @@ export default function TeacherIncome() {
                       summary.recentPayments.map((row) => (
                         <tr key={row.paymentId || `${row.courseId}-${row.paidAt || row.monthKey}`} className="hover:bg-slate-50/70">
                           <td className="px-4 py-3 font-bold text-slate-900">{row.courseTitle}</td>
-                          <td className="px-4 py-3 font-semibold text-slate-700">{row.paymentMethod}</td>
+                          <td className="px-4 py-3">
+                            <div className="space-y-2">
+                              <p className="font-semibold text-slate-700">{row.paymentMethod}</p>
+                              <PaymentMethodPill methodCode={row.paymentMethodCode} methodLabel={row.paymentMethod} language={language} />
+                              <PaymentSourcePill isExternalCollection={Boolean(row.isExternalCollection)} language={language} />
+                            </div>
+                          </td>
                           <td className="px-4 py-3">
                             <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
                               {row.regionLabel}
@@ -725,6 +993,12 @@ export default function TeacherIncome() {
                           </td>
                           <td className="px-4 py-3 font-black text-emerald-700" dir="ltr">
                             {formatMoney(row.teacherEarnings, language)}
+                          </td>
+                          <td className="px-4 py-3 font-black text-amber-700" dir="ltr">
+                            {formatMoney(row.directToTeacherAmount, language)}
+                          </td>
+                          <td className="px-4 py-3 font-black text-blue-700" dir="ltr">
+                            {formatMoney(row.platformDeductionDue, language)}
                           </td>
                           <td className="px-4 py-3 text-xs font-semibold text-slate-500">
                             {formatCompactDate(row.paidAt, language)}
@@ -773,6 +1047,8 @@ export default function TeacherIncome() {
                       <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "کل فروش" : "Revenue"}</th>
                       <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "سهم سیستم" : "Platform Cut"}</th>
                       <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "سهم مدرس" : "Teacher Share"}</th>
+                      <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "دریافت مستقیم" : "Direct Collection"}</th>
+                      <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "کسر سیستم" : "Platform Deduction"}</th>
                       <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "وضعیت تسویه" : "Payout Status"}</th>
                       <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "جزئیات" : "Details"}</th>
                     </tr>
@@ -780,7 +1056,7 @@ export default function TeacherIncome() {
                   <tbody className="divide-y divide-slate-100">
                     {summary.settlementRows.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
+                        <td colSpan={11} className="px-4 py-10 text-center text-slate-500">
                           {language === "fa" ? "برای این فیلتر درآمدی پیدا نشد." : "No income rows were found for this filter."}
                         </td>
                       </tr>
@@ -808,6 +1084,12 @@ export default function TeacherIncome() {
                             </td>
                             <td className="px-4 py-3 font-black text-emerald-700" dir="ltr">
                               {formatMoney(row.teacherEarnings, language)}
+                            </td>
+                            <td className="px-4 py-3 font-black text-amber-700" dir="ltr">
+                              {formatMoney(row.directToTeacherAmount, language)}
+                            </td>
+                            <td className="px-4 py-3 font-black text-blue-700" dir="ltr">
+                              {formatMoney(row.platformDeductionDue, language)}
                             </td>
                             <td className="px-4 py-3">
                               <div className="space-y-1">
@@ -854,6 +1136,37 @@ function HeroMetricCard({ title, value, note }) {
       <p className="text-xs font-black uppercase tracking-wide text-slate-400">{title}</p>
       <p className="mt-2 text-xl font-black text-slate-950">{value}</p>
       <p className="mt-2 text-xs font-semibold text-slate-500">{note}</p>
+    </article>
+  );
+}
+
+function MoneyFlowCard({
+  title,
+  amount,
+  note,
+  accent = "blue",
+  bullets = [],
+}) {
+  const accentClass = {
+    blue: "border-blue-200 bg-blue-50/70 text-blue-800",
+    emerald: "border-emerald-200 bg-emerald-50/70 text-emerald-800",
+    amber: "border-amber-200 bg-amber-50/80 text-amber-800",
+  }[accent] || "border-blue-200 bg-blue-50/70 text-blue-800";
+
+  return (
+    <article className={`rounded-[24px] border p-5 ${accentClass}`}>
+      <p className="text-xs font-black uppercase tracking-[0.18em] opacity-75">{title}</p>
+      <p className="mt-3 text-3xl font-black">{amount}</p>
+      <p className="mt-3 text-sm font-semibold leading-6 opacity-90">{note}</p>
+      {bullets.length ? (
+        <div className="mt-4 space-y-2">
+          {bullets.map((item) => (
+            <div key={item} className="rounded-2xl border border-white/60 bg-white/70 px-3 py-2 text-xs font-bold text-slate-700">
+              {item}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -988,9 +1301,17 @@ function BreakdownCard({ icon: Icon, title, rows = [], emptyLabel, language, lab
                       value={formatMoney(row.totalRevenue, language)}
                     />
                     <MiniValue
+                      label={language === "fa" ? "دریافت مستقیم" : "Direct Collection"}
+                      value={formatMoney(row.directToTeacherAmount, language)}
+                    />
+                    <MiniValue
                       label={language === "fa" ? "سهم مدرس" : "Teacher Share"}
                       value={formatMoney(row.teacherEarnings, language)}
                       emphasize
+                    />
+                    <MiniValue
+                      label={language === "fa" ? "کسر سیستم" : "Platform Deduction"}
+                      value={formatMoney(row.platformDeductionDue, language)}
                     />
                   </div>
                 </div>
@@ -1014,13 +1335,73 @@ function MiniValue({ label, value, emphasize = false }) {
   );
 }
 
+function PaymentSourcePill({ isExternalCollection, language }) {
+  return (
+    <span
+      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-black ${
+        isExternalCollection
+          ? "border-amber-200 bg-amber-50 text-amber-700"
+          : "border-emerald-200 bg-emerald-50 text-emerald-700"
+      }`}
+    >
+      {isExternalCollection
+        ? (language === "fa" ? "واریز مستقیم به مدرس" : "Direct to teacher")
+        : (language === "fa" ? "تسویه از طرف پلتفرم" : "Platform-settled")}
+    </span>
+  );
+}
+
+function getPaymentMethodVisual(methodCode = "", methodLabel = "", language = "fa") {
+  const normalized = String(methodCode || methodLabel || "").trim().toLowerCase();
+
+  if (normalized.includes("bank")) {
+    return {
+      icon: Landmark,
+      label: language === "fa" ? "انتقال بانکی" : "Bank transfer",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+
+  if (normalized.includes("usdt") || normalized.includes("crypto") || normalized.includes("nowpayments")) {
+    return {
+      icon: Wallet,
+      label: language === "fa" ? "کریپتو / USDT" : "Crypto / USDT",
+      className: "border-violet-200 bg-violet-50 text-violet-700",
+    };
+  }
+
+  return {
+    icon: CreditCard,
+    label: language === "fa" ? "کارت / حساب‌پی" : "Card / HesabPay",
+    className: "border-blue-200 bg-blue-50 text-blue-700",
+  };
+}
+
+function PaymentMethodPill({ methodCode, methodLabel, language }) {
+  const visual = getPaymentMethodVisual(methodCode, methodLabel, language);
+  const Icon = visual.icon;
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black ${visual.className}`}>
+      <Icon size={12} />
+      {visual.label}
+    </span>
+  );
+}
+
 function MobilePaymentCard({ row, language }) {
+  const isExternalCollection = Boolean(row.isExternalCollection);
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-black text-slate-900">{row.courseTitle}</p>
-          <p className="mt-1 text-xs font-semibold text-slate-500">{row.paymentMethod}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <p className="text-xs font-semibold text-slate-500">{row.paymentMethod}</p>
+            <PaymentMethodPill methodCode={row.paymentMethodCode} methodLabel={row.paymentMethod} language={language} />
+            <PaymentSourcePill isExternalCollection={isExternalCollection} language={language} />
+          </div>
         </div>
         <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
           {row.regionLabel}
@@ -1039,6 +1420,14 @@ function MobilePaymentCard({ row, language }) {
           value={formatMoney(row.teacherEarnings, language)}
           emphasize
         />
+        <MiniValue
+          label={language === "fa" ? "دریافت مستقیم" : "Direct Collection"}
+          value={formatMoney(row.directToTeacherAmount, language)}
+        />
+        <MiniValue
+          label={language === "fa" ? "کسر سیستم" : "Platform Deduction"}
+          value={formatMoney(row.platformDeductionDue, language)}
+        />
       </div>
       <p className="mt-3 text-xs font-semibold text-slate-500">
         {language === "fa" ? "تاریخ پرداخت:" : "Paid at:"} {formatCompactDate(row.paidAt, language)}
@@ -1049,6 +1438,7 @@ function MobilePaymentCard({ row, language }) {
 
 function MobileSettlementCard({ row, language, onOpen }) {
   const status = statusMap[row.status] || statusMap.unpaid;
+  const hasDirectCollection = Number(row.directToTeacherAmount || 0) > 0;
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -1075,11 +1465,26 @@ function MobileSettlementCard({ row, language, onOpen }) {
           value={formatMoney(row.totalRevenue, language)}
         />
         <MiniValue
+          label={language === "fa" ? "دریافت مستقیم" : "Direct Collection"}
+          value={formatMoney(row.directToTeacherAmount, language)}
+        />
+        <MiniValue
           label={language === "fa" ? "سهم مدرس" : "Teacher Share"}
           value={formatMoney(row.teacherEarnings, language)}
           emphasize
         />
+        <MiniValue
+          label={language === "fa" ? "کسر سیستم" : "Platform Deduction"}
+          value={formatMoney(row.platformDeductionDue, language)}
+        />
       </div>
+      {hasDirectCollection ? (
+        <p className="mt-3 text-xs font-semibold text-amber-700">
+          {language === "fa"
+            ? "این مبلغ مستقیم به حساب/کارت شما واریز شده و جدا از تسویه پلتفرم حساب می‌شود."
+            : "This amount was paid straight to your bank/card and is tracked separately from platform payout."}
+        </p>
+      ) : null}
       <button
         type="button"
         onClick={onOpen}
@@ -1124,6 +1529,26 @@ function PaymentDetailsModal({ row, onClose, language }) {
           </button>
         </div>
 
+        <div className="grid gap-3 border-b border-slate-200 bg-slate-50/70 p-4 md:grid-cols-4">
+          <MiniValue
+            label={language === "fa" ? "کل فروش" : "Revenue"}
+            value={formatMoney(row.totalRevenue, language)}
+          />
+          <MiniValue
+            label={language === "fa" ? "سهم مدرس" : "Teacher Share"}
+            value={formatMoney(row.teacherEarnings, language)}
+            emphasize
+          />
+          <MiniValue
+            label={language === "fa" ? "دریافت مستقیم" : "Direct Collection"}
+            value={formatMoney(row.directToTeacherAmount, language)}
+          />
+          <MiniValue
+            label={language === "fa" ? "کسر سیستم" : "Platform Deduction"}
+            value={formatMoney(row.platformDeductionDue, language)}
+          />
+        </div>
+
         <div className="max-h-[75vh] overflow-auto">
           <div className="space-y-3 p-4 md:hidden">
             {details.length === 0 ? (
@@ -1137,6 +1562,11 @@ function PaymentDetailsModal({ row, onClose, language }) {
                     <div>
                       <p className="font-black text-slate-900">{item.studentName}</p>
                       <p className="mt-1 text-xs font-semibold text-slate-500">{item.studentEmail || "-"}</p>
+                      {item.isExternalCollection ? (
+                        <span className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-700">
+                          {language === "fa" ? "واریز مستقیم به مدرس" : "Direct to teacher"}
+                        </span>
+                      ) : null}
                     </div>
                     <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
                       {item.regionLabel}
@@ -1154,6 +1584,14 @@ function PaymentDetailsModal({ row, onClose, language }) {
                       label={language === "fa" ? "سهم مدرس" : "Teacher Share"}
                       value={formatMoney(item.teacherEarnings, language)}
                       emphasize
+                    />
+                    <MiniValue
+                      label={language === "fa" ? "دریافت مستقیم" : "Direct Collection"}
+                      value={formatMoney(item.directToTeacherAmount, language)}
+                    />
+                    <MiniValue
+                      label={language === "fa" ? "کسر سیستم" : "Platform Deduction"}
+                      value={formatMoney(item.platformDeductionDue, language)}
                     />
                   </div>
                   <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1183,6 +1621,8 @@ function PaymentDetailsModal({ row, onClose, language }) {
                 <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "نرخ / اسنپ‌شات روز پرداخت" : "Payment-Day Rate Snapshot"}</th>
                 <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "فروش پایه" : "Base Revenue"}</th>
                 <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "سهم مدرس" : "Teacher Share"}</th>
+                <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "دریافت مستقیم" : "Direct Collection"}</th>
+                <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "کسر سیستم" : "Platform Deduction"}</th>
                 <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "مرجع" : "Reference"}</th>
                 <th className="px-4 py-3 text-start font-bold">{language === "fa" ? "تاریخ" : "Paid At"}</th>
               </tr>
@@ -1190,7 +1630,7 @@ function PaymentDetailsModal({ row, onClose, language }) {
             <tbody className="divide-y divide-slate-100">
               {details.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={12} className="px-4 py-10 text-center text-slate-500">
                     {language === "fa" ? "جزئیات پرداختی برای این ردیف وجود ندارد." : "No payment details are available for this row."}
                   </td>
                 </tr>
@@ -1199,7 +1639,12 @@ function PaymentDetailsModal({ row, onClose, language }) {
                   <tr key={item.paymentId || `${item.studentEmail}-${item.paidAt || ""}`} className="hover:bg-slate-50/70">
                     <td className="px-4 py-3 font-bold text-slate-900">{item.studentName}</td>
                     <td className="px-4 py-3 text-xs font-semibold text-slate-500">{item.studentEmail || "-"}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">{item.paymentMethod}</td>
+                    <td className="px-4 py-3">
+                      <div className="space-y-2">
+                        <p className="font-semibold text-slate-700">{item.paymentMethod}</p>
+                        <PaymentMethodPill methodCode={item.paymentMethodCode} methodLabel={item.paymentMethod} language={language} />
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
                         {item.regionLabel}
@@ -1216,6 +1661,8 @@ function PaymentDetailsModal({ row, onClose, language }) {
                     </td>
                     <td className="px-4 py-3 font-black text-slate-900" dir="ltr">{formatMoney(item.baseRevenue, language)}</td>
                     <td className="px-4 py-3 font-black text-emerald-700" dir="ltr">{formatMoney(item.teacherEarnings, language)}</td>
+                    <td className="px-4 py-3 font-black text-slate-900" dir="ltr">{formatMoney(item.directToTeacherAmount, language)}</td>
+                    <td className="px-4 py-3 font-black text-amber-700" dir="ltr">{formatMoney(item.platformDeductionDue, language)}</td>
                     <td className="px-4 py-3 font-mono text-xs text-slate-500">{item.paymentReference || item.transactionId || "-"}</td>
                     <td className="px-4 py-3 text-xs font-semibold text-slate-500">
                       {formatCompactDate(item.paidAt, language)}

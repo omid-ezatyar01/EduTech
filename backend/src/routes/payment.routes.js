@@ -1,9 +1,11 @@
 import express from "express";
 import {
+  approveTeacherBankTransferPayment,
   confirmStudentPaymentRedirect,
   createCheckout,
   createHesabPaySession,
   getCourseBankPaymentDetails,
+  getTeacherBankTransferPayments,
   getUsdExchangeQuote,
   getUsdExchangeRates,
   getUsdToAfnQuote,
@@ -12,14 +14,21 @@ import {
   getTeacherEarnings,
   hesabPayWebhook,
   nowPaymentsWebhook,
+  rejectTeacherBankTransferPayment,
+  submitBankTransferPayment,
   verifyDirectCryptoPayment,
 } from "../controllers/payment.controller.js";
 import { allowRoles, protect } from "../middlewares/authMiddleware.js";
+import paymentProofUpload from "../middlewares/paymentProofUpload.js";
 import requireApprovedTeacher from "../middlewares/requireApprovedTeacher.js";
 import validateRequest from "../middlewares/validateRequest.js";
 import {
+  bankTransferReviewSchema,
   checkoutSchema,
   courseIdParamSchema,
+  paymentIdParamSchema,
+  submitBankTransferPaymentSchema,
+  teacherBankTransferPaymentsQuerySchema,
   teacherIncomeQuerySchema,
   paymentAttemptIdParamSchema,
   paymentStatusParamSchema,
@@ -39,6 +48,14 @@ router.get(
   getCourseBankPaymentDetails,
 );
 router.post("/payments/checkout", protect, allowRoles("student"), validateRequest(checkoutSchema), createCheckout);
+router.post(
+  "/payments/bank-transfer/submit",
+  protect,
+  allowRoles("student"),
+  paymentProofUpload.single("paymentProof"),
+  validateRequest(submitBankTransferPaymentSchema),
+  submitBankTransferPayment,
+);
 router.get("/payments/:paymentAttemptId/status", protect, allowRoles("student"), validateRequest(paymentAttemptIdParamSchema, "params"), getStudentPaymentStatus);
 router.post(
   "/payments/:paymentAttemptId/verify-direct-crypto",
@@ -109,6 +126,32 @@ router.get(
   requireApprovedTeacher(),
   validateRequest(teacherIncomeQuerySchema, "query"),
   getTeacherEarnings,
+);
+router.get(
+  "/teacher/bank-transfer-payments",
+  protect,
+  allowRoles("teacher", "admin"),
+  requireApprovedTeacher(),
+  validateRequest(teacherBankTransferPaymentsQuerySchema, "query"),
+  getTeacherBankTransferPayments,
+);
+router.patch(
+  "/teacher/bank-transfer-payments/:id/approve",
+  protect,
+  allowRoles("teacher", "admin"),
+  requireApprovedTeacher(),
+  validateRequest(paymentIdParamSchema, "params"),
+  validateRequest(bankTransferReviewSchema),
+  approveTeacherBankTransferPayment,
+);
+router.patch(
+  "/teacher/bank-transfer-payments/:id/reject",
+  protect,
+  allowRoles("teacher", "admin"),
+  requireApprovedTeacher(),
+  validateRequest(paymentIdParamSchema, "params"),
+  validateRequest(bankTransferReviewSchema),
+  rejectTeacherBankTransferPayment,
 );
 
 export default router;

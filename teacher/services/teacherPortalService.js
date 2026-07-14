@@ -47,6 +47,38 @@ export const fetchTeacherEarningsSummary = async (options = {}) => {
   return data || {};
 };
 
+export const fetchTeacherBankTransferPayments = async (options = {}) => {
+  const params = new URLSearchParams();
+  if (options.status) params.set("status", String(options.status));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+
+  const response = await fetch(`${getApiBase()}/teacher/bank-transfer-payments${suffix}`, {
+    headers: buildAuthHeaders(),
+    cache: "no-store",
+    signal: options.signal,
+  });
+
+  const data = await parseJsonResponse(response);
+  return Array.isArray(data?.payments) ? data.payments : [];
+};
+
+const reviewTeacherBankTransferPayment = async (paymentId, action, note = "") => {
+  const response = await fetch(`${getApiBase()}/teacher/bank-transfer-payments/${encodeURIComponent(paymentId)}/${action}`, {
+    method: "PATCH",
+    headers: buildAuthHeaders(),
+    body: JSON.stringify({ note }),
+  });
+
+  const data = await parseJsonResponse(response);
+  return data?.payment || null;
+};
+
+export const approveTeacherBankTransferPayment = (paymentId, note = "") =>
+  reviewTeacherBankTransferPayment(paymentId, "approve", note);
+
+export const rejectTeacherBankTransferPayment = (paymentId, note = "") =>
+  reviewTeacherBankTransferPayment(paymentId, "reject", note);
+
 export const fetchTeacherProfile = async () => {
   const response = await fetch(`${getApiBase()}/teacher/profile?t=${Date.now()}`, {
     headers: buildAuthHeaders(),
@@ -94,6 +126,10 @@ export const updateTeacherProfile = async (payload = {}) => {
         const normalizedBankPaymentInfo = value || {};
         formData.append(key, JSON.stringify(normalizedBankPaymentInfo));
         formData.append(
+          "bankCountry",
+          String(normalizedBankPaymentInfo.country || ""),
+        );
+        formData.append(
           "bankAccountHolderName",
           String(normalizedBankPaymentInfo.accountHolderName || ""),
         );
@@ -110,7 +146,18 @@ export const updateTeacherProfile = async (payload = {}) => {
           String(normalizedBankPaymentInfo.cardNumber || ""),
         );
         formData.append("bankIban", String(normalizedBankPaymentInfo.iban || ""));
-        formData.append("bankNote", String(normalizedBankPaymentInfo.note || ""));
+        formData.append(
+          "bankSwiftCode",
+          String(normalizedBankPaymentInfo.swiftCode || ""),
+        );
+        formData.append(
+          "bankCurrency",
+          String(normalizedBankPaymentInfo.currency || ""),
+        );
+        formData.append(
+          "bankPaymentNote",
+          String(normalizedBankPaymentInfo.paymentNote || normalizedBankPaymentInfo.note || ""),
+        );
         return;
       }
 

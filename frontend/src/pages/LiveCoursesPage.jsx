@@ -21,6 +21,7 @@ import {
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 
 const benefitIcons = [UsersRound, GraduationCap, Video, Headphones];
+const MOBILE_BATCH_SIZE = 20;
 const EXCLUDED_ENROLLMENT_STATUSES = new Set(["cancelled", "canceled", "failed", "rejected", "refunded"]);
 
 const hasActiveEnrollmentAccess = (row = {}) => {
@@ -130,7 +131,7 @@ export default function LiveCoursesPage({ t }) {
 
         const { courses: rows, meta: pageMeta } = await fetchPublishedCourses({
           page: currentPage,
-          limit: 20,
+          limit: MOBILE_BATCH_SIZE,
           search: searchTerm,
           category: category === "all" ? undefined : category,
           level: level === "all" ? undefined : level,
@@ -624,11 +625,11 @@ export default function LiveCoursesPage({ t }) {
 
             {error ? <p className="mt-4 text-sm font-bold text-rose-600">{error}</p> : null}
 
-            <div className="mt-5 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:thin] md:grid md:grid-cols-2 md:overflow-visible md:pb-0 xl:grid-cols-3">
+            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {courses.map((course, index) => (
                 <div
                   key={course._id || course.id || `${course.title}-${index}`}
-                  className="w-[86vw] max-w-[360px] shrink-0 snap-start md:w-auto md:max-w-none"
+                  className="w-full"
                 >
                   <CourseCatalogCard
                     course={course}
@@ -670,10 +671,10 @@ export default function LiveCoursesPage({ t }) {
                   {loading
                     ? language === "fa"
                       ? "در حال بارگذاری"
-                    : "Loading"
+                      : "Loading"
                     : language === "fa"
-                      ? "نمایش بیشتر"
-                      : "Show more"}
+                      ? `نمایش ${MOBILE_BATCH_SIZE} کورس دیگر`
+                      : `Show ${MOBILE_BATCH_SIZE} more`}
                 </button>
               </div>
             ) : null}

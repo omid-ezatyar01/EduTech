@@ -22,6 +22,17 @@ export const checkoutSchema = Joi.object({
   paymentMethod: Joi.string().valid("HESABPAY_HOSTED", "USDT_BSC_DIRECT").required(),
 }).required();
 
+export const submitBankTransferPaymentSchema = Joi.object({
+  courseId: objectId.required(),
+  countryCode: Joi.string().trim().uppercase().valid("AF", "IR").required(),
+  senderAccount: Joi.string().trim().max(80).allow(""),
+  note: Joi.string().trim().max(500).allow(""),
+}).required();
+
+export const bankTransferReviewSchema = Joi.object({
+  note: Joi.string().trim().max(500).allow(""),
+}).required();
+
 export const verifyDirectCryptoSchema = Joi.object({
   txHash: Joi.string()
     .trim()
@@ -49,6 +60,10 @@ export const adminPaymentsQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(10),
   status: Joi.string().valid("pending", "paid", "failed", "refunded", "cancelled"),
   search: Joi.string().trim().allow(""),
+});
+
+export const teacherBankTransferPaymentsQuerySchema = Joi.object({
+  status: Joi.string().valid("pending_teacher_review", "approved_by_teacher", "rejected_by_teacher").allow(""),
 });
 
 export const teacherIncomeQuerySchema = Joi.object({

@@ -12,13 +12,16 @@ export default function PaymentMethodModal({
   hesabPayAmountLabel = "",
   cryptoAmountLabel = "",
   bankOptionCountryCode = "",
+  isBankPaymentAvailable = true,
   isLoading = false,
   isBankLoading = false,
 }) {
   const isFa = language === "fa";
   if (!isOpen) return null;
   const normalizedCountryCode = String(bankOptionCountryCode || "").trim().toUpperCase();
-  const showBankOption = normalizedCountryCode === "AF" || normalizedCountryCode === "IR";
+  const showBankOption =
+    isBankPaymentAvailable &&
+    (normalizedCountryCode === "AF" || normalizedCountryCode === "IR");
   const bankCountryLabel =
     normalizedCountryCode === "AF"
       ? isFa

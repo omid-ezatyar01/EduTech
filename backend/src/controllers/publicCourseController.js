@@ -5,9 +5,11 @@ import mongoose from "mongoose";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
+import { hasUsableBankPaymentInfo } from "../utils/bankPaymentInfo.js";
 import { getPlatformPricingSettings, resolveCourseDisplayPricing } from "../utils/platformSettings.js";
 import { getCourseRatingAggregates, getPublicCourseReviews } from "../utils/courseRatings.js";
 import { buildCourseCategoryFilter } from "../utils/courseCategory.js";
+import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 
 const activeEnrollmentFilter = (now = new Date()) => ({
   enrollmentStatus: { $in: ["active", "completed"] },
@@ -53,10 +55,14 @@ const buildSort = ({ sortBy = "popular", sortOrder = "desc" }) => {
 
 const buildPublishedCourseQuery = (filter) =>
   Course.find(filter)
-    .populate("teacher", "name username avatar bio role")
-    .populate("teacherId", "name username avatar bio role")
+    .populate("teacher", "name username avatar bio role bankPaymentInfo")
+    .populate("teacherId", "name username avatar bio role bankPaymentInfo")
+    .populate("createdBy", "name username avatar bio role bankPaymentInfo")
     .populate("category", "name slug parent")
     .populate("subcategory", "name slug parent");
+
+const hasTeacherBankPaymentInfo = (teacher = null) =>
+  Boolean(teacher && typeof teacher === "object" && hasUsableBankPaymentInfo(teacher.bankPaymentInfo || {}));
 
 const resolvePreviewVideoUrls = (course = {}) => {
   const videos = Array.isArray(course?.previewVideoUrls)
@@ -202,6 +208,12 @@ export const getPublishedCourses = asyncHandler(async (req, res) => {
     courses = pageIds.map((id) => byId.get(String(id))).filter(Boolean);
     courseIds = pageIds;
   }
+  await Promise.all(
+    (Array.isArray(courses) ? courses : []).map((course) =>
+      ensureCourseAutoStarted(course, {
+        activeStudentsCount: enrollmentCounts.get(String(course?._id)) || 0,
+      })),
+  );
   const normalizedCourses = (Array.isArray(courses) ? courses : []).map((courseDoc) => {
     const row = typeof courseDoc?.toObject === "function" ? courseDoc.toObject() : courseDoc;
     const pricing = resolveCourseDisplayPricing(row, globalDiscountPercentage);
@@ -218,6 +230,10 @@ export const getPublishedCourses = asyncHandler(async (req, res) => {
       finalPriceForStudents: pricing.finalPrice,
       previewVideoUrls: resolvePreviewVideoUrls(row),
       isFree: Boolean(row?.isFree) || Number(pricing.finalPrice || 0) <= 0,
+      bankPaymentAvailable:
+        hasTeacherBankPaymentInfo(row?.teacher) ||
+        hasTeacherBankPaymentInfo(row?.teacherId) ||
+        hasTeacherBankPaymentInfo(row?.createdBy),
       enrolledStudentsCount: enrollmentCounts.get(String(row._id)) || 0,
       rating: ratingStats.rating,
       ratingCount: ratingStats.ratingCount,
@@ -280,8 +296,9 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
       };
 
   const course = await Course.findOne(lookupFilter)
-    .populate("teacher", "name username avatar bio role")
-    .populate("teacherId", "name username avatar bio role")
+    .populate("teacher", "name username avatar bio role bankPaymentInfo")
+    .populate("teacherId", "name username avatar bio role bankPaymentInfo")
+    .populate("createdBy", "name username avatar bio role bankPaymentInfo")
     .populate("category", "name slug parent")
     .populate("subcategory", "name slug parent");
 
@@ -298,6 +315,9 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
     getCourseRatingAggregates([row._id]),
     getPublicCourseReviews(row._id),
   ]);
+  await ensureCourseAutoStarted(course, {
+    activeStudentsCount: enrollmentCounts.get(String(row._id)) || 0,
+  });
   const ratingStats = ratingAggregates.get(String(row._id)) || { rating: 0, ratingCount: 0 };
   const normalizedCourse = {
     ...row,
@@ -311,6 +331,10 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
     finalPriceForStudents: pricing.finalPrice,
     previewVideoUrls: resolvePreviewVideoUrls(row),
     isFree: Boolean(row?.isFree) || Number(pricing.finalPrice || 0) <= 0,
+    bankPaymentAvailable:
+      hasTeacherBankPaymentInfo(row?.teacher) ||
+      hasTeacherBankPaymentInfo(row?.teacherId) ||
+      hasTeacherBankPaymentInfo(row?.createdBy),
     enrolledStudentsCount: enrollmentCounts.get(String(row._id)) || 0,
     rating: ratingStats.rating,
     ratingCount: ratingStats.ratingCount,

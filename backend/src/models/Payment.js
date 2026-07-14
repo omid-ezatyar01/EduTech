@@ -158,6 +158,35 @@ const paymentSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    paymentProofOriginalName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    paymentProofSubmittedAt: {
+      type: Date,
+      default: null,
+    },
+    bankTransferReviewStatus: {
+      type: String,
+      enum: ["not_applicable", "pending_teacher_review", "approved_by_teacher", "rejected_by_teacher"],
+      default: "not_applicable",
+      index: true,
+    },
+    reviewedByTeacher: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    reviewedByTeacherAt: {
+      type: Date,
+      default: null,
+    },
+    isExternalCollection: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

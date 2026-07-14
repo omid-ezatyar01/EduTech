@@ -123,6 +123,41 @@ export const getCourseBankPaymentDetails = async (courseId) => {
   return data;
 };
 
+export const submitBankTransferPayment = async ({
+  courseId,
+  countryCode,
+  paymentProof,
+  senderAccount = "",
+  note = "",
+}) => {
+  const token = getStudentToken();
+  if (!token) throw new Error("NOT_AUTHENTICATED");
+
+  const formData = new FormData();
+  formData.append("courseId", String(courseId || ""));
+  formData.append("countryCode", String(countryCode || "").trim().toUpperCase());
+  formData.append("senderAccount", String(senderAccount || ""));
+  formData.append("note", String(note || ""));
+  if (paymentProof instanceof File) {
+    formData.append("paymentProof", paymentProof);
+  }
+
+  const response = await fetchWithTimeout(`${getApiBase()}/payments/bank-transfer/submit`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || !data?.success) {
+    throw makeHttpError("Unable to submit bank transfer payment", response, data);
+  }
+
+  return data;
+};
+
 export const getUsdExchangeQuote = async ({ amountUsd, currencyTo = "AFN" } = {}) => {
   const url = new URL(`${getApiBase()}/exchange/quote`);
   if (Number.isFinite(Number(amountUsd)) && Number(amountUsd) >= 0) {

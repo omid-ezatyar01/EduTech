@@ -21,12 +21,22 @@ import {
 import { getUsdRatesForCurrencies, quoteAfnFromUsdCents, quoteFromUsdCents } from "../services/exchangeRate.service.js";
 import { completePayment } from "../services/paymentCompletion.service.js";
 import { formatUsdCents, normalizeUsdToCents, roundUpDecimalAmount } from "../utils/money.js";
+import {
+  getNormalizedBankPaymentDisplay,
+  hasUsableBankPaymentInfo,
+} from "../utils/bankPaymentInfo.js";
 import { getPlatformPricingSettings, resolveCourseDisplayPricing } from "../utils/platformSettings.js";
-import { expireEnrollmentIfNeeded, isEnrollmentExpired } from "../utils/courseAccess.js";
+import { expireEnrollmentIfNeeded, isEnrollmentExpired, resolveCourseAccessWindow } from "../utils/courseAccess.js";
 import {
   calculateTeacherIncomeLedger,
   upsertTeacherIncomeSettlement,
 } from "../utils/teacherIncomeLedger.js";
+import { normalizeBankTransferSubmissionState } from "../utils/bankTransferSubmission.js";
+import {
+  notifyStudentBankTransferApproved,
+  notifyTeacherBankTransferProof,
+} from "../services/webPush.service.js";
+import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 const DIRECT_CRYPTO_VERIFY_COOLDOWN_AFTER_FAILED_ATTEMPTS = 5;
@@ -124,6 +134,21 @@ const getRetryAfterSeconds = (targetTime) => {
 };
 
 const getDirectCryptoGuardKey = (attemptId, userId) => `${String(attemptId || "")}:${String(userId || "")}`;
+const teacherCourseFilter = (teacherId) => ({
+  $or: [{ teacher: teacherId }, { teacherId }, { createdBy: teacherId }],
+});
+
+const getCourseTeacherId = (course = {}) =>
+  course?.teacher?._id ||
+  course?.teacherId?._id ||
+  course?.createdBy?._id ||
+  course?.teacher ||
+  course?.teacherId ||
+  course?.createdBy ||
+  null;
+
+const buildUploadPath = (file = null) =>
+  file?.filename ? `/uploads/payment-proofs/${file.filename}` : "";
 
 const readDirectCryptoGuardState = (key) => {
   const state = directCryptoVerifyGuard.get(key);
@@ -1193,6 +1218,107 @@ export const getStudentPaymentStatus = async (req, res) => {
   }
 };
 
+const approveExternalBankTransferPayment = async ({
+  payment,
+  reviewerId,
+  reviewerNote = "",
+}) => {
+  const enrollment = await Enrollment.findById(payment.enrollmentId || payment.enrollment);
+  if (!enrollment) {
+    throw new Error("Related enrollment not found");
+  }
+
+  const course = await Course.findById(payment.courseId);
+  if (!course) {
+    throw new Error("Course not found for payment");
+  }
+  const teacherId = getCourseTeacherId(course);
+  const teacher = teacherId ? await User.findById(teacherId).select("name").lean() : null;
+
+  const hasPreviousPaidPayment = await Payment.exists({
+    _id: { $ne: payment._id },
+    enrollmentId: enrollment._id,
+    paymentStatus: "paid",
+  });
+  const shouldIncrement = !hasPreviousPaidPayment;
+  if (shouldIncrement && course.maxStudents && course.enrolledStudentsCount >= course.maxStudents) {
+    throw new Error("Course is full, cannot verify this payment");
+  }
+
+  payment.paymentStatus = "paid";
+  payment.status = "paid";
+  payment.paidAt = new Date();
+  payment.verifiedAt = new Date();
+  payment.verifiedBy = reviewerId;
+  payment.reviewedByTeacher = reviewerId;
+  payment.reviewedByTeacherAt = new Date();
+  payment.bankTransferReviewStatus = "approved_by_teacher";
+  payment.note = reviewerNote || payment.note;
+  await payment.save();
+
+  const accessWindow = resolveCourseAccessWindow({
+    course,
+    paidAt: payment.paidAt,
+    previousAccessExpiresAt: enrollment.accessExpiresAt,
+  });
+
+  enrollment.paymentId = payment._id;
+  enrollment.enrollmentStatus = "active";
+  enrollment.accessStatus = "allowed";
+  enrollment.status = "active";
+  enrollment.accessStartsAt = accessWindow.accessStartsAt;
+  enrollment.accessExpiresAt = accessWindow.accessExpiresAt;
+  enrollment.paymentPlan = accessWindow.paymentPlan;
+  enrollment.lastRenewedAt = payment.paidAt;
+  await enrollment.save();
+
+  if (shouldIncrement) {
+    await Course.findByIdAndUpdate(course._id, {
+      $inc: { enrolledStudentsCount: 1 },
+    });
+    course.enrolledStudentsCount = Number(course.enrolledStudentsCount || 0) + 1;
+  }
+
+  await ensureCourseAutoStarted(course);
+
+  notifyStudentBankTransferApproved({
+    studentId: enrollment.studentId,
+    courseTitle: course.title || "",
+    teacherName: teacher?.name || "",
+  }).catch((notificationError) => {
+    console.warn(
+      `Failed to send student bank-transfer approval push notification: ${notificationError.message}`,
+    );
+  });
+
+  return payment;
+};
+
+const rejectExternalBankTransferPayment = async ({
+  payment,
+  reviewerId,
+  reviewerNote = "",
+}) => {
+  payment.paymentStatus = "failed";
+  payment.status = "failed";
+  payment.failedAt = new Date();
+  payment.reviewedByTeacher = reviewerId;
+  payment.reviewedByTeacherAt = new Date();
+  payment.bankTransferReviewStatus = "rejected_by_teacher";
+  payment.note = reviewerNote || payment.note;
+  await payment.save();
+
+  const enrollment = await Enrollment.findById(payment.enrollmentId || payment.enrollment);
+  if (enrollment && enrollment.enrollmentStatus === "pending") {
+    enrollment.enrollmentStatus = "cancelled";
+    enrollment.accessStatus = "blocked";
+    enrollment.status = "cancelled";
+    await enrollment.save();
+  }
+
+  return payment;
+};
+
 export const getCourseBankPaymentDetails = async (req, res) => {
   try {
     const courseId = String(req.params.courseId || "").trim();
@@ -1226,19 +1352,22 @@ export const getCourseBankPaymentDetails = async (req, res) => {
       return apiError(res, 404, "Teacher payment information was not found");
     }
 
-    const bankPaymentInfo = {
-      accountHolderName: String(teacher.bankPaymentInfo?.accountHolderName || "").trim(),
-      bankName: String(teacher.bankPaymentInfo?.bankName || "").trim(),
-      accountNumber: String(teacher.bankPaymentInfo?.accountNumber || "").trim(),
-      cardNumber: String(teacher.bankPaymentInfo?.cardNumber || "").trim(),
-      iban: String(teacher.bankPaymentInfo?.iban || "").trim(),
-      note: String(teacher.bankPaymentInfo?.note || "").trim(),
-    };
-
-    const hasBankInfo = Object.values(bankPaymentInfo).some((value) => Boolean(String(value || "").trim()));
+    const bankPaymentInfo = getNormalizedBankPaymentDisplay(teacher.bankPaymentInfo || {});
+    const hasBankInfo = hasUsableBankPaymentInfo(bankPaymentInfo);
     if (!hasBankInfo) {
       return apiError(res, 404, "This teacher has not added bank payment details yet");
     }
+
+    const latestBankTransferPayment = await Payment.findOne({
+      studentId: req.user._id,
+      courseId: course._id,
+      paymentMethod: "bank_transfer",
+    })
+      .sort({ createdAt: -1 })
+      .select("status paymentStatus bankTransferReviewStatus paymentProofSubmittedAt createdAt updatedAt")
+      .lean();
+
+    const submissionState = normalizeBankTransferSubmissionState(latestBankTransferPayment);
 
     return apiSuccess(res, {
       course: {
@@ -1250,9 +1379,253 @@ export const getCourseBankPaymentDetails = async (req, res) => {
         name: teacher.name || "",
       },
       bankPaymentInfo,
+      submissionState,
     });
   } catch (error) {
     return apiError(res, 500, error.message || "Unable to load bank payment details");
+  }
+};
+
+export const submitBankTransferPayment = async (req, res) => {
+  try {
+    const courseId = String(req.body.courseId || "").trim();
+    const countryCode = String(req.body.countryCode || "").trim().toUpperCase();
+    if (!req.file) {
+      return apiError(res, 400, "Payment proof file is required");
+    }
+
+    const course = await Course.findById(courseId).select(
+      "title slug price discountPrice teacherDiscountPercentage currency isFree paymentPlan status isPublished classEndedAt classCancelledAt startDate endDate teacher teacherId createdBy maxStudents enrolledStudentsCount",
+    );
+    if (!course || !isCoursePurchasable(course)) {
+      return apiError(res, 404, "Course not found");
+    }
+
+    const pricing = await getPlatformPricingSettings();
+    const displayPricing = resolveCourseDisplayPricing(course, pricing?.globalCourseDiscountPercentage || 0);
+    const baseAmountUsdCents = normalizeUsdToCents(displayPricing.finalPrice);
+    if (baseAmountUsdCents <= 0) {
+      return apiError(res, 400, "Bank transfer is not available for free courses");
+    }
+
+    const teacherId = String(getCourseTeacherId(course) || "").trim();
+    const teacher = await User.findOne({
+      _id: teacherId,
+      role: "teacher",
+      status: "active",
+      "teacherApplication.status": "approved",
+    }).select("_id name bankPaymentInfo");
+
+    if (!teacher) {
+      return apiError(res, 404, "Teacher payment information was not found");
+    }
+
+    const hasBankInfo = hasUsableBankPaymentInfo(teacher.bankPaymentInfo || {});
+    if (!hasBankInfo) {
+      return apiError(res, 400, "Teacher has not added bank payment details yet");
+    }
+
+    const latestBankTransferPayment = await Payment.findOne({
+      studentId: req.user._id,
+      courseId: course._id,
+      paymentMethod: "bank_transfer",
+    })
+      .sort({ createdAt: -1 })
+      .select("_id status paymentStatus bankTransferReviewStatus paymentProofSubmittedAt createdAt updatedAt");
+
+    const submissionState = normalizeBankTransferSubmissionState(latestBankTransferPayment);
+    if (latestBankTransferPayment && !submissionState.canResubmit) {
+      return apiError(res, 409, submissionState.message, {
+        submissionState,
+      });
+    }
+
+    const activeEnrollment = await Enrollment.findOne({
+      studentId: req.user._id,
+      courseId: course._id,
+      enrollmentStatus: "active",
+      accessStatus: "allowed",
+    });
+    if (activeEnrollment && !isEnrollmentExpired(activeEnrollment)) {
+      return apiError(res, 409, "You are already enrolled in this course");
+    }
+
+    const quoteCurrency = countryCode === "IR" ? "IRR" : "AFN";
+    const quote = await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
+    const paymentReference = makePaymentReference();
+    const proofPath = buildUploadPath(req.file);
+
+    const enrollment = await Enrollment.findOneAndUpdate(
+      {
+        studentId: req.user._id,
+        courseId: course._id,
+      },
+      {
+        $setOnInsert: {
+          enrolledAt: new Date(),
+        },
+        $set: {
+          enrollmentStatus: "pending",
+          accessStatus: "blocked",
+          status: "inactive",
+        },
+      },
+      { upsert: true, returnDocument: "after" },
+    );
+
+    const payload = {
+      enrollmentId: enrollment._id,
+      baseAmountUsdCents,
+      amount: Number(quote.amount || 0),
+      gatewayAmount: Number(quote.amount || 0),
+      currency: quoteCurrency,
+      gatewayCurrency: quoteCurrency,
+      provider: "teacher_bank_transfer",
+      paymentMethod: "bank_transfer",
+      paymentStatus: "pending",
+      status: "pending",
+      paymentReference: paymentReference,
+      exchangeRate: quote.exchangeRate,
+      exchangeRateSource: quote.exchangeRateSource,
+      customerEmail: req.user.email,
+      senderAccount: String(req.body.senderAccount || "").trim(),
+      paymentProof: proofPath,
+      paymentProofOriginalName: String(req.file.originalname || "").trim(),
+      paymentProofSubmittedAt: new Date(),
+      bankTransferReviewStatus: "pending_teacher_review",
+      reviewedByTeacher: null,
+      reviewedByTeacherAt: null,
+      verifiedBy: null,
+      verifiedAt: null,
+      failedAt: null,
+      paidAt: null,
+      note: String(req.body.note || "").trim(),
+      isExternalCollection: true,
+    };
+
+    const payment = await Payment.create({
+      studentId: req.user._id,
+      courseId: course._id,
+      ...payload,
+    });
+
+    enrollment.paymentId = payment._id;
+    await enrollment.save();
+
+    notifyTeacherBankTransferProof({
+      teacherId: teacher._id,
+      teacherName: teacher.name || "",
+      studentName: req.user?.name || req.user?.email || "",
+      courseTitle: course.title || "",
+      paymentReference: payment.paymentReference || "",
+    }).catch((notificationError) => {
+      console.warn(
+        `Failed to send teacher bank-transfer proof push notification: ${notificationError.message}`,
+      );
+    });
+
+    return apiSuccess(res, {
+      message: "Bank transfer payment proof submitted successfully",
+      payment,
+    }, 201);
+  } catch (error) {
+    console.error("submitBankTransferPayment error:", error.message || error);
+    return apiError(res, 500, "Unable to submit bank transfer payment");
+  }
+};
+
+export const getTeacherBankTransferPayments = async (req, res) => {
+  try {
+    const courseIds = await Course.find(teacherCourseFilter(req.user._id)).distinct("_id");
+    const status = String(req.query.status || "").trim();
+    const filter = {
+      courseId: { $in: courseIds },
+      paymentMethod: "bank_transfer",
+    };
+    if (status) {
+      filter.bankTransferReviewStatus = status;
+    }
+
+    const payments = await Payment.find(filter)
+      .populate("studentId", "name email")
+      .populate("courseId", "title paymentPlan")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return apiSuccess(res, { payments });
+  } catch (error) {
+    console.error("getTeacherBankTransferPayments error:", error.message || error);
+    return apiError(res, 500, "Unable to load bank transfer payments");
+  }
+};
+
+export const approveTeacherBankTransferPayment = async (req, res) => {
+  try {
+    const payment = await Payment.findById(req.params.id);
+    if (!payment || payment.paymentMethod !== "bank_transfer") {
+      return apiError(res, 404, "Bank transfer payment not found");
+    }
+
+    const course = await Course.findOne({
+      _id: payment.courseId,
+      ...teacherCourseFilter(req.user._id),
+    }).select("_id");
+    if (!course) {
+      return apiError(res, 403, "You are not allowed to review this payment");
+    }
+
+    if (payment.bankTransferReviewStatus === "approved_by_teacher" || payment.paymentStatus === "paid") {
+      return apiSuccess(res, { message: "Payment already approved", payment });
+    }
+
+    const approvedPayment = await approveExternalBankTransferPayment({
+      payment,
+      reviewerId: req.user._id,
+      reviewerNote: String(req.body.note || "").trim(),
+    });
+
+    return apiSuccess(res, {
+      message: "Bank transfer payment approved successfully",
+      payment: approvedPayment,
+    });
+  } catch (error) {
+    console.error("approveTeacherBankTransferPayment error:", error.message || error);
+    return apiError(res, 500, error.message || "Unable to approve bank transfer payment");
+  }
+};
+
+export const rejectTeacherBankTransferPayment = async (req, res) => {
+  try {
+    const payment = await Payment.findById(req.params.id);
+    if (!payment || payment.paymentMethod !== "bank_transfer") {
+      return apiError(res, 404, "Bank transfer payment not found");
+    }
+
+    const course = await Course.findOne({
+      _id: payment.courseId,
+      ...teacherCourseFilter(req.user._id),
+    }).select("_id");
+    if (!course) {
+      return apiError(res, 403, "You are not allowed to review this payment");
+    }
+
+    if (payment.bankTransferReviewStatus === "rejected_by_teacher" || payment.paymentStatus === "failed") {
+      return apiSuccess(res, { message: "Payment already rejected", payment });
+    }
+
+    const rejectedPayment = await rejectExternalBankTransferPayment({
+      payment,
+      reviewerId: req.user._id,
+      reviewerNote: String(req.body.note || "").trim(),
+    });
+
+    return apiSuccess(res, {
+      message: "Bank transfer payment rejected successfully",
+      payment: rejectedPayment,
+    });
+  } catch (error) {
+    console.error("rejectTeacherBankTransferPayment error:", error.message || error);
+    return apiError(res, 500, error.message || "Unable to reject bank transfer payment");
   }
 };
 
@@ -1423,6 +1796,10 @@ export const getAdminTeacherIncomeLedger = async (req, res) => {
     const filteredTotalRevenue = filteredRows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0);
     const filteredPlatformCommission = filteredRows.reduce((sum, row) => sum + Number(row.platformCommission || 0), 0);
     const filteredTeacherEarnings = filteredRows.reduce((sum, row) => sum + Number(row.teacherEarnings || 0), 0);
+    const filteredTeacherPayoutDue = filteredRows.reduce((sum, row) => sum + Number(row.teacherPayoutDue || 0), 0);
+    const filteredDirectToTeacherAmount = filteredRows.reduce((sum, row) => sum + Number(row.directToTeacherAmount || 0), 0);
+    const filteredPlatformDeductionDue = filteredRows.reduce((sum, row) => sum + Number(row.platformDeductionDue || 0), 0);
+    const filteredExternalCollectedRevenue = filteredRows.reduce((sum, row) => sum + Number(row.externalCollectedRevenue || 0), 0);
 
     const startIndex = (page - 1) * limit;
     const paginatedRows = filteredRows.slice(startIndex, startIndex + limit);
@@ -1432,6 +1809,10 @@ export const getAdminTeacherIncomeLedger = async (req, res) => {
       totalRevenue: filteredTotalRevenue,
       platformCommission: filteredPlatformCommission,
       teacherEarnings: filteredTeacherEarnings,
+      teacherPayoutDue: filteredTeacherPayoutDue,
+      directToTeacherAmount: filteredDirectToTeacherAmount,
+      platformDeductionDue: filteredPlatformDeductionDue,
+      externalCollectedRevenue: filteredExternalCollectedRevenue,
       paidRowsCount: filteredRows.filter((row) => row.status === "paid").length,
       unpaidRowsCount: filteredRows.filter((row) => row.status === "unpaid").length,
       settlementRows: paginatedRows,

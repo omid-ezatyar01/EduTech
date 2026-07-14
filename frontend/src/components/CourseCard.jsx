@@ -16,6 +16,7 @@ import {
   createCheckout,
   createHesabPaySession,
   getCourseBankPaymentDetails,
+  submitBankTransferPayment,
 } from "../../services/paymentGateway.js";
 import { enrollCourse } from "../../services/courseService.js";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
@@ -122,6 +123,7 @@ export default function CourseCard({
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
   const [isBankDetailsLoading, setIsBankDetailsLoading] = useState(false);
+  const [isSubmittingBankProof, setIsSubmittingBankProof] = useState(false);
   const [bankPaymentDetails, setBankPaymentDetails] = useState(null);
   const [hesabPayAmountLabel, setHesabPayAmountLabel] = useState("");
   const [cryptoPreviewLabel, setCryptoPreviewLabel] = useState("");
@@ -367,6 +369,37 @@ export default function CourseCard({
     }
   };
 
+  const handleSubmitBankProof = async ({ senderAccount, note, paymentProof }) => {
+    const courseId = course?._id || course?.id;
+    if (!courseId) return;
+
+    try {
+      setIsSubmittingBankProof(true);
+      const response = await submitBankTransferPayment({
+        courseId,
+        countryCode,
+        paymentProof,
+        senderAccount,
+        note,
+      });
+      setBankPaymentDetails((current) => (current ? {
+        ...current,
+        submissionState: {
+          hasSubmission: true,
+          canResubmit: false,
+          status: "pending_review",
+          reviewStatus: response?.payment?.bankTransferReviewStatus || "pending_teacher_review",
+          paymentStatus: response?.payment?.paymentStatus || "pending",
+          submittedAt: response?.payment?.paymentProofSubmittedAt || new Date().toISOString(),
+          message: "Your previous bank transfer proof is still waiting for teacher review.",
+        },
+      } : current));
+      window.dispatchEvent(new Event("edutech_data_changed"));
+    } finally {
+      setIsSubmittingBankProof(false);
+    }
+  };
+
   return (
     <article
       className={`group relative mx-auto flex h-full w-full max-w-[390px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.08)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_32px_rgba(15,23,42,0.14)] ${
@@ -562,6 +595,7 @@ export default function CourseCard({
           hesabPayAmountLabel={hesabPayAmountLabel}
           cryptoAmountLabel={cryptoPreviewLabel || cryptoAmountLabel}
           bankOptionCountryCode={countryCode}
+          isBankPaymentAvailable={Boolean(course?.bankPaymentAvailable)}
           isLoading={isStartingPayment}
           isBankLoading={isBankDetailsLoading}
         />
@@ -570,6 +604,8 @@ export default function CourseCard({
           onClose={() => setIsBankDetailsModalOpen(false)}
           details={bankPaymentDetails}
           language={language}
+          onSubmitProof={handleSubmitBankProof}
+          isSubmittingProof={isSubmittingBankProof}
         />
     </article>
   );

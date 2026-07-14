@@ -54,6 +54,7 @@ const resolvePaymentMethodLabel = (payment = {}) => {
   if (method === "hesabpay") return "HesabPay (Visa / MasterCard)";
   if (method === "usdt_bsc_direct") return "Crypto (USDT BSC)";
   if (method === "nowpayments_crypto") return "Crypto Gateway";
+  if (method === "bank_transfer") return "Bank Transfer";
   return payment?.paymentMethod || "Payment";
 };
 
@@ -283,6 +284,12 @@ export const calculateTeacherIncomeLedger = async ({
     const amountUsd = resolveUsdAmount(payment);
     const commissionAmount = (amountUsd * commissionRate) / 100;
     const teacherAmount = amountUsd - commissionAmount;
+    const isExternalCollection =
+      String(payment?.paymentMethod || "").toLowerCase() === "bank_transfer" ||
+      Boolean(payment?.isExternalCollection);
+    const teacherPayoutAmount = isExternalCollection ? 0 : teacherAmount;
+    const directToTeacherAmount = isExternalCollection ? amountUsd : 0;
+    const platformDeductionDue = isExternalCollection ? commissionAmount : 0;
     const methodLabel = resolvePaymentMethodLabel(payment);
     const methodKey = String(payment?.paymentMethod || "unknown").toLowerCase() || "unknown";
     const regionMeta = resolveRegionMeta(payment);
@@ -304,6 +311,10 @@ export const calculateTeacherIncomeLedger = async ({
       totalRevenue: 0,
       platformCommission: 0,
       teacherEarnings: 0,
+      teacherPayoutDue: 0,
+      directToTeacherAmount: 0,
+      platformDeductionDue: 0,
+      externalCollectedRevenue: 0,
       paymentDetails: [],
       status: "unpaid",
       paidAt: null,
@@ -314,6 +325,10 @@ export const calculateTeacherIncomeLedger = async ({
     existing.salesCount += 1;
     existing.totalRevenue += amountUsd;
     existing.platformCommission += commissionAmount;
+    existing.teacherPayoutDue += teacherPayoutAmount;
+    existing.directToTeacherAmount += directToTeacherAmount;
+    existing.platformDeductionDue += platformDeductionDue;
+    existing.externalCollectedRevenue += isExternalCollection ? amountUsd : 0;
     existing.paymentDetails.push({
       paymentId: String(payment._id || ""),
       studentName: getStudentDisplayName(payment?.studentId, payment?.customerEmail),
@@ -325,6 +340,10 @@ export const calculateTeacherIncomeLedger = async ({
       gatewayAmount: roundMoney(gatewayAmount),
       baseRevenue: roundMoney(amountUsd),
       teacherEarnings: roundMoney(teacherAmount),
+      teacherPayoutAmount: roundMoney(teacherPayoutAmount),
+      directToTeacherAmount: roundMoney(directToTeacherAmount),
+      platformDeductionDue: roundMoney(platformDeductionDue),
+      isExternalCollection,
       pricingSnapshotLabel: pricingSnapshot.snapshotLabel,
       exchangeRate: pricingSnapshot.exchangeRate,
       exchangeRateSource: pricingSnapshot.exchangeRateSource,
@@ -347,10 +366,14 @@ export const calculateTeacherIncomeLedger = async ({
       paymentsCount: 0,
       totalRevenue: 0,
       teacherEarnings: 0,
+      directToTeacherAmount: 0,
+      platformDeductionDue: 0,
     };
     existingMethod.paymentsCount += 1;
     existingMethod.totalRevenue += amountUsd;
     existingMethod.teacherEarnings += teacherAmount;
+    existingMethod.directToTeacherAmount += directToTeacherAmount;
+    existingMethod.platformDeductionDue += platformDeductionDue;
     paymentMethodMap.set(methodKey, existingMethod);
 
     const existingRegion = regionMap.get(regionMeta.key) || {
@@ -360,10 +383,14 @@ export const calculateTeacherIncomeLedger = async ({
       paymentsCount: 0,
       totalRevenue: 0,
       teacherEarnings: 0,
+      directToTeacherAmount: 0,
+      platformDeductionDue: 0,
     };
     existingRegion.paymentsCount += 1;
     existingRegion.totalRevenue += amountUsd;
     existingRegion.teacherEarnings += teacherAmount;
+    existingRegion.directToTeacherAmount += directToTeacherAmount;
+    existingRegion.platformDeductionDue += platformDeductionDue;
     regionMap.set(regionMeta.key, existingRegion);
 
     recentPayments.push({
@@ -378,6 +405,9 @@ export const calculateTeacherIncomeLedger = async ({
       gatewayAmount: roundMoney(gatewayAmount),
       totalRevenue: roundMoney(amountUsd),
       teacherEarnings: roundMoney(teacherAmount),
+      directToTeacherAmount: roundMoney(directToTeacherAmount),
+      platformDeductionDue: roundMoney(platformDeductionDue),
+      isExternalCollection,
       paidAt: payment.paidAt || payment.createdAt || null,
     });
   }
@@ -387,6 +417,10 @@ export const calculateTeacherIncomeLedger = async ({
     totalRevenue: roundMoney(row.totalRevenue),
     platformCommission: roundMoney(row.platformCommission),
     teacherEarnings: roundMoney(row.totalRevenue - row.platformCommission),
+    teacherPayoutDue: roundMoney(row.teacherPayoutDue),
+    directToTeacherAmount: roundMoney(row.directToTeacherAmount),
+    platformDeductionDue: roundMoney(row.platformDeductionDue),
+    externalCollectedRevenue: roundMoney(row.externalCollectedRevenue),
     paymentDetails: Array.isArray(row.paymentDetails)
       ? row.paymentDetails.sort((a, b) => new Date(b.paidAt || 0) - new Date(a.paidAt || 0))
       : [],
@@ -412,6 +446,13 @@ export const calculateTeacherIncomeLedger = async ({
   );
 
   rows = rows.map((row) => {
+    if (Number(row.teacherPayoutDue || 0) <= 0) {
+      return {
+        ...row,
+        status: "paid",
+      };
+    }
+
     const settlement = settlementMap.get(
       `${row.teacherId}:${row.courseId}:${row.monthKey}`,
     );
@@ -441,6 +482,10 @@ export const calculateTeacherIncomeLedger = async ({
   const totalRevenue = roundMoney(rows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0));
   const platformCommission = roundMoney(rows.reduce((sum, row) => sum + Number(row.platformCommission || 0), 0));
   const teacherEarnings = roundMoney(rows.reduce((sum, row) => sum + Number(row.teacherEarnings || 0), 0));
+  const teacherPayoutDue = roundMoney(rows.reduce((sum, row) => sum + Number(row.teacherPayoutDue || 0), 0));
+  const directToTeacherAmount = roundMoney(rows.reduce((sum, row) => sum + Number(row.directToTeacherAmount || 0), 0));
+  const platformDeductionDue = roundMoney(rows.reduce((sum, row) => sum + Number(row.platformDeductionDue || 0), 0));
+  const externalCollectedRevenue = roundMoney(rows.reduce((sum, row) => sum + Number(row.externalCollectedRevenue || 0), 0));
   const paymentsCount = rows.reduce((sum, row) => sum + Number(row.salesCount || 0), 0);
   const teacherShareRate = roundMoney(100 - Number(commissionRate || 0));
 
@@ -453,11 +498,19 @@ export const calculateTeacherIncomeLedger = async ({
       totalRevenue: 0,
       platformCommission: 0,
       teacherEarnings: 0,
+      teacherPayoutDue: 0,
+      directToTeacherAmount: 0,
+      platformDeductionDue: 0,
+      externalCollectedRevenue: 0,
     };
     existing.salesCount += Number(row.salesCount || 0);
     existing.totalRevenue += Number(row.totalRevenue || 0);
     existing.platformCommission += Number(row.platformCommission || 0);
     existing.teacherEarnings += Number(row.teacherEarnings || 0);
+    existing.teacherPayoutDue += Number(row.teacherPayoutDue || 0);
+    existing.directToTeacherAmount += Number(row.directToTeacherAmount || 0);
+    existing.platformDeductionDue += Number(row.platformDeductionDue || 0);
+    existing.externalCollectedRevenue += Number(row.externalCollectedRevenue || 0);
     courseWiseMap.set(row.courseId, existing);
   });
 
@@ -478,6 +531,10 @@ export const calculateTeacherIncomeLedger = async ({
     totalRevenue,
     platformCommission,
     teacherEarnings,
+    teacherPayoutDue,
+    directToTeacherAmount,
+    platformDeductionDue,
+    externalCollectedRevenue,
     paymentsCount,
     paidRowsCount: rows.filter((row) => row.status === "paid").length,
     unpaidRowsCount: rows.filter((row) => row.status === "unpaid").length,
@@ -486,12 +543,18 @@ export const calculateTeacherIncomeLedger = async ({
       totalRevenue: roundMoney(row.totalRevenue),
       platformCommission: roundMoney(row.platformCommission),
       teacherEarnings: roundMoney(row.teacherEarnings),
+      teacherPayoutDue: roundMoney(row.teacherPayoutDue),
+      directToTeacherAmount: roundMoney(row.directToTeacherAmount),
+      platformDeductionDue: roundMoney(row.platformDeductionDue),
+      externalCollectedRevenue: roundMoney(row.externalCollectedRevenue),
     })),
     paymentMethodBreakdown: Array.from(paymentMethodMap.values())
       .map((row) => ({
         ...row,
         totalRevenue: roundMoney(row.totalRevenue),
         teacherEarnings: roundMoney(row.teacherEarnings),
+        directToTeacherAmount: roundMoney(row.directToTeacherAmount),
+        platformDeductionDue: roundMoney(row.platformDeductionDue),
       }))
       .sort((a, b) => b.totalRevenue - a.totalRevenue),
     regionBreakdown: Array.from(regionMap.values())
@@ -499,6 +562,8 @@ export const calculateTeacherIncomeLedger = async ({
         ...row,
         totalRevenue: roundMoney(row.totalRevenue),
         teacherEarnings: roundMoney(row.teacherEarnings),
+        directToTeacherAmount: roundMoney(row.directToTeacherAmount),
+        platformDeductionDue: roundMoney(row.platformDeductionDue),
       }))
       .sort((a, b) => b.totalRevenue - a.totalRevenue),
     recentPayments: recentPayments

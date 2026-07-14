@@ -33,43 +33,36 @@ const normalizeLocaleDigits = (value = "") =>
 const normalizeDigitsOnly = (value = "") =>
   normalizeLocaleDigits(value).replace(/[^\d]/g, "");
 
-const normalizeLimitedDigits = (value = "", maxLength = 16) =>
-  normalizeDigitsOnly(value).slice(0, maxLength);
+const normalizeCardNumberValue = (value = "") =>
+  normalizeLocaleDigits(value).replace(/[\s-]+/g, "");
 
 const normalizeIbanValue = (value = "") =>
   normalizeLocaleDigits(value).replace(/\s+/g, "").toUpperCase();
 
-const ibanLengthByCountry = {
-  AF: 24,
-  IR: 26,
+const normalizeAccountNumberValue = (value = "") =>
+  String(normalizeLocaleDigits(value || "")).trim().replace(/\s+/g, "");
+
+const normalizeSwiftCodeValue = (value = "") =>
+  String(normalizeLocaleDigits(value || "")).trim().replace(/\s+/g, "").toUpperCase();
+
+const inferBankCountry = (form = {}) => {
+  const explicitCountry = String(form.country || "").trim().toUpperCase();
+  if (explicitCountry === "AF" || explicitCountry === "IR") return explicitCountry;
+
+  const iban = normalizeIbanValue(form.iban || "");
+  const currency = String(form.currency || "").trim().toUpperCase();
+  const swiftCode = normalizeSwiftCodeValue(form.swiftCode || "");
+
+  if (iban.startsWith("IR")) return "IR";
+  if (currency === "IRR") return "IR";
+  if (currency === "AFN") return "AF";
+  if (swiftCode) return "AF";
+  return "";
 };
 
-const isValidLuhnNumber = (value = "") => {
-  const digits = normalizeDigitsOnly(value);
-  if (!digits) return false;
-
-  let sum = 0;
-  let shouldDouble = false;
-
-  for (let index = digits.length - 1; index >= 0; index -= 1) {
-    let digit = Number(digits[index]);
-    if (shouldDouble) {
-      digit *= 2;
-      if (digit > 9) digit -= 9;
-    }
-    sum += digit;
-    shouldDouble = !shouldDouble;
-  }
-
-  return sum % 10 === 0;
-};
-
-const isValidIbanChecksum = (value = "") => {
+const isValidIranianSheba = (value = "") => {
   const iban = normalizeIbanValue(value);
-  if (!/^[A-Z]{2}[0-9A-Z]{13,32}$/.test(iban)) return false;
-
-  const expectedLength = ibanLengthByCountry[iban.slice(0, 2)];
-  if (expectedLength && iban.length !== expectedLength) return false;
+  if (!/^IR\d{24}$/.test(iban)) return false;
 
   const rearranged = `${iban.slice(4)}${iban.slice(0, 4)}`;
   let remainder = 0;
@@ -84,14 +77,30 @@ const isValidIbanChecksum = (value = "") => {
   return remainder === 1;
 };
 
-const normalizeBankForm = (form = {}) => ({
-  accountHolderName: String(form.accountHolderName || "").trim(),
-  bankName: String(form.bankName || "").trim(),
-  accountNumber: normalizeLimitedDigits(form.accountNumber || "", 16),
-  cardNumber: normalizeLimitedDigits(form.cardNumber || "", 16),
-  iban: normalizeIbanValue(form.iban || ""),
-  note: String(form.note || "").trim(),
-});
+const normalizeBankForm = (form = {}) => {
+  const country = inferBankCountry(form);
+  const normalized = {
+    country,
+    accountHolderName: String(form.accountHolderName || "").trim(),
+    bankName: String(form.bankName || "").trim(),
+    accountNumber: normalizeAccountNumberValue(form.accountNumber || ""),
+    cardNumber: normalizeCardNumberValue(form.cardNumber || ""),
+    iban: normalizeIbanValue(form.iban || ""),
+    swiftCode: normalizeSwiftCodeValue(form.swiftCode || ""),
+    currency: String(form.currency || "").trim().toUpperCase(),
+    paymentNote: String(form.paymentNote || form.note || "").trim(),
+  };
+
+  if (normalized.country === "AF") {
+    normalized.iban = "";
+  }
+
+  if (!normalized.currency) {
+    normalized.currency = normalized.country === "IR" ? "IRR" : normalized.country === "AF" ? "AFN" : "";
+  }
+
+  return normalized;
+};
 
 const validateBankForm = (form = {}, isFa = true) => {
   const normalized = normalizeBankForm(form);
@@ -101,71 +110,84 @@ const validateBankForm = (form = {}, isFa = true) => {
     return { ok: true, normalized };
   }
 
-  if (normalized.accountHolderName.length < 3) {
+  if (!["AF", "IR"].includes(normalized.country)) {
     return {
       ok: false,
-      message: isFa
-        ? "نام صاحب حساب باید حداقل ۳ حرف داشته باشد."
-        : "Account holder name must be at least 3 characters.",
+      message: isFa ? "انتخاب کشور الزامی است." : "Country is required.",
     };
   }
 
-  if (normalized.bankName.length < 2) {
+  if (!normalized.accountHolderName) {
     return {
       ok: false,
-      message: isFa
-        ? "نام بانک باید معتبر باشد."
-        : "Bank name must be valid.",
+      message: isFa ? "نام صاحب حساب الزامی است." : "Account holder name is required.",
     };
+  }
+
+  if (!normalized.bankName) {
+    return {
+      ok: false,
+      message: isFa ? "نام بانک الزامی است." : "Bank name is required.",
+    };
+  }
+
+  if (normalized.country === "AF") {
+    if (!normalized.accountNumber) {
+      return {
+        ok: false,
+        message: isFa
+          ? "شماره حساب برای بانک‌های افغانستان الزامی است."
+          : "Account number is required for Afghanistan banks.",
+      };
+    }
+
+    return { ok: true, normalized };
   }
 
   if (!normalized.cardNumber && !normalized.accountNumber && !normalized.iban) {
     return {
       ok: false,
       message: isFa
-        ? "حداقل یکی از شماره کارت، شماره حساب یا IBAN را وارد کنید."
-        : "Enter at least one card number, account number, or IBAN.",
+        ? "حداقل یکی از شماره کارت، شماره شبا یا شماره حساب را وارد کنید."
+        : "Enter at least one card number, Shaba, or account number.",
     };
   }
 
-  if (normalized.cardNumber) {
-    if (normalized.cardNumber.length !== 16) {
-      return {
-        ok: false,
-        message: isFa
-          ? "شماره کارت باید دقیقاً ۱۶ رقم باشد."
-          : "Card number must be exactly 16 digits.",
-      };
-    }
-    if (!isValidLuhnNumber(normalized.cardNumber)) {
-      return {
-        ok: false,
-        message: isFa
-          ? "شماره کارت معتبر نیست."
-          : "Card number is not valid.",
-      };
-    }
-  }
-
-  if (normalized.accountNumber) {
-    if (normalized.accountNumber.length < 8 || normalized.accountNumber.length > 16) {
-      return {
-        ok: false,
-        message: isFa
-          ? "شماره حساب باید بین ۸ تا ۱۶ رقم باشد."
-          : "Account number must be between 8 and 16 digits.",
-      };
-    }
-  }
-
-  if (normalized.iban && !isValidIbanChecksum(normalized.iban)) {
+  if (normalized.cardNumber && !/^\d{16}$/.test(normalized.cardNumber)) {
     return {
       ok: false,
-      message: isFa ? "IBAN معتبر نیست." : "IBAN is not valid.",
+      message: isFa
+        ? "شماره کارت ایران باید دقیقاً ۱۶ رقم باشد."
+        : "Iranian card number must be exactly 16 digits.",
     };
+  }
+
+  if (normalized.iban) {
+    if (!/^IR\d{24}$/.test(normalized.iban)) {
+      return {
+        ok: false,
+        message: isFa
+          ? "شماره شبا باید با IR شروع شود و شامل ۲۴ رقم باشد."
+          : "Shaba must start with IR and contain 24 digits.",
+      };
+    }
+    if (!isValidIranianSheba(normalized.iban)) {
+      return {
+        ok: false,
+        message: isFa ? "شماره شبا معتبر نیست." : "Shaba is not valid.",
+      };
+    }
   }
 
   return { ok: true, normalized };
+};
+
+const hasSavedBankPaymentInfo = (form = {}) =>
+  Object.values(normalizeBankForm(form)).some(Boolean);
+
+const shouldLockBankForm = (form = {}) => {
+  const normalized = normalizeBankForm(form);
+  return hasSavedBankPaymentInfo(normalized) && ["AF", "IR"].includes(normalized.country);
 };
 
 export default function TeacherSettings() {
@@ -179,18 +201,24 @@ export default function TeacherSettings() {
   const [isComplete, setIsComplete] = useState(false);
   const [bankForm, setBankForm] = useState(() => {
     const user = getAuthUser() || {};
-    return {
+    return normalizeBankForm({
+      country: user?.bankPaymentInfo?.country || "",
       accountHolderName: user?.bankPaymentInfo?.accountHolderName || "",
       bankName: user?.bankPaymentInfo?.bankName || "",
       accountNumber: user?.bankPaymentInfo?.accountNumber || "",
       cardNumber: user?.bankPaymentInfo?.cardNumber || "",
       iban: user?.bankPaymentInfo?.iban || "",
-      note: user?.bankPaymentInfo?.note || "",
-    };
+      swiftCode: user?.bankPaymentInfo?.swiftCode || "",
+      currency: user?.bankPaymentInfo?.currency || "",
+      paymentNote: user?.bankPaymentInfo?.paymentNote || user?.bankPaymentInfo?.note || "",
+    });
   });
   const [bankError, setBankError] = useState("");
   const [bankSuccess, setBankSuccess] = useState("");
   const [isSavingBankInfo, setIsSavingBankInfo] = useState(false);
+  const [isBankFormLocked, setIsBankFormLocked] = useState(() =>
+    shouldLockBankForm(getAuthUser()?.bankPaymentInfo || {}),
+  );
 
   const teacher = useMemo(() => {
     const user = getAuthUser();
@@ -245,14 +273,28 @@ export default function TeacherSettings() {
   };
 
   const handleBankFieldChange = (key, value) => {
+    if (isBankFormLocked) return;
     setBankForm((current) => ({
       ...current,
       [key]: value,
     }));
   };
 
-  const handleBankDigitsFieldChange = (key, value) => {
-    handleBankFieldChange(key, normalizeLimitedDigits(value, 16));
+  const handleBankCountryChange = (value) => {
+    if (isBankFormLocked) return;
+    const country = String(value || "").trim().toUpperCase();
+    setBankError("");
+    setBankForm((current) => ({
+      ...current,
+      country,
+      currency: country === "IR" ? "IRR" : country === "AF" ? "AFN" : "",
+      iban: country === "AF" ? "" : current.iban,
+      swiftCode: country === "IR" ? "" : current.swiftCode,
+    }));
+  };
+
+  const handleBankCardFieldChange = (value) => {
+    handleBankFieldChange("cardNumber", normalizeCardNumberValue(value));
   };
 
   const handleBankInfoSubmit = async (event) => {
@@ -273,14 +315,19 @@ export default function TeacherSettings() {
       });
       if (response?.user) {
         saveAuthUser(response.user);
-        setBankForm({
+        const nextBankInfo = normalizeBankForm({
+          country: response.user?.bankPaymentInfo?.country || "",
           accountHolderName: response.user?.bankPaymentInfo?.accountHolderName || "",
           bankName: response.user?.bankPaymentInfo?.bankName || "",
           accountNumber: response.user?.bankPaymentInfo?.accountNumber || "",
           cardNumber: response.user?.bankPaymentInfo?.cardNumber || "",
           iban: response.user?.bankPaymentInfo?.iban || "",
-          note: response.user?.bankPaymentInfo?.note || "",
+          swiftCode: response.user?.bankPaymentInfo?.swiftCode || "",
+          currency: response.user?.bankPaymentInfo?.currency || "",
+          paymentNote: response.user?.bankPaymentInfo?.paymentNote || response.user?.bankPaymentInfo?.note || "",
         });
+        setBankForm(nextBankInfo);
+        setIsBankFormLocked(shouldLockBankForm(nextBankInfo));
       }
       setBankSuccess(
         isFa
@@ -339,6 +386,26 @@ export default function TeacherSettings() {
                   </p>
                 </div>
               </div>
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                {isBankFormLocked ? (
+                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
+                    {isFa ? "اطلاعات ذخیره شده و قفل است" : "Saved and locked"}
+                  </span>
+                ) : null}
+                {isBankFormLocked ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBankError("");
+                      setBankSuccess("");
+                      setIsBankFormLocked(false);
+                    }}
+                    className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 transition hover:bg-amber-100"
+                  >
+                    {isFa ? "ویرایش اطلاعات بانکی" : "Edit bank details"}
+                  </button>
+                ) : null}
+              </div>
 
               <form className="mt-7 space-y-5" onSubmit={handleBankInfoSubmit}>
                 {bankError ? (
@@ -352,6 +419,22 @@ export default function TeacherSettings() {
                   </div>
                 ) : null}
 
+                <label className="space-y-2">
+                  <span className="text-xs font-black text-slate-700">
+                    {isFa ? "کشور" : "Country"}
+                  </span>
+                  <select
+                    value={bankForm.country}
+                    onChange={(event) => handleBankCountryChange(event.target.value)}
+                    disabled={isBankFormLocked}
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  >
+                    <option value="">{isFa ? "انتخاب کشور" : "Select country"}</option>
+                    <option value="AF">{isFa ? "افغانستان" : "Afghanistan"}</option>
+                    <option value="IR">{isFa ? "ایران" : "Iran"}</option>
+                  </select>
+                </label>
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="space-y-2">
                     <span className="text-xs font-black text-slate-700">
@@ -361,7 +444,8 @@ export default function TeacherSettings() {
                       type="text"
                       value={bankForm.accountHolderName}
                       onChange={(event) => handleBankFieldChange("accountHolderName", event.target.value)}
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200"
+                      disabled={isBankFormLocked}
+                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                     />
                   </label>
                   <label className="space-y-2">
@@ -372,9 +456,13 @@ export default function TeacherSettings() {
                       type="text"
                       value={bankForm.bankName}
                       onChange={(event) => handleBankFieldChange("bankName", event.target.value)}
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200"
+                      disabled={isBankFormLocked}
+                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                     />
                   </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
                   <label className="space-y-2">
                     <span className="text-xs font-black text-slate-700">
                       {isFa ? "شماره حساب" : "Account number"}
@@ -382,13 +470,13 @@ export default function TeacherSettings() {
                     <input
                       type="text"
                       value={bankForm.accountNumber}
-                      onChange={(event) => handleBankDigitsFieldChange("accountNumber", event.target.value)}
-                      inputMode="numeric"
-                      maxLength={16}
+                      onChange={(event) => handleBankFieldChange("accountNumber", event.target.value)}
                       dir="ltr"
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200"
+                      disabled={isBankFormLocked}
+                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                     />
                   </label>
+
                   <label className="space-y-2">
                     <span className="text-xs font-black text-slate-700">
                       {isFa ? "شماره کارت" : "Card number"}
@@ -396,25 +484,49 @@ export default function TeacherSettings() {
                     <input
                       type="text"
                       value={bankForm.cardNumber}
-                      onChange={(event) => handleBankDigitsFieldChange("cardNumber", event.target.value)}
+                      onChange={(event) => handleBankCardFieldChange(event.target.value)}
                       inputMode="numeric"
-                      maxLength={16}
                       dir="ltr"
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200"
+                      disabled={isBankFormLocked}
+                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                     />
                   </label>
                 </div>
 
+                {bankForm.country === "IR" ? (
+                  <>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                      {isFa
+                        ? "حداقل یکی از شماره کارت، شماره شبا یا شماره حساب را وارد کنید."
+                        : "Enter at least one card number, Shaba, or account number."}
+                    </div>
+                    <label className="space-y-2">
+                      <span className="text-xs font-black text-slate-700">
+                        {isFa ? "شماره شبا" : "Shaba / IBAN"}
+                      </span>
+                      <input
+                        type="text"
+                        value={bankForm.iban}
+                        onChange={(event) => handleBankFieldChange("iban", event.target.value)}
+                        dir="ltr"
+                        placeholder="IRxxxxxxxxxxxxxxxxxxxxxxxx"
+                        disabled={isBankFormLocked}
+                        className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                      />
+                    </label>
+                  </>
+                ) : null}
+
                 <label className="space-y-2">
                   <span className="text-xs font-black text-slate-700">
-                    {isFa ? "شماره شبا / IBAN" : "IBAN"}
+                    {isFa ? "واحد پول" : "Currency"}
                   </span>
                   <input
                     type="text"
-                    value={bankForm.iban}
-                    onChange={(event) => handleBankFieldChange("iban", event.target.value)}
-                    dir="ltr"
-                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200"
+                    value={bankForm.currency || ""}
+                    readOnly
+                    disabled
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 text-sm font-semibold text-slate-500 outline-none"
                   />
                 </label>
 
@@ -423,31 +535,34 @@ export default function TeacherSettings() {
                     {isFa ? "یادداشت برای دانشجو" : "Note for students"}
                   </span>
                   <textarea
-                    value={bankForm.note}
-                    onChange={(event) => handleBankFieldChange("note", event.target.value)}
+                    value={bankForm.paymentNote}
+                    onChange={(event) => handleBankFieldChange("paymentNote", event.target.value)}
                     rows={4}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200"
+                    disabled={isBankFormLocked}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                   />
                 </label>
 
-                <button
-                  type="submit"
-                  disabled={isSavingBankInfo}
-                  className="flex h-13 min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-600 to-orange-500 px-5 text-sm font-black text-white shadow-lg shadow-amber-700/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
-                >
-                  {isSavingBankInfo ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <Landmark className="h-5 w-5" />
-                  )}
-                  {isSavingBankInfo
-                    ? isFa
-                      ? "در حال ذخیره..."
-                      : "Saving details"
-                    : isFa
-                      ? "ذخیره اطلاعات بانکی"
-                      : "Save bank details"}
-                </button>
+                {!isBankFormLocked ? (
+                  <button
+                    type="submit"
+                    disabled={isSavingBankInfo}
+                    className="flex h-13 min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-600 to-orange-500 px-5 text-sm font-black text-white shadow-lg shadow-amber-700/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                  >
+                    {isSavingBankInfo ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <Landmark className="h-5 w-5" />
+                    )}
+                    {isSavingBankInfo
+                      ? isFa
+                        ? "در حال ذخیره..."
+                        : "Saving details"
+                      : isFa
+                        ? "ذخیره اطلاعات بانکی"
+                        : "Save bank details"}
+                  </button>
+                ) : null}
               </form>
             </section>
 

@@ -19,6 +19,7 @@ import { fetchPublicTeachers } from "../../services/teacherService.js";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 
 const benefitIcons = [BriefcaseBusiness, MessageCircle, Headphones, Rocket];
+const MOBILE_BATCH_SIZE = 20;
 
 const resolveTeacherExperienceYears = (teacher = {}) => {
   const hasApplicationYears =
@@ -173,7 +174,7 @@ export default function TeachersPage({ t }) {
         setError("");
         const { teachers: rows, meta } = await fetchPublicTeachers({
           page: teacherPage,
-          limit: 20,
+          limit: MOBILE_BATCH_SIZE,
           search,
           language: teacherLanguage === "all" ? undefined : teacherLanguage,
           expertise: expertise === "all" ? undefined : expertise,
@@ -586,12 +587,12 @@ export default function TeachersPage({ t }) {
 
             <div
               id="teacher-results"
-              className="mt-5 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:thin] md:grid md:grid-cols-2 md:overflow-visible md:pb-0 xl:grid-cols-3"
+              className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
             >
               {filteredTeachers.map((teacher, index) => (
                 <div
                   key={teacher._id || teacher.name}
-                  className="w-[86vw] max-w-[360px] shrink-0 snap-start md:w-auto md:max-w-none"
+                  className="w-full"
                 >
                   <TeacherCard labels={page} teacher={teacher} index={index} />
                 </div>
@@ -634,10 +635,10 @@ export default function TeachersPage({ t }) {
                   {loading
                     ? isFa
                       ? "در حال بارگذاری"
-                    : "Loading"
+                      : "Loading"
                     : isFa
-                      ? "نمایش بیشتر"
-                      : "Show more"}
+                      ? `نمایش ${MOBILE_BATCH_SIZE} مورد بیشتر`
+                      : `Show ${MOBILE_BATCH_SIZE} more`}
                 </button>
               </div>
             ) : null}

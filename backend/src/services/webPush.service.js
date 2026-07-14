@@ -43,6 +43,32 @@ const buildTeachersUrl = () => {
   return `${getPublicSiteOrigin()}/teachers`;
 };
 
+const buildStudentCoursesUrl = () => {
+  return `${getPublicSiteOrigin()}/my-courses`;
+};
+
+const getTeacherSiteOrigin = () => {
+  const explicit = String(
+    process.env.TEACHER_CLIENT_URL ||
+    process.env.TEACHER_FRONTEND_URL ||
+    "",
+  ).trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+
+  const origins = String(process.env.CLIENT_ORIGIN || "")
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter((origin) => /^https?:\/\//i.test(origin));
+
+  const teacherOrigin =
+    origins.find((origin) => /te\./i.test(origin) || /teacher/i.test(origin)) ||
+    origins[0];
+
+  return teacherOrigin || "http://localhost:5174";
+};
+
+const buildTeacherIncomeUrl = () => `${getTeacherSiteOrigin()}/teacher/income`;
+
 const getCourseTeacherId = (course = {}) => {
   const candidates = [course.teacher, course.teacherId, course.createdBy];
   for (const candidate of candidates) {
@@ -228,3 +254,112 @@ export const notifyAdminTeacherApplicationReview = async (teacher = {}) =>
     url: "/teachers",
     teacherId: String(teacher._id || ""),
   });
+
+export const notifyTeacherBankTransferProof = async ({
+  teacherId,
+  teacherName = "",
+  studentName = "",
+  courseTitle = "",
+  paymentReference = "",
+} = {}) => {
+  if (!teacherId) {
+    return { skipped: true, reason: "teacher_not_provided" };
+  }
+
+  if (!configureWebPush()) {
+    return { skipped: true, reason: "web_push_not_configured" };
+  }
+
+  const recipients = await PushSubscription.find({
+    role: "teacher",
+    app: "teacher",
+    userId: teacherId,
+  })
+    .populate("userId", "status notifications name")
+    .lean();
+
+  const eligibleRecipients = recipients.filter((row) => {
+    const user = row.userId;
+    if (!user || user.status !== "active") return false;
+    return user.notifications?.payments !== false;
+  });
+
+  if (!eligibleRecipients.length) return { sent: 0, failed: 0 };
+
+  const payload = {
+    type: "teacher_bank_transfer_proof",
+    title: "New bank transfer proof",
+    body: `${studentName || "A student"} sent a bank payment proof for ${courseTitle || "your course"}.`,
+    icon: "/icons/android-chrome-192x192.png",
+    badge: "/icons/favicon-32x32.png",
+    url: buildTeacherIncomeUrl(),
+    teacherId: String(teacherId || ""),
+    teacherName: String(teacherName || ""),
+    paymentReference: String(paymentReference || ""),
+  };
+
+  let sent = 0;
+  let failed = 0;
+
+  for (let index = 0; index < eligibleRecipients.length; index += 50) {
+    const batch = eligibleRecipients.slice(index, index + 50);
+    const results = await Promise.all(batch.map((row) => sendToSubscription(row, payload)));
+    sent += results.filter((result) => result.ok).length;
+    failed += results.filter((result) => !result.ok).length;
+  }
+
+  return { sent, failed };
+};
+
+export const notifyStudentBankTransferApproved = async ({
+  studentId,
+  courseTitle = "",
+  teacherName = "",
+} = {}) => {
+  if (!studentId) {
+    return { skipped: true, reason: "student_not_provided" };
+  }
+
+  if (!configureWebPush()) {
+    return { skipped: true, reason: "web_push_not_configured" };
+  }
+
+  const recipients = await PushSubscription.find({
+    role: "student",
+    app: "student",
+    userId: studentId,
+  })
+    .populate("userId", "status notifications")
+    .lean();
+
+  const eligibleRecipients = recipients.filter((row) => {
+    const user = row.userId;
+    if (!user || user.status !== "active") return false;
+    return user.notifications?.payments !== false;
+  });
+
+  if (!eligibleRecipients.length) return { sent: 0, failed: 0 };
+
+  const payload = {
+    type: "student_bank_transfer_approved",
+    title: "Payment approved",
+    body: `${teacherName || "Your teacher"} approved your bank payment for ${courseTitle || "the course"}.`,
+    icon: "/icons/android-chrome-192x192.png",
+    badge: "/icons/favicon-32x32.png",
+    url: buildStudentCoursesUrl(),
+    studentId: String(studentId || ""),
+    courseTitle: String(courseTitle || ""),
+  };
+
+  let sent = 0;
+  let failed = 0;
+
+  for (let index = 0; index < eligibleRecipients.length; index += 50) {
+    const batch = eligibleRecipients.slice(index, index + 50);
+    const results = await Promise.all(batch.map((row) => sendToSubscription(row, payload)));
+    sent += results.filter((result) => result.ok).length;
+    failed += results.filter((result) => !result.ok).length;
+  }
+
+  return { sent, failed };
+};

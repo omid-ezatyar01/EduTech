@@ -23,6 +23,7 @@ import {
   deriveCourseSchedule,
   getUniqueTeachingDays,
 } from "../utils/courseSchedule.js";
+import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 
 const buildSort = ({ sortBy = "newest", sortOrder = "desc" }) => {
   if (sortBy === "price") return { price: sortOrder === "asc" ? 1 : -1 };
@@ -367,6 +368,7 @@ export const getTeacherCourses = asyncHandler(async (req, res) => {
       .limit(limit),
     Course.countDocuments(filter),
   ]);
+  await Promise.all(courses.map((course) => ensureCourseAutoStarted(course)));
   const pricing = await getPlatformPricingSettings();
 
   return res.json(
@@ -395,6 +397,8 @@ export const getTeacherCourseById = asyncHandler(async (req, res) => {
   if (!course) {
     throw new ApiError(404, "Course not found");
   }
+
+  await ensureCourseAutoStarted(course);
 
   return res.json(
     new ApiResponse({

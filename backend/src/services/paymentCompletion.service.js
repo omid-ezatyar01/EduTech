@@ -5,6 +5,7 @@ import Course from "../models/Course.js";
 import Enrollment from "../models/Enrollment.js";
 import { resolveCourseAccessWindow } from "../utils/courseAccess.js";
 import { syncLegacyPaymentRecord } from "./paymentSync.service.js";
+import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 
 const ACTIVE_STATUS = new Set(["PENDING", "SUCCEEDED", "DUPLICATE_PAYMENT", "MANUAL_REVIEW", "FAILED", "EXPIRED"]);
 const NON_TRANSACTIONAL_MONGO_PATTERNS = [
@@ -153,7 +154,10 @@ export const completePayment = async ({
           { $inc: { enrolledStudentsCount: 1 } },
           session ? { session } : undefined,
         );
+        course.enrolledStudentsCount = Number(course.enrolledStudentsCount || 0) + 1;
       }
+
+      await ensureCourseAutoStarted(course, { session });
 
       result = { order: lockedOrder, attempt, payment, enrollment, duplicate: false };
     };
