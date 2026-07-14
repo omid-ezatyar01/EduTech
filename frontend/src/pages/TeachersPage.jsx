@@ -21,6 +21,14 @@ import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 const benefitIcons = [BriefcaseBusiness, MessageCircle, Headphones, Rocket];
 const MOBILE_BATCH_SIZE = 20;
 
+const chunkRows = (items = [], size = MOBILE_BATCH_SIZE) => {
+  const rows = [];
+  for (let index = 0; index < items.length; index += size) {
+    rows.push(items.slice(index, index + size));
+  }
+  return rows;
+};
+
 const resolveTeacherExperienceYears = (teacher = {}) => {
   const hasApplicationYears =
     teacher?.teacherApplication &&
@@ -345,6 +353,10 @@ export default function TeachersPage({ t }) {
 
     return rows;
   }, [teachers, experienceFilter]);
+  const teacherRows = useMemo(
+    () => chunkRows(filteredTeachers, MOBILE_BATCH_SIZE),
+    [filteredTeachers],
+  );
   const teacherTotalPages = Math.max(1, Number(teacherMeta?.totalPages || 1));
 
   const numberFormatter = useMemo(
@@ -585,18 +597,40 @@ export default function TeachersPage({ t }) {
               </div>
             ) : null}
 
-            <div
-              id="teacher-results"
-              className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
-            >
-              {filteredTeachers.map((teacher, index) => (
-                <div
-                  key={teacher._id || teacher.name}
-                  className="w-full"
-                >
-                  <TeacherCard labels={page} teacher={teacher} index={index} />
-                </div>
-              ))}
+            <div id="teacher-results" className="mt-5 space-y-4 sm:space-y-0">
+              <div className="space-y-4 sm:hidden">
+                {teacherRows.map((row, rowIndex) => (
+                  <div
+                    key={`teacher-row-${rowIndex + 1}`}
+                    className="edutech-scrollbar -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2"
+                    dir={isFa ? "rtl" : "ltr"}
+                  >
+                    {row.map((teacher, itemIndex) => (
+                      <div
+                        key={teacher._id || teacher.name}
+                        className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
+                      >
+                        <TeacherCard
+                          labels={page}
+                          teacher={teacher}
+                          index={(rowIndex * MOBILE_BATCH_SIZE) + itemIndex}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden grid-cols-2 gap-4 sm:grid xl:grid-cols-3">
+                {filteredTeachers.map((teacher, index) => (
+                  <div
+                    key={teacher._id || teacher.name}
+                    className="w-full"
+                  >
+                    <TeacherCard labels={page} teacher={teacher} index={index} />
+                  </div>
+                ))}
+              </div>
             </div>
 
             {loading ? (

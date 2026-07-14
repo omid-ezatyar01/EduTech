@@ -24,6 +24,14 @@ const benefitIcons = [UsersRound, GraduationCap, Video, Headphones];
 const MOBILE_BATCH_SIZE = 20;
 const EXCLUDED_ENROLLMENT_STATUSES = new Set(["cancelled", "canceled", "failed", "rejected", "refunded"]);
 
+const chunkRows = (items = [], size = MOBILE_BATCH_SIZE) => {
+  const rows = [];
+  for (let index = 0; index < items.length; index += size) {
+    rows.push(items.slice(index, index + size));
+  }
+  return rows;
+};
+
 const hasActiveEnrollmentAccess = (row = {}) => {
   const status = String(row?.enrollmentStatus || "").toLowerCase();
   if (EXCLUDED_ENROLLMENT_STATUSES.has(status)) return false;
@@ -352,6 +360,10 @@ export default function LiveCoursesPage({ t }) {
     setSortMode("popular");
   };
   const totalCourses = Number(meta?.total || 0);
+  const courseRows = useMemo(
+    () => chunkRows(courses, MOBILE_BATCH_SIZE),
+    [courses],
+  );
 
   return (
     <section id="live-courses" className="bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] pb-20">
@@ -625,22 +637,50 @@ export default function LiveCoursesPage({ t }) {
 
             {error ? <p className="mt-4 text-sm font-bold text-rose-600">{error}</p> : null}
 
-            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {courses.map((course, index) => (
-                <div
-                  key={course._id || course.id || `${course.title}-${index}`}
-                  className="w-full"
-                >
-                  <CourseCatalogCard
-                    course={course}
-                    dir={dir}
-                    index={index}
-                    labels={t.courseLabels}
-                    language={language}
-                    isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))}
-                  />
-                </div>
-              ))}
+            <div className="mt-5 space-y-4 sm:space-y-0">
+              <div className="space-y-4 sm:hidden">
+                {courseRows.map((row, rowIndex) => (
+                  <div
+                    key={`course-row-${rowIndex + 1}`}
+                    className="edutech-scrollbar -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2"
+                    dir={language === "fa" ? "rtl" : "ltr"}
+                  >
+                    {row.map((course, itemIndex) => (
+                      <div
+                        key={course._id || course.id || `${course.title}-${rowIndex}-${itemIndex}`}
+                        className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
+                      >
+                        <CourseCatalogCard
+                          course={course}
+                          dir={dir}
+                          index={(rowIndex * MOBILE_BATCH_SIZE) + itemIndex}
+                          labels={t.courseLabels}
+                          language={language}
+                          isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden grid-cols-2 gap-4 sm:grid xl:grid-cols-3">
+                {courses.map((course, index) => (
+                  <div
+                    key={course._id || course.id || `${course.title}-${index}`}
+                    className="w-full"
+                  >
+                    <CourseCatalogCard
+                      course={course}
+                      dir={dir}
+                      index={index}
+                      labels={t.courseLabels}
+                      language={language}
+                      isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
 
             {loading ? (
