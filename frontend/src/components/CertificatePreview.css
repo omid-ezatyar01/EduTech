@@ -240,5 +240,9 @@
 }
 
 .certificate-preview-signature-instructor {
+  font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
   font-size: 3.2cqw;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 0.05cqw;
 }

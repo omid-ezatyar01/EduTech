@@ -71,6 +71,9 @@ const resolveResourceUrl = (rawUrl) => {
   return "";
 };
 
+const isEndedCourseResource = (row = {}) =>
+  Boolean(row?.classEndedAt || row?.course?.classEndedAt || row?.courseId?.classEndedAt);
+
 export default function Resources({ language = "fa" }) {
   const isFa = language === "fa";
   const locale = isFa ? "fa-AF" : "en-US";
@@ -138,16 +141,18 @@ export default function Resources({ language = "fa" }) {
         setError("");
         const rows = await fetchStudentResources();
         if (!mounted) return;
-        const mapped = (Array.isArray(rows) ? rows : []).map((row) => ({
-          ...row,
-          id: row.id || crypto.randomUUID(),
-          size: row.size || "-",
-          type: row.type || "PDF",
-          addedDate: formatAddedDate(row.addedAt, locale, t.unknownDate),
-          addedTime: formatAddedTime(row.addedAt, locale, t.unknownTime),
-          url: resolveResourceUrl(row.url),
-          addedAt: row.addedAt || null,
-        }));
+        const mapped = (Array.isArray(rows) ? rows : [])
+          .filter((row) => !isEndedCourseResource(row))
+          .map((row) => ({
+            ...row,
+            id: row.id || crypto.randomUUID(),
+            size: row.size || "-",
+            type: row.type || "PDF",
+            addedDate: formatAddedDate(row.addedAt, locale, t.unknownDate),
+            addedTime: formatAddedTime(row.addedAt, locale, t.unknownTime),
+            url: resolveResourceUrl(row.url),
+            addedAt: row.addedAt || null,
+          }));
         setResources(mapped);
       } catch (err) {
         if (!mounted) return;

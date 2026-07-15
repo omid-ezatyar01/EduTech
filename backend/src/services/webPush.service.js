@@ -47,6 +47,10 @@ const buildStudentCoursesUrl = () => {
   return `${getPublicSiteOrigin()}/my-courses`;
 };
 
+const buildStudentCertificatesUrl = () => {
+  return `${getPublicSiteOrigin()}/student/certificates`;
+};
+
 const getTeacherSiteOrigin = () => {
   const explicit = String(
     process.env.TEACHER_CLIENT_URL ||
@@ -244,6 +248,17 @@ export const notifyAdminCourseReview = async (course = {}, teacher = {}) =>
     courseId: String(course._id || ""),
   });
 
+export const notifyAdminCourseEndReview = async (course = {}, teacher = {}) =>
+  notifyAdmins({
+    type: "course_end_review",
+    title: "Course end request awaiting review",
+    body: `${teacher.name || "A teacher"} requested to end “${course.title || "a course"}”.`,
+    icon: "/icons/android-chrome-192x192.png",
+    badge: "/icons/favicon-32x32.png",
+    url: "/courses?endRequestStatus=pending",
+    courseId: String(course._id || ""),
+  });
+
 export const notifyAdminTeacherApplicationReview = async (teacher = {}) =>
   notifyAdmins({
     type: "teacher_application_review",
@@ -349,6 +364,60 @@ export const notifyStudentBankTransferApproved = async ({
     url: buildStudentCoursesUrl(),
     studentId: String(studentId || ""),
     courseTitle: String(courseTitle || ""),
+  };
+
+  let sent = 0;
+  let failed = 0;
+
+  for (let index = 0; index < eligibleRecipients.length; index += 50) {
+    const batch = eligibleRecipients.slice(index, index + 50);
+    const results = await Promise.all(batch.map((row) => sendToSubscription(row, payload)));
+    sent += results.filter((result) => result.ok).length;
+    failed += results.filter((result) => !result.ok).length;
+  }
+
+  return { sent, failed };
+};
+
+export const notifyStudentCertificateIssued = async ({
+  studentId,
+  courseTitle = "",
+  certificateId = "",
+} = {}) => {
+  if (!studentId) {
+    return { skipped: true, reason: "student_not_provided" };
+  }
+
+  if (!configureWebPush()) {
+    return { skipped: true, reason: "web_push_not_configured" };
+  }
+
+  const recipients = await PushSubscription.find({
+    role: "student",
+    app: "student",
+    userId: studentId,
+  })
+    .populate("userId", "status notifications")
+    .lean();
+
+  const eligibleRecipients = recipients.filter((row) => {
+    const user = row.userId;
+    if (!user || user.status !== "active") return false;
+    return user.notifications?.course !== false;
+  });
+
+  if (!eligibleRecipients.length) return { sent: 0, failed: 0 };
+
+  const payload = {
+    type: "student_certificate_issued",
+    title: "Certificate ready",
+    body: `Your certificate for ${courseTitle || "the course"} is ready${certificateId ? `: ${certificateId}` : "."}`,
+    icon: "/icons/android-chrome-192x192.png",
+    badge: "/icons/favicon-32x32.png",
+    url: buildStudentCertificatesUrl(),
+    studentId: String(studentId || ""),
+    courseTitle: String(courseTitle || ""),
+    certificateId: String(certificateId || ""),
   };
 
   let sent = 0;

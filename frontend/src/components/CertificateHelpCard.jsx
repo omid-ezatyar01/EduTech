@@ -21,7 +21,7 @@ export default function CertificateHelpCard({ language = "fa" }) {
         {t.subtitle}
       </p>
       <Link
-        to="/student/messages"
+        to="/contact"
         className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3.5 text-sm font-black text-teal-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-teal-50"
       >
         {t.cta}

@@ -1,4 +1,4 @@
-import { Ban, CheckCircle2, Edit3, Eye, PlayCircle } from "lucide-react";
+import { Ban, Edit3, Eye, PlayCircle, Send } from "lucide-react";
 import { formatProgressLabel } from "../../utils/courseProgress";
 
 const COURSE_IMAGE_FALLBACK = "/logo-en.png";
@@ -32,7 +32,7 @@ export default function TeacherCourseCard({
   onEdit,
   onDetails,
   onStartClass,
-  onEndClass,
+  onRequestEndReview,
   onRequestCancel,
 }) {
   const statusClassMap = {
@@ -48,6 +48,8 @@ export default function TeacherCourseCard({
       ? "bg-rose-100 text-rose-700"
     : course.cancellationRequest?.status === "pending"
       ? "bg-amber-100 text-amber-700"
+    : course.endRequest?.status === "pending"
+      ? "bg-sky-100 text-sky-700"
     : course.classStartedAt
       ? "bg-emerald-100 text-emerald-700"
     : (statusClassMap[course.status] || "bg-slate-100 text-slate-700");
@@ -67,19 +69,23 @@ export default function TeacherCourseCard({
           : !course.minimumStudentsReached
             ? "Minimum students not reached yet, but teacher can still start manually"
           : "Start class";
-  const canEndClass = Boolean(course.canEndNow);
-  const endClassTitle = course.classEndedAt
-    ? "Class ended"
-    : !course.classStartedAt
-      ? "Start class first"
-      : !course.canEndNow
-        ? "Can end only after scheduled end date and time"
-        : "End class";
+  const canRequestEndReview =
+    Boolean(course.classStartedAt) &&
+    !course.classEndedAt &&
+    course.endRequest?.status !== "pending";
+  const requestEndTitle = course.endRequest?.status === "pending"
+    ? "End request pending"
+    : course.classEndedAt
+      ? "Class ended"
+      : !course.classStartedAt
+        ? "Start class first"
+        : "Request admin end review";
   const canRequestCancel =
     course.status !== "cancelled" &&
     !course.classCancelledAt &&
     !course.classEndedAt &&
     course.cancellationRequest?.status !== "pending";
+  const canEditCourse = !course.classEndedAt;
   const cancelTitle = course.cancellationRequest?.status === "pending"
     ? "Cancellation request pending"
     : course.status === "cancelled" || course.classCancelledAt
@@ -97,7 +103,7 @@ export default function TeacherCourseCard({
     view: language === "fa" ? "دیدن جزئیات" : "View details",
     edit: language === "fa" ? "ویرایش" : "Edit",
     start: language === "fa" ? "شروع صنف" : "Start class",
-    end: language === "fa" ? "پایان صنف" : "End class",
+    endReview: language === "fa" ? "درخواست پایان" : "Request end review",
     cancel: language === "fa" ? "درخواست لغو" : "Request cancel",
   };
 
@@ -141,7 +147,18 @@ export default function TeacherCourseCard({
         <p className="mb-2 text-[11px] font-black text-slate-500">{labels.actions}</p>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 sm:gap-1.5">
         <button type="button" onClick={onDetails} aria-label={labels.view} title={labels.view} className="flex h-10 items-center justify-center rounded-lg border border-[#E2E8F0] text-slate-600 hover:bg-slate-50 hover:text-[#0B4FD8]"><Eye size={16} /></button>
-        <button type="button" onClick={onEdit} aria-label={labels.edit} title={labels.edit} className="flex h-10 items-center justify-center rounded-lg border border-[#E2E8F0] text-slate-600 hover:bg-slate-50 hover:text-[#0B4FD8]"><Edit3 size={16} /></button>
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={!canEditCourse}
+          aria-label={labels.edit}
+          title={canEditCourse ? labels.edit : (language === "fa" ? "کورس پایان یافته است" : "Course ended")}
+          className={`flex h-10 items-center justify-center rounded-lg border ${
+            canEditCourse
+              ? "border-[#E2E8F0] text-slate-600 hover:bg-slate-50 hover:text-[#0B4FD8]"
+              : "cursor-not-allowed border-slate-200 text-slate-300"
+          }`}
+        ><Edit3 size={16} /></button>
         <button
           type="button"
           onClick={onStartClass}
@@ -158,17 +175,17 @@ export default function TeacherCourseCard({
         </button>
         <button
           type="button"
-          onClick={onEndClass}
-          disabled={!canEndClass}
-          aria-label={labels.end}
+          onClick={onRequestEndReview}
+          disabled={!canRequestEndReview}
+          title={requestEndTitle}
+          aria-label={labels.endReview}
           className={`flex h-10 items-center justify-center rounded-lg border ${
-            !canEndClass
-              ? "cursor-not-allowed border-[#0B4FD8]/20 text-[#0B4FD8]/45"
-              : "border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+            canRequestEndReview
+              ? "border-sky-200 text-sky-600 hover:bg-sky-50"
+              : "cursor-not-allowed border-sky-100 text-sky-600/40"
           }`}
-          title={endClassTitle}
         >
-          <CheckCircle2 size={16} />
+          <Send size={16} />
         </button>
         <button
           type="button"

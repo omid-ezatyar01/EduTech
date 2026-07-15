@@ -33,6 +33,7 @@ const formatDateTime = (value, language) => {
 };
 
 const MESSAGES_CACHE_KEY = getTeacherPageCacheKey("messages");
+const isManageableCourse = (course = {}) => !course?.classEndedAt;
 
 export default function TeacherMessages() {
   const { language, isRTL, setLanguage } = useTeacherLanguage();
@@ -71,6 +72,10 @@ export default function TeacherMessages() {
     () => groupConversations.find((row) => row.courseId === selectedCourseChatId) || null,
     [groupConversations, selectedCourseChatId],
   );
+  const activeCourseIds = useMemo(
+    () => new Set((Array.isArray(courses) ? courses : []).map((course) => String(course.id || ""))),
+    [courses],
+  );
 
   const filteredGroupConversations = useMemo(() => {
     let rows = Array.isArray(groupConversations) ? [...groupConversations] : [];
@@ -107,7 +112,9 @@ export default function TeacherMessages() {
   const loadGroupConversations = useCallback(async (preferCourseId = "") => {
     try {
       const rows = await fetchTeacherCourseBroadcastConversations();
-      const normalized = Array.isArray(rows) ? rows : [];
+      const normalized = (Array.isArray(rows) ? rows : []).filter((row) =>
+        activeCourseIds.has(String(row?.courseId || "")),
+      );
       setGroupConversations(normalized);
 
       const nextId =
@@ -119,7 +126,7 @@ export default function TeacherMessages() {
       setGroupConversations([]);
       setSelectedCourseChatId("");
     }
-  }, [selectedCourseChatId]);
+  }, [activeCourseIds, selectedCourseChatId]);
 
   const loadGroupMessages = useCallback(async (courseId, options = {}) => {
     const silent = Boolean(options?.silent);
@@ -179,7 +186,7 @@ export default function TeacherMessages() {
       try {
         const { courses: rows } = await fetchTeacherCourses({ page: 1, limit: 100 });
         if (!mounted) return;
-        const normalized = (Array.isArray(rows) ? rows : []).map((row) => ({
+        const normalized = (Array.isArray(rows) ? rows : []).filter(isManageableCourse).map((row) => ({
           id: String(row?._id || row?.id || ""),
           title: String(row?.title || "").trim(),
         })).filter((row) => row.id && row.title);

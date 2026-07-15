@@ -21,6 +21,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 import {
   approveCourseCancellationRequest,
+  approveCourseEndRequest,
   approveAdminCourse,
   createAdminCourse,
   deleteAdminCourse,
@@ -31,6 +32,7 @@ import {
   fetchAdminTeachers,
   publishAdminCourse,
   rejectCourseCancellationRequest,
+  rejectCourseEndRequest,
   rejectAdminCourse,
   updateAdminCourse,
   unpublishAdminCourse,
@@ -112,6 +114,7 @@ const PAGE_TEXT = {
   rejected: "ردشده",
   cancelled: "لغوشده",
   "Cancellation requested": "درخواست لغو",
+  "End requested": "درخواست پایان",
   "Course details": "جزئیات کورس",
   "Loading full course details": "در حال بارگذاری کامل جزئیات کورس",
   Description: "توضیحات",
@@ -1111,6 +1114,32 @@ export default function AdminCoursesPage() {
     }
   };
 
+  const handleEndRequestDecision = async (course, decision) => {
+    if (!course?._id) return;
+    const promptLabel =
+      decision === "approved"
+        ? "Admin note for end approval (optional):"
+        : "Reason for rejecting end request (optional):";
+    const adminResponse = window.prompt(promptLabel, "");
+    if (adminResponse === null) return;
+
+    try {
+      if (decision === "approved") {
+        await approveCourseEndRequest(course._id, adminResponse);
+        setToast("End request approved");
+      } else {
+        await rejectCourseEndRequest(course._id, adminResponse);
+        setToast("End request rejected");
+      }
+      if (reviewCourse?._id === course._id) {
+        setReviewCourse(null);
+      }
+      await loadCourses();
+    } catch (err) {
+      setToast(err.message || "End request review failed");
+    }
+  };
+
   const handleCreateCourse = async (event) => {
     event.preventDefault();
 
@@ -1753,6 +1782,11 @@ export default function AdminCoursesPage() {
                             {pageTr("Cancellation requested")}
                           </span>
                         ) : null}
+                        {course.endRequest?.status === "pending" ? (
+                          <span className="mt-1 ml-2 inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-black text-sky-700">
+                            {pageTr("End requested")}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                   </td>
@@ -1845,6 +1879,22 @@ export default function AdminCoursesPage() {
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-xs font-bold text-slate-700"
                           >
                             <XCircle size={14} /> Reject Cancel
+                          </button>
+                        </>
+                      ) : null}
+                      {course.endRequest?.status === "pending" ? (
+                        <>
+                          <button
+                            onClick={() => handleEndRequestDecision(course, "approved")}
+                            className="inline-flex items-center gap-1 rounded-lg border border-sky-200 px-2 py-1 text-xs font-bold text-sky-700"
+                          >
+                            <CheckCircle2 size={14} /> Approve End
+                          </button>
+                          <button
+                            onClick={() => handleEndRequestDecision(course, "rejected")}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-xs font-bold text-slate-700"
+                          >
+                            <Ban size={14} /> Reject End
                           </button>
                         </>
                       ) : null}
@@ -2283,6 +2333,29 @@ export default function AdminCoursesPage() {
                       </div>
                     </section>
                   ) : null}
+                      {reviewCourse.endRequest?.status &&
+                      reviewCourse.endRequest.status !== "none" ? (
+                    <section className="border border-sky-200 bg-sky-50 p-5 shadow-sm">
+                      <h4 className="text-base font-black text-sky-900">{pageTr("End requested")}</h4>
+                      <div className="mt-4 grid gap-3 text-sm font-bold text-slate-700">
+                        <InfoRow label={pageTr("Status")} value={reviewCourse.endRequest.status} />
+                        <InfoRow
+                          label={pageTr("Requested")}
+                          value={formatDateTime(reviewCourse.endRequest.requestedAt)}
+                        />
+                        <InfoRow
+                          label={pageTr("Teacher reason")}
+                          value={reviewCourse.endRequest.reason || "-"}
+                        />
+                        {reviewCourse.endRequest.adminResponse ? (
+                          <InfoRow
+                            label={pageTr("Admin response")}
+                            value={reviewCourse.endRequest.adminResponse}
+                          />
+                        ) : null}
+                      </div>
+                    </section>
+                  ) : null}
                     </div>
                   </div>
                   <div className="border-t border-slate-200 bg-white px-5 py-4 sm:px-6">
@@ -2316,6 +2389,24 @@ export default function AdminCoursesPage() {
                     className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-700"
                   >
                     {pageTr("Approve Cancellation")}
+                  </button>
+                </>
+              ) : null}
+              {reviewCourse.endRequest?.status === "pending" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleEndRequestDecision(reviewCourse, "rejected")}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                  >
+                    Reject End Request
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleEndRequestDecision(reviewCourse, "approved")}
+                    className="rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-sky-700"
+                  >
+                    Approve End Request
                   </button>
                 </>
               ) : null}

@@ -86,7 +86,7 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
   const course = await Course.findOne({
     _id: courseId,
     ...teacherCourseFilter(teacherId),
-  }).select("_id title");
+  }).select("_id title classEndedAt");
 
   if (!course) {
     throw new ApiError(404, "Course not found or not owned by teacher");
@@ -95,11 +95,17 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
   return course;
 };
 
+const assertTeacherCanManageAssignmentCourse = (course) => {
+  if (course?.classEndedAt) {
+    throw new ApiError(400, "Ended courses cannot be managed by teacher");
+  }
+};
+
 const assertTeacherOwnsAssignment = async (teacherId, assignmentId) => {
   const assignment = await Assignment.findOne({
     _id: assignmentId,
     teacherId,
-  }).populate("courseId", "title level");
+  }).populate("courseId", "title level classEndedAt");
 
   if (!assignment) {
     throw new ApiError(404, "Assignment not found");
@@ -287,6 +293,7 @@ export const createTeacherAssignment = asyncHandler(async (req, res) => {
   const teacherId = req.user._id;
   const payload = req.body || {};
   const course = await assertTeacherOwnsCourse(teacherId, payload.courseId);
+  assertTeacherCanManageAssignmentCourse(course);
 
   const assignment = await Assignment.create({
     courseId: course._id,
@@ -342,9 +349,11 @@ export const updateTeacherAssignment = asyncHandler(async (req, res) => {
   const teacherId = req.user._id;
   const payload = req.body || {};
   const assignment = await assertTeacherOwnsAssignment(teacherId, req.params.id);
+  assertTeacherCanManageAssignmentCourse(assignment.courseId);
 
   if (payload.courseId && String(payload.courseId) !== String(assignment.courseId?._id || assignment.courseId)) {
-    await assertTeacherOwnsCourse(teacherId, payload.courseId);
+    const nextCourse = await assertTeacherOwnsCourse(teacherId, payload.courseId);
+    assertTeacherCanManageAssignmentCourse(nextCourse);
     assignment.courseId = payload.courseId;
   }
 
@@ -384,6 +393,7 @@ export const updateTeacherAssignment = asyncHandler(async (req, res) => {
 export const deleteTeacherAssignment = asyncHandler(async (req, res) => {
   const teacherId = req.user._id;
   const assignment = await assertTeacherOwnsAssignment(teacherId, req.params.id);
+  assertTeacherCanManageAssignmentCourse(assignment.courseId);
   const submissionRows = await AssignmentSubmission.find({
     assignmentId: assignment._id,
   }).select("attachmentUrl");
@@ -506,6 +516,7 @@ export const getTeacherAssignmentSubmissions = asyncHandler(async (req, res) => 
 export const reviewTeacherAssignmentSubmission = asyncHandler(async (req, res) => {
   const teacherId = req.user._id;
   const assignment = await assertTeacherOwnsAssignment(teacherId, req.params.id);
+  assertTeacherCanManageAssignmentCourse(assignment.courseId);
   const { score, feedback = "" } = req.body || {};
   const studentId = req.params.studentId;
 

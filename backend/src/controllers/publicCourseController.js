@@ -107,6 +107,7 @@ export const getPublishedCourses = asyncHandler(async (req, res) => {
   const baseFilter = {
     status: "published",
     isPublished: true,
+    classEndedAt: null,
     $or: [
       { teacher: { $in: approvedTeacherIds } },
       { teacherId: { $in: approvedTeacherIds } },
@@ -363,6 +364,7 @@ export const getPublicPlatformStats = asyncHandler(async (_req, res) => {
   const activeCourseFilter = {
     status: "published",
     isPublished: true,
+    classEndedAt: null,
     $or: [
       { teacher: { $in: approvedTeacherIds } },
       { teacherId: { $in: approvedTeacherIds } },

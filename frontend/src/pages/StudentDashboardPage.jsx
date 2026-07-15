@@ -7,7 +7,6 @@ import {
   BellRing,
   Video,
   ClipboardList,
-  MessageCircle,
   FolderOpen,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -141,6 +140,12 @@ const formatTimeRange = (startDate, endDate, language = "fa") => {
   return `${startLabel} - ${endLabel}`;
 };
 
+const isCourseEnded = (course = {}) => {
+  if (!course?.classEndedAt) return false;
+  const endedAt = new Date(course.classEndedAt);
+  return !Number.isNaN(endedAt.getTime());
+};
+
 const resolveNextScheduleText = (scheduleRows = [], language = "fa", now = new Date()) => {
   const candidates = (Array.isArray(scheduleRows) ? scheduleRows : [])
     .map((row) => {
@@ -271,7 +276,9 @@ const getRequestErrorMessage = (reason, language = "fa", scope = "general") => {
 function mapEnrollment(enrollment = {}, language = "fa") {
   const course = enrollment.courseId || {};
   const teacher = course.teacher || {};
-  const status = enrollment.enrollmentStatus || "pending";
+  const ended = isCourseEnded(course);
+  const rawStatus = enrollment.enrollmentStatus || "pending";
+  const status = ended ? "completed" : rawStatus;
 
   const scheduleRows = Array.isArray(course.schedule) ? course.schedule : [];
   const todaySchedule = scheduleRows.find((row) => isScheduleForToday(row?.day));
@@ -279,13 +286,17 @@ function mapEnrollment(enrollment = {}, language = "fa") {
   const todayPhase = getTodaySessionPhase(todaySchedule);
 
   const nextScheduleText = resolveNextScheduleText(scheduleRows, language);
-  const nextClass = nextScheduleText || (
-    firstSchedule
-      ? `${firstSchedule.day} ${firstSchedule.startTime} - ${firstSchedule.endTime}`
-      : language === "fa"
-        ? "زمان‌بندی این کورس به‌زودی اعلام می‌شود"
-        : "Course schedule will be announced soon."
-  );
+  const nextClass = ended
+    ? language === "fa"
+      ? "این کورس پایان یافته است"
+      : "This course has ended."
+    : nextScheduleText || (
+      firstSchedule
+        ? `${firstSchedule.day} ${firstSchedule.startTime} - ${firstSchedule.endTime}`
+        : language === "fa"
+          ? "زمان‌بندی این کورس به‌زودی اعلام می‌شود"
+          : "Course schedule will be announced soon."
+    );
   const description = course.shortDescription || course.description || "";
   const courseSlug = course.slug || course._id || "";
   const teacherName =
@@ -306,10 +317,10 @@ function mapEnrollment(enrollment = {}, language = "fa") {
     progress,
     status,
     nextClass,
-    hasClassToday: Boolean(todaySchedule),
+    hasClassToday: ended ? false : Boolean(todaySchedule),
     todayPhase,
     meetLink:
-      status === "active" && todaySchedule && todayPhase === "ongoing"
+      !ended && status === "active" && todaySchedule && todayPhase === "ongoing"
         ? course.meetingLink || null
         : null,
     createdAt: enrollment.createdAt || null,
@@ -733,17 +744,6 @@ export default function StudentDashboardPage({ language = "fa" }) {
               </div>
               <p className="text-sm font-black text-slate-900">
                 {language === "fa" ? "تمرین‌ها" : "Assignments"}
-              </p>
-            </Link>
-            <Link
-              to="/student/messages"
-              className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-primary-100 hover:bg-primary-50"
-            >
-              <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-primary-600 shadow-sm">
-                <MessageCircle size={18} />
-              </div>
-              <p className="text-sm font-black text-slate-900">
-                {language === "fa" ? "پیام‌ها" : "Messages"}
               </p>
             </Link>
             <Link

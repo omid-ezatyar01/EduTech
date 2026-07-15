@@ -6,7 +6,6 @@ import {
   Clock,
   Calendar,
   Info,
-  FileCheck,
 } from "lucide-react";
 import StudentLayout from "./StudentLayout.jsx";
 import CertificateStatsCard from "./CertificateStatsCard.jsx";
@@ -104,6 +103,15 @@ const createCertificateCode = (enrollmentId = "", issueDateRaw = null) => {
   return `ED-${year}-${suffix}`;
 };
 
+const formatCertificateCourseTitle = (value = "") => {
+  const title = String(value || "").trim();
+  if (!title) return "COURSE";
+  return title.toLocaleUpperCase("en-US");
+};
+
+const isPaidCourse = (course = {}) =>
+  !Boolean(course?.isFree) && Number(course?.price || 0) > 0;
+
 const isCertificateReady = (enrollment = {}) => {
   const course =
     enrollment?.courseId && typeof enrollment.courseId === "object"
@@ -111,7 +119,8 @@ const isCertificateReady = (enrollment = {}) => {
       : {};
   return (
     String(enrollment?.enrollmentStatus || "") === "completed" &&
-    Boolean(course?.classEndedAt)
+    Boolean(course?.classEndedAt) &&
+    isPaidCourse(course)
   );
 };
 
@@ -143,8 +152,8 @@ const mapEnrollmentToCertificate = (
 
   return {
     id: enrollment._id,
-    course: course.title || "Course",
-    courseEn: course.title || "Course",
+    course: formatCertificateCourseTitle(course.title || "Course"),
+    courseEn: formatCertificateCourseTitle(course.title || "Course"),
     student: studentName || studentFallback,
     teacher: safeTeacherName,
     teacherEn: safeTeacherName,
@@ -275,7 +284,6 @@ export default function Certificates({ language = "fa" }) {
     subtitle: isFa
       ? "سرتیفیکیت‌های دریافتی خود را مشاهده و دانلود کنید."
       : "View and download your earned certificates.",
-    requestReview: isFa ? "درخواست بررسی سرتیفیکیت" : "Request Certificate Review",
     statsAllTitle: isFa ? "همه سرتیفیکیت‌ها" : "All Certificates",
     statsAllSubtitle: isFa ? "از تمام کورس‌ها" : "From all courses",
     statsCompletedTitle: isFa ? "تکمیل شده" : "Completed",
@@ -336,7 +344,15 @@ export default function Certificates({ language = "fa" }) {
         const enrollments = await fetchStudentEnrollments();
         if (!mounted) return;
         const validEnrollments = Array.isArray(enrollments)
-          ? enrollments.filter(hasExistingCourse)
+          ? enrollments.filter(
+              (enrollment) =>
+                hasExistingCourse(enrollment) &&
+                isPaidCourse(
+                  enrollment?.courseId && typeof enrollment.courseId === "object"
+                    ? enrollment.courseId
+                    : {},
+                ),
+            )
           : [];
         const hydratedEnrollments = await hydrateEnrollmentsWithTeacherProfiles(validEnrollments);
         if (!mounted) return;
@@ -606,16 +622,13 @@ export default function Certificates({ language = "fa" }) {
       </div>
 
       {/* Header */}
-      <div className="mb-8 px-1 sm:px-0 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <div className="mb-8 px-1 sm:px-0">
         <div>
           <h1 className="text-3xl font-black text-slate-950">{t.certificates}</h1>
           <p className="mt-2 text-lg font-medium text-slate-600">
             {t.subtitle}
           </p>
         </div>
-        <button className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border-2 border-primary-600 bg-primary-50 px-6 text-sm font-black text-primary-700 transition hover:-translate-y-0.5 hover:bg-primary-600 hover:text-white">
-          <FileCheck size={18} /> {t.requestReview}
-        </button>
       </div>
 
       {/* Stats Cards */}

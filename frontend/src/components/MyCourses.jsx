@@ -185,6 +185,12 @@ const formatCourseDuration = (course = {}, language = "fa") => {
   return isFa ? "نامشخص" : "N/A";
 };
 
+const isCourseEnded = (course = {}) => {
+  if (!course?.classEndedAt) return false;
+  const endedAt = new Date(course.classEndedAt);
+  return !Number.isNaN(endedAt.getTime());
+};
+
 function mapEnrollmentToCourse(enrollment = {}, language = "fa") {
   const isFa = language === "fa";
   const course = enrollment.courseId || {};
@@ -196,16 +202,21 @@ function mapEnrollmentToCourse(enrollment = {}, language = "fa") {
     cancelled: "cancelled",
   };
 
-  const status = statusMap[enrollment.enrollmentStatus] || "pending";
+  const rawStatus = statusMap[enrollment.enrollmentStatus] || "pending";
+  const status = isCourseEnded(course) ? "completed" : rawStatus;
 
   const scheduleRows = Array.isArray(course.schedule) ? course.schedule : [];
   const nextScheduleText = resolveNextScheduleText(scheduleRows, language);
 
-  const nextClass = nextScheduleText
-    ? nextScheduleText
-    : isFa
-      ? "زمان‌بندی این کورس به‌زودی اعلام می‌شود"
-      : "Course schedule will be announced soon.";
+  const nextClass = isCourseEnded(course)
+    ? isFa
+      ? "این کورس پایان یافته است"
+      : "This course has ended."
+    : nextScheduleText
+      ? nextScheduleText
+      : isFa
+        ? "زمان‌بندی این کورس به‌زودی اعلام می‌شود"
+        : "Course schedule will be announced soon.";
 
   const progress = resolveStudentCourseProgressPercent(enrollment, course, 0);
 
@@ -513,7 +524,7 @@ export default function MyCourses({ language = "fa" }) {
           }
           icon={Headphones}
           buttonText={isFa ? "تماس با پشتیبانی" : "Contact Support"}
-          buttonHref="/student/messages"
+          buttonHref="/contact"
           bgClass="border border-slate-200 bg-white"
           textClass="text-slate-600"
           iconClass="text-primary-600"

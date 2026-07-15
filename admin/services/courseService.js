@@ -174,6 +174,26 @@ export const rejectCourseCancellationRequest = async (courseId, adminResponse = 
   return data?.data;
 };
 
+export const approveCourseEndRequest = async (courseId, adminResponse = "") => {
+  const response = await fetch(`${getApiBase()}/admin/courses/${courseId}/end-request/approve`, {
+    method: "PATCH",
+    headers: buildAuthHeaders(),
+    body: JSON.stringify({ adminResponse }),
+  });
+  const data = await parseJsonResponse(response);
+  return data?.data;
+};
+
+export const rejectCourseEndRequest = async (courseId, adminResponse = "") => {
+  const response = await fetch(`${getApiBase()}/admin/courses/${courseId}/end-request/reject`, {
+    method: "PATCH",
+    headers: buildAuthHeaders(),
+    body: JSON.stringify({ adminResponse }),
+  });
+  const data = await parseJsonResponse(response);
+  return data?.data;
+};
+
 export const fetchGoogleAccountStatus = async () => {
   const response = await fetch(`${getApiBase()}/google/account-status`, {
     headers: buildAuthHeaders(),

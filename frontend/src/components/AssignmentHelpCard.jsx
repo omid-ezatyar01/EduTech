@@ -17,7 +17,7 @@ export default function AssignmentHelpCard({ language = "fa" }) {
           : "If you have questions about assignments, contact support."}
       </p>
       <Link
-        to="/student/messages"
+        to="/contact"
         className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3.5 text-sm font-black text-primary-700 shadow-sm transition hover:bg-slate-50 hover:-translate-y-0.5"
       >
         {isFa ? "تماس با پشتیبانی" : "Contact Support"}

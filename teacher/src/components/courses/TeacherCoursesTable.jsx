@@ -6,7 +6,7 @@ export default function TeacherCoursesTable({
   onEdit,
   onDetails,
   onStartClass,
-  onEndClass,
+  onRequestEndReview,
   onRequestCancel,
   pagination,
   onPageChange,
@@ -34,7 +34,7 @@ export default function TeacherCoursesTable({
             onEdit={() => onEdit(course)}
             onDetails={() => onDetails(course)}
             onStartClass={() => onStartClass(course)}
-            onEndClass={() => onEndClass(course)}
+            onRequestEndReview={() => onRequestEndReview(course)}
             onRequestCancel={() => onRequestCancel(course)}
           />
         ))}

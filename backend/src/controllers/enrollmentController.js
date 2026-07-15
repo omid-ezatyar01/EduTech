@@ -146,6 +146,19 @@ const isPaidCourse = (course = null) => {
   return !Boolean(resolvedCourse?.isFree) && Number(resolvedCourse?.price || 0) > 0;
 };
 
+const shouldClearCertificateState = (enrollment = {}, course = null) => {
+  const resolvedCourse =
+    course ||
+    (enrollment?.courseId && typeof enrollment.courseId === "object"
+      ? enrollment.courseId
+      : null) ||
+    {};
+  return (
+    !isPaidCourse(resolvedCourse) &&
+    Boolean(enrollment?.certificateId || enrollment?.certificateIssuedAt)
+  );
+};
+
 const isCertificateEligible = (enrollment = {}, course = null) => {
   const resolvedCourse =
     course ||
@@ -397,6 +410,20 @@ export const getStudentEnrollments = asyncHandler(async (req, res) => {
       });
     }
 
+    if (shouldClearCertificateState(row, course)) {
+      certificateBackfillOps.push({
+        updateOne: {
+          filter: { _id: row?._id },
+          update: {
+            $unset: {
+              certificateId: 1,
+              certificateIssuedAt: 1,
+            },
+          },
+        },
+      });
+    }
+
     return {
       ...row,
       certificateIssuedAt: issuedAt,
@@ -521,7 +548,7 @@ export const getStudentAssignments = asyncHandler(async (req, res) => {
   const enrollments = await Enrollment.find({ studentId: req.user._id })
     .populate({
       path: "courseId",
-      select: "title shortDescription description schedule teacher createdBy isFree price startDate",
+      select: "title shortDescription description schedule teacher createdBy isFree price startDate classEndedAt",
       populate: [
         { path: "teacher", select: "name" },
         { path: "createdBy", select: "name" }
@@ -530,7 +557,7 @@ export const getStudentAssignments = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 });
 
   const visibleEnrollments = (Array.isArray(enrollments) ? enrollments : []).filter((enrollment) =>
-    hasVisibleCourse(enrollment?.courseId),
+    hasVisibleCourse(enrollment?.courseId) && !enrollment?.courseId?.classEndedAt,
   );
 
   for (const enrollment of visibleEnrollments) {
@@ -552,7 +579,7 @@ export const getStudentAssignments = asyncHandler(async (req, res) => {
       })
         .populate({
           path: "courseId",
-          select: "title teacher createdBy",
+          select: "title teacher createdBy classEndedAt",
           populate: [
             { path: "teacher", select: "name" },
             { path: "createdBy", select: "name" },
@@ -643,8 +670,9 @@ export const getStudentAssignments = asyncHandler(async (req, res) => {
       maxScore: Number(row?.maxScore || 100),
       type: row?.type || "homework",
       submissionId: submission ? String(submission._id) : "",
+      classEndedAt: course?.classEndedAt || null,
     };
-  });
+  }).filter((row) => !row.classEndedAt);
 
   return res.json(
     new ApiResponse({
@@ -658,12 +686,12 @@ export const getStudentResources = asyncHandler(async (req, res) => {
   const enrollments = await Enrollment.find({ studentId: req.user._id })
     .populate(
       "courseId",
-      "title shortDescription description thumbnail promoVideo updatedAt isFree price startDate",
+      "title shortDescription description thumbnail promoVideo updatedAt isFree price startDate classEndedAt",
     )
     .sort({ createdAt: -1 });
 
   const visibleEnrollments = (Array.isArray(enrollments) ? enrollments : []).filter((enrollment) =>
-    hasVisibleCourse(enrollment?.courseId),
+    hasVisibleCourse(enrollment?.courseId) && !enrollment?.courseId?.classEndedAt,
   );
 
   for (const enrollment of visibleEnrollments) {
@@ -676,18 +704,19 @@ export const getStudentResources = asyncHandler(async (req, res) => {
     .filter(Boolean);
   const teacherResources = courseIds.length
     ? await CourseResource.find({ courseId: { $in: courseIds } })
-      .populate("courseId", "title")
+      .populate("courseId", "title classEndedAt")
       .sort({ createdAt: -1 })
       .lean()
     : [];
 
   const resources = teacherResources
-    .filter((resource) => hasVisibleCourse(resource?.courseId))
+    .filter((resource) => hasVisibleCourse(resource?.courseId) && !resource?.courseId?.classEndedAt)
     .map((resource) => ({
       id: String(resource._id),
       title: resource.title,
       description: resource.module,
       course: resource.courseId?.title || "Course",
+      classEndedAt: resource.courseId?.classEndedAt || null,
       type: resource.type,
       size: resource.fileSize ? `${Math.round(resource.fileSize / 1024 / 1024)} MB` : "-",
       addedAt: resource.createdAt,

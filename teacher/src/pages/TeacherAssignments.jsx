@@ -54,6 +54,7 @@ const emptyForm = {
 
 const DEFAULT_ASSIGNMENTS_META = { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
 const DEFAULT_ASSIGNMENTS_STATS = { total: 0, published: 0, pendingReview: 0, dueSoon: 0 };
+const isManageableCourse = (course = {}) => !course?.classEndedAt;
 
 const formatDateTime = (value, language) => {
   if (!value) return "-";
@@ -221,7 +222,10 @@ export default function TeacherAssignments() {
         fetchTeacherAssignments({ page: 1, limit: 100, status: "published" }),
       ]);
 
-      const rows = Array.isArray(listRes?.items) ? listRes.items : [];
+      const activeCourseIds = new Set((Array.isArray(courses) ? courses : []).map((course) => String(course?._id || "")));
+      const rows = (Array.isArray(listRes?.items) ? listRes.items : []).filter((item) =>
+        activeCourseIds.has(String(item?.courseId || "")),
+      );
       const listMeta = listRes?.meta || {};
       const nextMeta = {
         page: Number(listMeta.page || targetPage || 1),
@@ -273,7 +277,7 @@ export default function TeacherAssignments() {
       try {
         const { courses: rows } = await fetchTeacherCourses({ page: 1, limit: 100 });
         if (!mounted) return;
-        setCourses(Array.isArray(rows) ? rows : []);
+        setCourses((Array.isArray(rows) ? rows : []).filter(isManageableCourse));
       } catch {
         if (!mounted) return;
       }
@@ -655,7 +659,8 @@ export default function TeacherAssignments() {
               <button
                 type="button"
                 onClick={openCreate}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#0B4FD8] to-[#00B8A9] px-4 text-sm font-bold text-white"
+                disabled={!courses.length}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#0B4FD8] to-[#00B8A9] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus size={16} />
                 {isFa ? "ایجاد تمرین" : "Create Assignment"}

@@ -200,6 +200,13 @@ export const completePayment = async ({
           name: student.name,
           courseTitle: course?.title || "",
           teacherName,
+          paymentPlan: result.enrollment?.paymentPlan || "",
+          accessStartsAt: result.enrollment?.accessStartsAt || null,
+          accessExpiresAt: result.enrollment?.accessExpiresAt || null,
+          amount: result.payment?.amount ?? "",
+          currency: result.payment?.currency || "",
+          paymentMethod: result.payment?.paymentMethod || "",
+          paidAt: result.payment?.paidAt || null,
         }).catch((error) => {
           console.warn(`Failed to send enrollment email: ${error.message}`);
         });
@@ -221,6 +228,13 @@ export const completePayment = async ({
             name: student.name,
             courseTitle: course?.title || "",
             teacherName,
+            paymentPlan: result.enrollment?.paymentPlan || "",
+            accessStartsAt: result.enrollment?.accessStartsAt || null,
+            accessExpiresAt: result.enrollment?.accessExpiresAt || null,
+            amount: result.payment?.amount ?? "",
+            currency: result.payment?.currency || "",
+            paymentMethod: result.payment?.paymentMethod || "",
+            paidAt: result.payment?.paidAt || null,
           }).catch((sendError) => {
             console.warn(`Failed to send enrollment email: ${sendError.message}`);
           });

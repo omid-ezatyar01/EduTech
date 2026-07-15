@@ -210,6 +210,34 @@ const courseSchema = new mongoose.Schema(
         default: "",
       },
     },
+    endRequest: {
+      status: {
+        type: String,
+        enum: ["none", "pending", "approved", "rejected"],
+        default: "none",
+        index: true,
+      },
+      reason: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+      requestedAt: {
+        type: Date,
+      },
+      reviewedAt: {
+        type: Date,
+      },
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      adminResponse: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+    },
     schedule: {
       type: [scheduleSchema],
       default: [],

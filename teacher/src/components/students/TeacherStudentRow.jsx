@@ -1,4 +1,4 @@
-import { Eye, MessageCircle, MoreVertical } from "lucide-react";
+import { Eye, MoreVertical } from "lucide-react";
 
 const statusBadgeStyles = {
   active: "bg-[#DCFCE7] text-[#10B981]",
@@ -12,7 +12,6 @@ export default function TeacherStudentRow({
   student,
   mobile = false,
   onView,
-  onMessage,
   onMoreToggle,
   moreOpen,
   onMoreAction,
@@ -56,20 +55,13 @@ export default function TeacherStudentRow({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="mt-4 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => onView(student)}
             className="rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs font-semibold text-slate-600 hover:border-[#0B4FD8] hover:text-[#0B4FD8]"
           >
             پروفایل
-          </button>
-          <button
-            type="button"
-            onClick={() => onMessage(student)}
-            className="rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs font-semibold text-slate-600 hover:border-[#0B4FD8] hover:text-[#0B4FD8]"
-          >
-            پیام
           </button>
           <button
             type="button"
@@ -84,7 +76,6 @@ export default function TeacherStudentRow({
           <div className="mt-2 space-y-1 rounded-xl border border-[#E2E8F0] bg-white p-2 text-xs">
             {[
               "مشاهده پروفایل",
-              "ارسال پیام",
               "مشاهده تمرین‌ها",
               "گزارش حضور",
               "علامت‌گذاری نیازمند پیگیری",
@@ -149,14 +140,6 @@ export default function TeacherStudentRow({
           </button>
           <button
             type="button"
-            onClick={() => onMessage(student)}
-            className="rounded-lg p-2 transition hover:bg-[#0B4FD8]/10 hover:text-[#0B4FD8]"
-            aria-label="ارسال پیام"
-          >
-            <MessageCircle size={16} />
-          </button>
-          <button
-            type="button"
             onClick={() => onMoreToggle(student.id)}
             className="rounded-lg p-2 transition hover:bg-[#0B4FD8]/10 hover:text-[#0B4FD8]"
             aria-label="عملیات بیشتر"
@@ -169,7 +152,6 @@ export default function TeacherStudentRow({
           <div className="absolute left-4 top-12 z-10 w-48 rounded-xl border border-[#E2E8F0] bg-white p-2 shadow-lg">
             {[
               "مشاهده پروفایل",
-              "ارسال پیام",
               "مشاهده تمرین‌ها",
               "گزارش حضور",
               "علامت‌گذاری نیازمند پیگیری",

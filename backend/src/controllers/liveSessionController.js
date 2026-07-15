@@ -307,6 +307,7 @@ const mapTeacherSession = (session) => {
       ? {
           _id: row.courseId._id || row.courseId,
           title: row.courseId.title || "",
+          classEndedAt: row.courseId.classEndedAt || null,
         }
       : null,
     createdAt: row.createdAt,
@@ -390,13 +391,19 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
   const course = await Course.findOne({
     _id: courseId,
     ...teacherCourseFilter(teacherId),
-  }).select("_id title teacher teacherId createdBy");
+  }).select("_id title teacher teacherId createdBy classEndedAt");
 
   if (!course) {
     throw new ApiError(404, "Course not found or not owned by teacher");
   }
 
   return course;
+};
+
+const assertTeacherCanManageCourse = (course) => {
+  if (course?.classEndedAt) {
+    throw new ApiError(400, "Ended courses cannot be managed by teacher");
+  }
 };
 
 const assertCoursePermission = async (user, courseId) => {
@@ -424,7 +431,7 @@ const getTeacherSessionById = async (teacherId, sessionId) => {
   const session = await LiveSession.findOne({
     _id: sessionId,
     teacherId,
-  }).populate("courseId", "title isFree price startDate");
+  }).populate("courseId", "title isFree price startDate classEndedAt");
 
   if (!session) {
     throw new ApiError(404, "Live session not found");
@@ -523,6 +530,7 @@ export const createTeacherLiveSession = asyncHandler(async (req, res) => {
   const teacherId = req.user._id;
 
   const course = await assertTeacherOwnsCourse(teacherId, payload.courseId);
+  assertTeacherCanManageCourse(course);
   await ensureSessionSlotIsUnique({ courseId: payload.courseId, startAt: payload.startAt });
 
   let meetingLink = payload.meetingLink || "";
@@ -660,10 +668,12 @@ export const getTeacherLiveSessionById = asyncHandler(async (req, res) => {
 export const updateTeacherLiveSession = asyncHandler(async (req, res) => {
   const teacherId = req.user._id;
   const session = await getTeacherSessionById(teacherId, req.params.id);
+  assertTeacherCanManageCourse(session.courseId);
   const payload = { ...req.body };
 
   if (payload.courseId) {
-    await assertTeacherOwnsCourse(teacherId, payload.courseId);
+    const nextCourse = await assertTeacherOwnsCourse(teacherId, payload.courseId);
+    assertTeacherCanManageCourse(nextCourse);
     session.courseId = payload.courseId;
   }
 
@@ -720,6 +730,7 @@ export const updateTeacherLiveSession = asyncHandler(async (req, res) => {
 
 export const deleteTeacherLiveSession = asyncHandler(async (req, res) => {
   const session = await getTeacherSessionById(req.user._id, req.params.id);
+  assertTeacherCanManageCourse(session.courseId);
   await LiveSession.deleteOne({ _id: session._id });
 
   return res.json(
@@ -732,6 +743,7 @@ export const deleteTeacherLiveSession = asyncHandler(async (req, res) => {
 
 export const startTeacherLiveSession = asyncHandler(async (req, res) => {
   const session = await getTeacherSessionById(req.user._id, req.params.id);
+  assertTeacherCanManageCourse(session.courseId);
   if (session.status === "cancelled") {
     throw new ApiError(400, "Cancelled session cannot be started");
   }
@@ -749,6 +761,7 @@ export const startTeacherLiveSession = asyncHandler(async (req, res) => {
 
 export const endTeacherLiveSession = asyncHandler(async (req, res) => {
   const session = await getTeacherSessionById(req.user._id, req.params.id);
+  assertTeacherCanManageCourse(session.courseId);
   if (session.status === "cancelled") {
     throw new ApiError(400, "Cancelled session cannot be completed");
   }
@@ -767,6 +780,7 @@ export const endTeacherLiveSession = asyncHandler(async (req, res) => {
 
 export const cancelTeacherLiveSession = asyncHandler(async (req, res) => {
   const session = await getTeacherSessionById(req.user._id, req.params.id);
+  assertTeacherCanManageCourse(session.courseId);
   session.status = "cancelled";
   session.cancelReason = req.body.reason || "";
   await session.save();
@@ -834,6 +848,7 @@ export const getTeacherLiveSessionAttendance = asyncHandler(async (req, res) => 
 
 export const updateTeacherLiveSessionAttendance = asyncHandler(async (req, res) => {
   const session = await getTeacherSessionById(req.user._id, req.params.id);
+  assertTeacherCanManageCourse(session.courseId);
   const attendeesPayload = Array.isArray(req.body.attendees) ? req.body.attendees : [];
 
   const validEnrollments = await Enrollment.find({
@@ -909,10 +924,33 @@ export const getTeacherAttendanceOverview = asyncHandler(async (req, res) => {
     );
   }
 
-  const filter = { teacherId, courseId: { $in: ownedCourseIds } };
+  const activeCourses = await Course.find({
+    _id: { $in: ownedCourseIds },
+    classEndedAt: null,
+  })
+    .select("_id title enrolledStudentsCount maxStudents status isPublished classEndedAt")
+    .sort({ createdAt: -1 })
+    .lean();
+  const activeCourseIds = activeCourses.map((course) => course._id);
+
+  if (!activeCourseIds.length) {
+    return res.json(
+      new ApiResponse({
+        message: "Teacher attendance overview fetched successfully",
+        data: {
+          courses: [],
+          sessions: [],
+          stats: { totalSessions: 0, totalMarked: 0, ...emptyAttendanceStats() },
+        },
+        meta: { page, limit, total: 0, totalPages: 1 },
+      }),
+    );
+  }
+
+  const filter = { teacherId, courseId: { $in: activeCourseIds } };
   if (req.query.courseId) {
     const requestedCourseId = String(req.query.courseId);
-    const isOwnedCourse = ownedCourseIds.some((courseId) => String(courseId) === requestedCourseId);
+    const isOwnedCourse = activeCourseIds.some((courseId) => String(courseId) === requestedCourseId);
     if (!isOwnedCourse) {
       filter.courseId = { $in: [] };
     } else {
@@ -923,13 +961,9 @@ export const getTeacherAttendanceOverview = asyncHandler(async (req, res) => {
   const dateFilter = buildSessionDateFilter(req.query);
   if (dateFilter) filter.startAt = dateFilter;
 
-  const [courses, sessions, total] = await Promise.all([
-    Course.find({ _id: { $in: ownedCourseIds } })
-      .select("_id title enrolledStudentsCount maxStudents status isPublished")
-      .sort({ createdAt: -1 })
-      .lean(),
+  const [sessions, total] = await Promise.all([
     LiveSession.find(filter)
-      .populate("courseId", "title")
+      .populate("courseId", "title classEndedAt")
       .sort({ startAt: -1, createdAt: -1 })
       .skip(skip)
       .limit(limit),
@@ -940,7 +974,7 @@ export const getTeacherAttendanceOverview = asyncHandler(async (req, res) => {
   const enrollmentCounts = await Enrollment.aggregate([
     {
       $match: {
-        courseId: { $in: ownedCourseIds },
+        courseId: { $in: activeCourseIds },
         enrollmentStatus: { $in: ["active", "completed"] },
       },
     },
@@ -963,7 +997,7 @@ export const getTeacherAttendanceOverview = asyncHandler(async (req, res) => {
     new ApiResponse({
       message: "Teacher attendance overview fetched successfully",
       data: {
-        courses: courses.map((course) => ({
+        courses: activeCourses.map((course) => ({
           ...course,
           activeStudentsCount: enrollmentCountMap.get(String(course._id)) || 0,
         })),

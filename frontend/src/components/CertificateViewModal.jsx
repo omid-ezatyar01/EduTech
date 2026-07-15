@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Download, Share2, Loader2 } from "lucide-react";
+import { X, Download, Loader2 } from "lucide-react";
 import CertificatePreview from "./CertificatePreview.jsx";
 
 export default function CertificateViewModal({
@@ -18,11 +18,7 @@ export default function CertificateViewModal({
     issueDate: isFa ? "تاریخ صدور" : "Issue Date",
     verifyCode: isFa ? "کد تایید" : "Verification Code",
     close: isFa ? "بستن" : "Close",
-    share: isFa ? "اشتراک‌گذاری" : "Share",
     downloadPdf: isFa ? "دانلود PDF" : "Download PDF",
-    shareLocked: isFa
-      ? "اشتراک‌گذاری فقط بعد از پایان رسمی کورس فعال می‌شود."
-      : "Sharing is available only after the course is officially finished.",
     downloadLocked: isFa
       ? "دانلود فقط بعد از پایان رسمی کورس فعال می‌شود."
       : "Download is available only after the course is officially finished.",
@@ -99,17 +95,6 @@ export default function CertificateViewModal({
             {t.close}
           </button>
           <div className="flex flex-[2] flex-col sm:flex-row gap-3">
-            <button
-              disabled={!isCompleted}
-              title={!isCompleted ? t.shareLocked : t.share}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-3.5 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-70 ${
-                isCompleted
-                  ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  : "border-slate-200 bg-slate-100 text-slate-400"
-              }`}
-            >
-              <Share2 size={18} /> {t.share}
-            </button>
             <button
               onClick={handleDownloadClick}
               disabled={isDownloading || !isCompleted}

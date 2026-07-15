@@ -202,6 +202,13 @@ export const verifyPaymentByAdmin = asyncHandler(async (req, res) => {
         name: student.name,
         courseTitle: course.title,
         teacherName: teacher?.name || "",
+        paymentPlan: enrollment.paymentPlan || "",
+        accessStartsAt: enrollment.accessStartsAt || null,
+        accessExpiresAt: enrollment.accessExpiresAt || null,
+        amount: payment.amount ?? "",
+        currency: payment.currency || "",
+        paymentMethod: payment.paymentMethod || "",
+        paidAt: payment.paidAt || null,
       }).catch((error) => {
         console.warn(`Failed to send enrollment email: ${error.message}`);
       });

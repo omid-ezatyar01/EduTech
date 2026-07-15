@@ -129,6 +129,17 @@ export const endTeacherCourseClass = async (courseId) => {
   return data?.data || {};
 };
 
+export const requestTeacherCourseEndReview = async (courseId, reason) => {
+  const response = await fetch(`${getApiBase()}/teacher/courses/${courseId}/end-request`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+    body: JSON.stringify({ reason }),
+  });
+
+  const data = await parseJsonResponse(response);
+  return data?.data || {};
+};
+
 export const startTeacherCourseClass = async (courseId) => {
   const response = await fetch(`${getApiBase()}/teacher/courses/${courseId}/start-class`, {
     method: "POST",

@@ -3,7 +3,6 @@ import TeacherStudentRow from "./TeacherStudentRow";
 export default function TeacherStudentsTable({
   students,
   onView,
-  onMessage,
   onMoreToggle,
   openMenuId,
   onMoreAction,
@@ -38,7 +37,6 @@ export default function TeacherStudentsTable({
                   key={student.id}
                   student={student}
                   onView={onView}
-                  onMessage={onMessage}
                   onMoreToggle={onMoreToggle}
                   moreOpen={openMenuId === student.id}
                   onMoreAction={onMoreAction}
@@ -63,7 +61,6 @@ export default function TeacherStudentsTable({
               student={student}
               mobile
               onView={onView}
-              onMessage={onMessage}
               onMoreToggle={onMoreToggle}
               moreOpen={openMenuId === student.id}
               onMoreAction={onMoreAction}

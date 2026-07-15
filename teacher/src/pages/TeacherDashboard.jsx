@@ -7,7 +7,6 @@
   Users,
   ClipboardCheck,
   DollarSign,
-  MessageCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -264,13 +263,6 @@ export default function TeacherDashboard() {
       tone: "bg-[#00B8A9]/10 text-[#00B8A9]",
     },
     {
-      key: "message",
-      labelFa: "ارسال پیام گروهی",
-      labelEn: "Broadcast Message",
-      icon: MessageCircle,
-      tone: "bg-[#F59E0B]/10 text-[#F59E0B]",
-    },
-    {
       key: "reports",
       labelFa: "مشاهده گزارش‌ها",
       labelEn: "View Reports",
@@ -305,7 +297,6 @@ export default function TeacherDashboard() {
                   if (action.key === "live") navigate("/teacher/live-classes");
                   if (action.key === "assignment") navigate("/teacher/assignments");
                   if (action.key === "resource") navigate("/teacher/resources");
-                  if (action.key === "message") navigate("/teacher/messages");
                   if (action.key === "reports") navigate("/teacher/reports");
                 }}
                 className="flex items-center gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3 text-sm font-bold text-slate-700 transition hover:border-[#0B4FD8]/30 hover:bg-white"

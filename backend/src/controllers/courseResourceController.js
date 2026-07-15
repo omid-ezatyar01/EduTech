@@ -36,6 +36,12 @@ const ensureOwnedCourse = async (courseId, teacherId) => {
   return course;
 };
 
+const ensureCourseResourceMutationsAllowed = (course) => {
+  if (course?.classEndedAt) {
+    throw new ApiError(400, "Ended courses cannot be changed by teacher");
+  }
+};
+
 const buildResourcePayload = (body = {}) => {
   const title = String(body.title || "").trim();
   const module = String(body.module || "").trim();
@@ -139,7 +145,8 @@ export const getCourseResources = asyncHandler(async (req, res) => {
 });
 
 export const createCourseResource = asyncHandler(async (req, res) => {
-  await ensureOwnedCourse(req.params.id, req.user._id);
+  const course = await ensureOwnedCourse(req.params.id, req.user._id);
+  ensureCourseResourceMutationsAllowed(course);
   try {
     const payload = buildResourcePayload(req.body);
     await ensureCourseSession(req.params.id, req.user._id, payload.sessionId);
@@ -176,7 +183,8 @@ export const createCourseResource = asyncHandler(async (req, res) => {
 });
 
 export const updateCourseResource = asyncHandler(async (req, res) => {
-  await ensureOwnedCourse(req.params.id, req.user._id);
+  const course = await ensureOwnedCourse(req.params.id, req.user._id);
+  ensureCourseResourceMutationsAllowed(course);
   if (!mongoose.Types.ObjectId.isValid(req.params.resourceId)) {
     throw new ApiError(400, "Invalid resource id");
   }
@@ -241,7 +249,8 @@ export const updateCourseResource = asyncHandler(async (req, res) => {
 });
 
 export const deleteCourseResource = asyncHandler(async (req, res) => {
-  await ensureOwnedCourse(req.params.id, req.user._id);
+  const course = await ensureOwnedCourse(req.params.id, req.user._id);
+  ensureCourseResourceMutationsAllowed(course);
   if (!mongoose.Types.ObjectId.isValid(req.params.resourceId)) {
     throw new ApiError(400, "Invalid resource id");
   }

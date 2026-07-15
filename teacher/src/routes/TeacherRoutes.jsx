@@ -13,7 +13,6 @@ const loadTeacherLiveClasses = () => import("../pages/TeacherLiveClasses");
 const loadTeacherAttendance = () => import("../pages/TeacherAttendance");
 const loadTeacherAssignments = () => import("../pages/TeacherAssignments");
 const loadTeacherResources = () => import("../pages/TeacherResources");
-const loadTeacherMessages = () => import("../pages/TeacherMessages");
 const loadTeacherIncome = () => import("../pages/TeacherIncome");
 const loadTeacherProfile = () => import("../pages/TeacherProfile");
 const loadTeacherSettings = () => import("../pages/TeacherSettings");
@@ -28,7 +27,6 @@ const TeacherLiveClasses = lazy(loadTeacherLiveClasses);
 const TeacherAttendance = lazy(loadTeacherAttendance);
 const TeacherAssignments = lazy(loadTeacherAssignments);
 const TeacherResources = lazy(loadTeacherResources);
-const TeacherMessages = lazy(loadTeacherMessages);
 const TeacherIncome = lazy(loadTeacherIncome);
 const TeacherProfile = lazy(loadTeacherProfile);
 const TeacherSettings = lazy(loadTeacherSettings);
@@ -55,7 +53,6 @@ const preloadRoutes = [
     load: loadTeacherAssignments,
   },
   { key: "resources", test: (path) => path === "/teacher/resources", load: loadTeacherResources },
-  { key: "messages", test: (path) => path === "/teacher/messages", load: loadTeacherMessages },
   { key: "reports", test: (path) => path === "/teacher/reports", load: loadTeacherReports },
   { key: "income", test: (path) => path === "/teacher/income", load: loadTeacherIncome },
   { key: "profile", test: (path) => path === "/teacher/profile", load: loadTeacherProfile },
@@ -234,11 +231,7 @@ export default function TeacherRoutes() {
           />
           <Route
             path="/teacher/messages"
-            element={
-              <TeacherProtectedRoute>
-                <TeacherMessages />
-              </TeacherProtectedRoute>
-            }
+            element={<Navigate to="/teacher/dashboard" replace />}
           />
           <Route
             path="/teacher/reports"

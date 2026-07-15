@@ -57,6 +57,7 @@ const mapTeacherCourse = (course = {}) => {
     language: course.language || "English",
     duration: course.duration || "",
     durationWeeks: Number(course.durationWeeks || 0),
+    totalSessions: Number(course.totalSessions || 0),
     startDate: course.startDate || null,
     endDate: course.endDate || null,
     scheduleRows,

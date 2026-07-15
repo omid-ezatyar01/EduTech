@@ -85,6 +85,7 @@ const statusMetaMap = {
 
 const getLiveClassesCacheKey = ({ courseId, status }) =>
   getTeacherPageCacheKey("live-classes", { courseId, status });
+const isManageableCourse = (course = {}) => !course?.classEndedAt;
 
 const isSameLocalDay = (value, compareWith = new Date()) => {
   const date = new Date(value);
@@ -339,8 +340,12 @@ export default function TeacherLiveClasses() {
           fetchTeacherLiveSessions(sessionQuery),
         ]);
         if (!isMounted) return;
-        const nextCourses = Array.isArray(courseRows) ? courseRows : [];
-        const nextSessions = Array.isArray(sessionRows) ? sessionRows : [];
+        const nextCourses = (Array.isArray(courseRows) ? courseRows : []).filter(isManageableCourse);
+        const allowedCourseIds = new Set(nextCourses.map((course) => String(course?._id || course?.id || "")));
+        const nextSessions = (Array.isArray(sessionRows) ? sessionRows : []).filter((session) => {
+          const courseId = String(session?.course?._id || session?.courseId || "");
+          return allowedCourseIds.has(courseId);
+        });
         setCourses(nextCourses);
         setSessions(nextSessions);
         writeTeacherPageCache(cacheKey, {
@@ -689,7 +694,8 @@ export default function TeacherLiveClasses() {
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#0B4FD8] px-4 text-sm font-bold text-white"
+                disabled={!courses.length}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#0B4FD8] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus size={16} />
                 {language === "fa" ? "ایجاد جلسه جدید" : "Create session"}

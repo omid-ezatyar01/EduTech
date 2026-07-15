@@ -49,6 +49,39 @@ const getCourseId = (course) => String(course?._id || course?.id || "");
 
 const getSessionCourseId = (session) => String(session?.course?._id || session?.course?.id || session?.courseId || "");
 const normalizeSearchValue = (value = "") => String(value || "").trim().toLowerCase();
+const isCourseEnded = (course) => Boolean(course?.classEndedAt);
+const isSessionFromEndedCourse = (session) => Boolean(session?.course?.classEndedAt);
+const sanitizeAttendanceOverview = (payload = {}) => {
+  const nextCourses = Array.isArray(payload.courses) ? payload.courses.filter((course) => !isCourseEnded(course)) : [];
+  const activeCourseIds = new Set(nextCourses.map((course) => getCourseId(course)).filter(Boolean));
+  const nextSessions = Array.isArray(payload.allSessions || payload.sessions)
+    ? (payload.allSessions || payload.sessions).filter((session) => {
+        if (isSessionFromEndedCourse(session)) return false;
+        const courseId = getSessionCourseId(session);
+        return courseId ? activeCourseIds.has(courseId) : true;
+      })
+    : [];
+  const nextOverviewStats =
+    nextSessions.length > 0
+      ? nextSessions.reduce(
+          (acc, session) => {
+            const sessionStats = session.attendanceStats || {};
+            acc.totalSessions += 1;
+            acc.totalMarked += Number(session.attendanceCount || 0);
+            acc.present += Number(sessionStats.present || 0);
+            acc.absent += Number(sessionStats.absent || 0);
+            return acc;
+          },
+          { totalSessions: 0, totalMarked: 0, present: 0, absent: 0 },
+        )
+      : { totalSessions: 0, totalMarked: 0, present: 0, absent: 0 };
+
+  return {
+    courses: nextCourses,
+    allSessions: nextSessions,
+    overviewStats: nextOverviewStats,
+  };
+};
 
 const getSessionStatusLabel = (status, isFa) => {
   const map = {
@@ -94,7 +127,7 @@ export default function TeacherAttendance() {
     () => getAuthUser() || { name: "Teacher", email: "teacher@edutech.study", role: "teacher" },
     [],
   );
-  const initialAttendanceCache = readTeacherPageCache(ATTENDANCE_OVERVIEW_CACHE_KEY);
+  const initialAttendanceCache = sanitizeAttendanceOverview(readTeacherPageCache(ATTENDANCE_OVERVIEW_CACHE_KEY) || {});
 
   const [courses, setCourses] = useState(initialAttendanceCache?.courses || []);
   const [allSessions, setAllSessions] = useState(initialAttendanceCache?.allSessions || []);
@@ -210,9 +243,10 @@ export default function TeacherAttendance() {
     const loadOverview = async () => {
       const cached = readTeacherPageCache(ATTENDANCE_OVERVIEW_CACHE_KEY);
       if (cached) {
-        setCourses(cached.courses || []);
-        setAllSessions(cached.allSessions || []);
-        setOverviewStats(cached.overviewStats || {});
+        const sanitizedCached = sanitizeAttendanceOverview(cached);
+        setCourses(sanitizedCached.courses);
+        setAllSessions(sanitizedCached.allSessions);
+        setOverviewStats(sanitizedCached.overviewStats);
         setLoading(false);
       } else {
         setLoading(true);
@@ -225,16 +259,18 @@ export default function TeacherAttendance() {
           limit: 100,
         });
         if (!mounted) return;
-        const nextSessions = Array.isArray(result.sessions) ? result.sessions : [];
-        const nextCourses = Array.isArray(result.courses) ? result.courses : [];
-        const nextOverviewStats = result.stats || {};
-        setCourses(nextCourses);
-        setAllSessions(nextSessions);
-        setOverviewStats(nextOverviewStats);
+        const sanitizedResult = sanitizeAttendanceOverview({
+          courses: result.courses,
+          sessions: result.sessions,
+          overviewStats: result.stats,
+        });
+        setCourses(sanitizedResult.courses);
+        setAllSessions(sanitizedResult.allSessions);
+        setOverviewStats(sanitizedResult.overviewStats);
         writeTeacherPageCache(ATTENDANCE_OVERVIEW_CACHE_KEY, {
-          courses: nextCourses,
-          allSessions: nextSessions,
-          overviewStats: nextOverviewStats,
+          courses: sanitizedResult.courses,
+          allSessions: sanitizedResult.allSessions,
+          overviewStats: sanitizedResult.overviewStats,
         });
       } catch (err) {
         if (!mounted) return;

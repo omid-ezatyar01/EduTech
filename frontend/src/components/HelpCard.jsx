@@ -33,7 +33,7 @@ export default function HelpCard({ compact = false, language = "fa" }) {
         </p>
       </div>
       <Link
-        to="/student/messages"
+        to="/contact"
         className={`relative z-10 mt-2 flex shrink-0 items-center justify-center rounded-xl bg-white text-sm font-black text-primary-700 shadow-sm transition hover:-translate-y-0.5 sm:mt-0 ${
           compact ? "px-5 py-3" : "px-6 py-3.5"
         }`}

@@ -33,6 +33,9 @@ const mockStudent = {
   avatar: "",
 };
 
+const isEndedCourseRow = (row = {}) =>
+  Boolean(row?.classEndedAt || row?.course?.classEndedAt || row?.courseId?.classEndedAt);
+
 export default function Assignments({ language = "fa" }) {
   const isFa = language === "fa";
   const ALL_COURSES = "__all_courses__";
@@ -105,14 +108,17 @@ export default function Assignments({ language = "fa" }) {
         locked: t.statusLocked,
       };
       setAssignments(
-        (Array.isArray(rows) ? rows : []).map((row) => ({
-          ...row,
-          statusLabel: statusLabelMap[row.status] || row.statusLabel || row.status || "-",
-        })),
+        (Array.isArray(rows) ? rows : [])
+          .filter((row) => !isEndedCourseRow(row))
+          .map((row) => ({
+            ...row,
+            statusLabel: statusLabelMap[row.status] || row.statusLabel || row.status || "-",
+          })),
       );
       const courseMap = new Map();
       (Array.isArray(enrollments) ? enrollments : []).forEach((enrollment) => {
         const course = enrollment?.courseId || {};
+        if (course?.classEndedAt) return;
         const id = String(course?._id || course?.id || "").trim();
         const title = String(course?.title || "").trim();
         if (!id || !title) return;

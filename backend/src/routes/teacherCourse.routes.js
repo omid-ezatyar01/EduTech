@@ -13,6 +13,7 @@ import {
   getTeacherCourseById,
   getTeacherCourses,
   getTeacherCoursePricingSettings,
+  requestTeacherCourseEndReview,
   requestTeacherCourseCancellation,
   startTeacherCourseClass,
   updateTeacherCourse,
@@ -28,6 +29,7 @@ import {
   courseResourceParamSchema,
   createCourseByTeacherSchema,
   idParamSchema,
+  requestCourseEndReviewSchema,
   requestCourseCancellationSchema,
   updateCourseByTeacherSchema,
 } from "../validators/course.validators.js";
@@ -70,6 +72,13 @@ router.post(
   "/courses/:id/end-class",
   validateRequest(idParamSchema, "params"),
   endTeacherCourseClass,
+);
+
+router.post(
+  "/courses/:id/end-request",
+  validateRequest(idParamSchema, "params"),
+  validateRequest(requestCourseEndReviewSchema),
+  requestTeacherCourseEndReview,
 );
 
 router.post(

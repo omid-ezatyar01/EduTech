@@ -28,6 +28,7 @@ export default function StudentCourseCard({
 }) {
   const isFa = language === "fa";
   const isActive = course.status === "active";
+  const isCompleted = course.status === "completed";
   const [failedAvatarKey, setFailedAvatarKey] = useState("");
   const teacherAvatar = resolveAvatarUrl(String(course.teacherAvatar || "").trim());
   const avatarKey = `${course.id || course._id || ""}:${teacherAvatar}`;
@@ -125,7 +126,7 @@ export default function StudentCourseCard({
         </div>
 
         <div className="flex flex-col gap-2 mt-1">
-          {isActive ? (
+          {isActive || isCompleted ? (
             null
           ) : (
             <>
@@ -136,7 +137,7 @@ export default function StudentCourseCard({
                 <FileText size={18} /> {isFa ? "جزئیات ثبت‌نام" : "Enrollment Details"}
               </button>
               <Link
-                to="/student/messages"
+                to="/contact"
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-50 px-4 text-sm font-black text-amber-700 transition hover:bg-amber-100"
               >
                 <Headphones size={18} /> {isFa ? "تماس با پشتیبانی" : "Contact Support"}

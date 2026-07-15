@@ -24,6 +24,15 @@ const activeEnrollmentFilter = (now = new Date()) => ({
 const buildTeacherCourseFilter = (teacherId) => ({
   status: "published",
   isPublished: true,
+  classEndedAt: null,
+  $and: [
+    {
+      $or: [
+        { classCancelledAt: { $exists: false } },
+        { classCancelledAt: null },
+      ],
+    },
+  ],
   $or: [{ teacher: teacherId }, { teacherId }, { createdBy: teacherId }],
 });
 
@@ -131,6 +140,7 @@ const mapTeacherCourses = (courses = [], globalCourseDiscountPercentage = 0, rat
         language: course.language || "English",
         duration: course.duration || "",
         durationWeeks: Number(course.durationWeeks || 0),
+        totalSessions: Number(course.totalSessions || 0),
         startDate: course.startDate || null,
         endDate: course.endDate || null,
         shortDescription: course.shortDescription || "",

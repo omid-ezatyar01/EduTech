@@ -1,5 +1,4 @@
 import Course from "../models/Course.js";
-import Enrollment from "../models/Enrollment.js";
 import AdminNotification from "../models/AdminNotification.js";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
@@ -13,12 +12,14 @@ import {
   getPlatformPricingSettings,
   normalizeTeacherCourseDiscountPercentage,
 } from "../utils/platformSettings.js";
-import { buildCertificateId, normalizeCertificateId } from "../utils/certificate.js";
 import {
   buildCourseCategoryFilter,
   resolveCourseCategoryAssignment,
 } from "../utils/courseCategory.js";
-import { notifyAdminCourseReview } from "../services/webPush.service.js";
+import {
+  notifyAdminCourseEndReview,
+  notifyAdminCourseReview,
+} from "../services/webPush.service.js";
 import {
   deriveCourseSchedule,
   getUniqueTeachingDays,
@@ -180,28 +181,6 @@ const ensureTeacherCanTeachCourseLanguage = (user, language) => {
   }
 
   return matchedLanguage;
-};
-
-const isPaidCourse = (course = null) =>
-  !Boolean(course?.isFree) && Number(course?.price || 0) > 0;
-
-const ensureEnrollmentCertificate = (enrollment, fallbackDate, course = null) => {
-  if (!isPaidCourse(course)) {
-    return {
-      issuedAt: null,
-      certificateId: null,
-    };
-  }
-
-  const issuedAt = enrollment?.certificateIssuedAt || fallbackDate || new Date();
-  const certificateId = normalizeCertificateId(
-    enrollment?.certificateId || buildCertificateId(enrollment?._id, issuedAt),
-  );
-
-  return {
-    issuedAt,
-    certificateId,
-  };
 };
 
 export const getTeacherCoursePricingSettings = asyncHandler(async (_req, res) => {
@@ -421,6 +400,10 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Course not found");
   }
 
+  if (existingCourse.classEndedAt) {
+    throw new ApiError(400, "Ended courses cannot be edited by teacher");
+  }
+
   const nextMaxStudents = Object.prototype.hasOwnProperty.call(payload, "maxStudents")
     ? Number(payload.maxStudents || 0)
     : Number(existingCourse.maxStudents || 0);
@@ -503,47 +486,6 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
     payload.teacherDiscountPercentage = normalizeTeacherCourseDiscountPercentage(
       payload.teacherDiscountPercentage,
     );
-  }
-
-  if (existingCourse.classEndedAt) {
-    const lockedChanges = [];
-    if (
-      Object.prototype.hasOwnProperty.call(payload, "totalSessions") &&
-      Number(payload.totalSessions || 0) !== resolveCourseTotalSessions(existingCourse)
-    ) {
-      lockedChanges.push("total sessions");
-    }
-    if (
-      Object.prototype.hasOwnProperty.call(payload, "startDate") &&
-      !sameDateTime(payload.startDate, existingCourse.startDate)
-    ) {
-      lockedChanges.push("start date");
-    }
-    if (
-      Object.prototype.hasOwnProperty.call(payload, "endDate") &&
-      !sameDateTime(payload.endDate, existingCourse.endDate)
-    ) {
-      lockedChanges.push("end date");
-    }
-    if (
-      Object.prototype.hasOwnProperty.call(payload, "durationWeeks") &&
-      Number(payload.durationWeeks || 0) !== Number(existingCourse.durationWeeks || 0)
-    ) {
-      lockedChanges.push("duration");
-    }
-    if (
-      Object.prototype.hasOwnProperty.call(payload, "schedule") &&
-      !sameSchedule(payload.schedule, existingCourse.schedule)
-    ) {
-      lockedChanges.push("schedule time");
-    }
-
-    if (lockedChanges.length) {
-      throw new ApiError(
-        400,
-        "Class has already ended. Schedule and course timing can no longer be changed.",
-      );
-    }
   }
 
   if (existingCourse.classStartedAt) {
@@ -693,14 +635,23 @@ export const startTeacherCourseClass = asyncHandler(async (req, res) => {
 });
 
 export const deleteTeacherCourse = asyncHandler(async (req, res) => {
+  const existingCourse = await Course.findOne({
+    _id: req.params.id,
+    ...ownCourseFilter(req.user._id),
+  }).select("_id classEndedAt");
+
+  if (!existingCourse) {
+    throw new ApiError(404, "Course not found");
+  }
+
+  if (existingCourse.classEndedAt) {
+    throw new ApiError(400, "Ended courses cannot be deleted by teacher");
+  }
+
   const deleted = await deleteCourseWithRelationsByFilter({
     _id: req.params.id,
     ...ownCourseFilter(req.user._id),
   });
-
-  if (!deleted) {
-    throw new ApiError(404, "Course not found");
-  }
 
   return res.json(
     new ApiResponse({
@@ -711,6 +662,16 @@ export const deleteTeacherCourse = asyncHandler(async (req, res) => {
 });
 
 export const endTeacherCourseClass = asyncHandler(async (req, res) => {
+  void req;
+  void res;
+  throw new ApiError(
+    403,
+    "Teachers cannot end classes directly. Please send an end request for admin review.",
+  );
+});
+
+export const requestTeacherCourseEndReview = asyncHandler(async (req, res) => {
+  const reason = String(req.body?.reason || "").trim();
   const course = await Course.findOne({
     _id: req.params.id,
     ...ownCourseFilter(req.user._id),
@@ -720,100 +681,60 @@ export const endTeacherCourseClass = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Course not found");
   }
 
-  if (!course.classStartedAt && !course.classEndedAt) {
-    throw new ApiError(400, "Class must be started before it can be ended");
+  if (course.status === "cancelled" || course.classCancelledAt) {
+    throw new ApiError(400, "Cancelled classes cannot be ended");
   }
 
-  const scheduledEndAt = course.endDate ? new Date(course.endDate) : null;
-  if (
-    !course.classEndedAt &&
-    (!scheduledEndAt || Number.isNaN(scheduledEndAt.getTime()) || scheduledEndAt > new Date())
-  ) {
-    throw new ApiError(400, "Class can only be ended after the scheduled end date and time");
+  if (course.classEndedAt) {
+    throw new ApiError(400, "This class is already ended");
   }
 
-  const endedAt = course.classEndedAt ? new Date(course.classEndedAt) : new Date();
-  const shouldUpdateCourse = !course.classEndedAt;
+  if (!course.classStartedAt) {
+    throw new ApiError(400, "Class must be started before requesting to end it");
+  }
 
-  if (shouldUpdateCourse) {
-    course.classEndedAt = endedAt;
-    if (!course.endDate || new Date(course.endDate).getTime() > endedAt.getTime()) {
-      course.endDate = endedAt;
+  if (course.endRequest?.status === "pending") {
+    throw new ApiError(400, "An end request is already pending for this class");
+  }
+
+  course.endRequest = {
+    status: "pending",
+    reason,
+    requestedAt: new Date(),
+    reviewedAt: undefined,
+    reviewedBy: undefined,
+    adminResponse: "",
+  };
+  await course.save();
+
+  try {
+    const teacherName = String(req.user?.name || "A teacher").trim();
+    await AdminNotification.create({
+      type: "course_end_review",
+      dedupeKey: `course_end_review:${course._id}:${course.endRequest.requestedAt?.getTime?.() || Date.now()}`,
+      title: "Course end request awaiting review",
+      message: `${teacherName} requested to end “${course.title}”.`,
+      course: course._id,
+      submittedBy: req.user._id,
+    });
+  } catch (notificationError) {
+    if (notificationError?.code !== 11000) {
+      console.warn(
+        `Failed to create admin course end review notification: ${notificationError.message}`,
+      );
     }
-    await course.save();
   }
 
-  const enrollments = await Enrollment.find({
-    courseId: course._id,
-    enrollmentStatus: { $in: ["active", "completed"] },
-    accessStatus: "allowed",
-  }).select("_id enrollmentStatus accessStatus certificateId certificateIssuedAt");
-
-  if (!enrollments.length) {
-    return res.json(
-      new ApiResponse({
-        message: "Class ended successfully",
-        data: {
-          courseId: String(course._id),
-          classEndedAt: course.classEndedAt || endedAt,
-          completedStudents: 0,
-          newlyCompletedStudents: 0,
-          certificatesIssued: 0,
-        },
-      }),
+  notifyAdminCourseEndReview(course, req.user).catch((notificationError) => {
+    console.warn(
+      `Failed to send admin course end review push notification: ${notificationError.message}`,
     );
-  }
-
-  let newlyCompletedStudents = 0;
-  let certificatesIssued = 0;
-
-  const ops = enrollments.map((enrollment) => {
-    if (enrollment.enrollmentStatus !== "completed") {
-      newlyCompletedStudents += 1;
-    }
-
-    const { issuedAt, certificateId } = ensureEnrollmentCertificate(
-      enrollment,
-      endedAt,
-      course,
-    );
-    if (certificateId) {
-      certificatesIssued += 1;
-    }
-
-    return {
-      updateOne: {
-        filter: { _id: enrollment._id },
-        update: {
-          $set: {
-            enrollmentStatus: "completed",
-            accessStatus: "allowed",
-            certificateIssuedAt: issuedAt,
-            certificateId,
-          },
-        },
-      },
-    };
   });
-
-  if (ops.length) {
-    try {
-      await Enrollment.bulkWrite(ops, { ordered: false });
-    } catch (error) {
-      throw new ApiError(500, error?.message || "Failed to finalize class enrollments");
-    }
-  }
 
   return res.json(
     new ApiResponse({
-      message: "Class ended successfully",
-      data: {
-        courseId: String(course._id),
-        classEndedAt: course.classEndedAt || endedAt,
-        completedStudents: enrollments.length,
-        newlyCompletedStudents,
-        certificatesIssued,
-      },
+      message: "Course end request sent to admin",
+      data: course,
     }),
   );
 });

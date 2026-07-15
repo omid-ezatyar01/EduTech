@@ -75,6 +75,13 @@ function getYouTubeEmbedUrl(value = "") {
   }
 }
 
+function getMeetingTypeLabel(type, isFa = true) {
+  if (type === "zoom") return "Zoom";
+  if (type === "physical") return isFa ? "حضوری" : "In Person";
+  if (type === "recorded") return isFa ? "ضبط‌شده" : "Recorded";
+  return "Google Meet";
+}
+
 const pageData = {
   fa: {
     breadcrumbs: ["خانه", "مدرسان", "سارا احمدی"],
@@ -602,13 +609,6 @@ export default function TeacherDetails({ language = "fa" }) {
       return "همه سطوح";
     };
 
-    const meetingTypeLabel = (type) => {
-      if (type === "zoom") return "Zoom";
-      if (type === "physical") return isFa ? "حضوری" : "In Person";
-      if (type === "recorded") return isFa ? "ضبط‌شده" : "Recorded";
-      return "Google Meet";
-    };
-
     const normalizeList = (rows = []) =>
       [...new Set((Array.isArray(rows) ? rows : []).map((item) => String(item || "").trim()).filter(Boolean))];
     const hiddenSkillValues = new Set([
@@ -652,7 +652,9 @@ export default function TeacherDetails({ language = "fa" }) {
       }))
       .filter((item) => item.name && Number.isFinite(item.percentage));
 
-    const publishedCourses = Array.isArray(teacher.publishedCourses) ? teacher.publishedCourses : [];
+    const publishedCourses = Array.isArray(teacher.publishedCourses)
+      ? teacher.publishedCourses.filter((course) => !course?.classEndedAt)
+      : [];
     const endedCourses = Array.isArray(teacher.endedCourses) ? teacher.endedCourses : [];
 
     const mappedCourses = publishedCourses.map((course) => {
@@ -694,7 +696,7 @@ export default function TeacherDetails({ language = "fa" }) {
       ...new Set(publishedCourses.map((course) => course.language).filter(Boolean)),
     ];
     const meetingTypes = [
-      ...new Set(publishedCourses.map((course) => meetingTypeLabel(course.meetingType)).filter(Boolean)),
+      ...new Set(publishedCourses.map((course) => getMeetingTypeLabel(course.meetingType, isFa)).filter(Boolean)),
     ];
     const teacherLanguages = normalizeList([...formLanguages, ...languages]);
     const totalCourses = Math.max(1, publishedCourses.length);
@@ -714,7 +716,7 @@ export default function TeacherDetails({ language = "fa" }) {
     }, {});
 
     const meetingCounts = publishedCourses.reduce((acc, course) => {
-      const key = meetingTypeLabel(course.meetingType);
+      const key = getMeetingTypeLabel(course.meetingType, isFa);
       if (!key) return acc;
       acc[key] = (acc[key] || 0) + 1;
       return acc;
@@ -1389,16 +1391,55 @@ export default function TeacherDetails({ language = "fa" }) {
                     <h3 className="mt-3 line-clamp-2 text-lg font-black text-slate-950">
                       {course.title || (isFa ? "کورس بدون نام" : "Untitled course")}
                     </h3>
-                    <p className="mt-2 line-clamp-3 text-sm font-semibold leading-6 text-slate-600">
-                      {course.description || (isFa ? "توضیحی برای این کورس ثبت نشده است." : "No description was added for this course.")}
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-3 text-xs font-bold text-slate-500">
-                      <span>
-                        {isFa ? "شاگردان" : "Students"}: {pageNumberFormatter.format(Number(course.enrolledStudentsCount || 0))}
-                      </span>
-                      <span>
-                        {isFa ? "امتیاز" : "Rating"}: {Number(course.rating || 0) > 0 ? Number(course.rating || 0).toFixed(1) : "-"}
-                      </span>
+                    <div className="mt-4 grid gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs font-bold text-slate-600">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{isFa ? "تاریخ ختم" : "Ended on"}</span>
+                        <span className="text-slate-900">
+                          {course.classEndedAt
+                            ? new Intl.DateTimeFormat(isFa ? "fa-AF" : "en-US", {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              }).format(new Date(course.classEndedAt))
+                            : "-"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{isFa ? "شاگردان ثبت‌شده" : "Enrolled students"}</span>
+                        <span className="text-slate-900">
+                          {pageNumberFormatter.format(Number(course.enrolledStudentsCount || 0))}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{isFa ? "اعتماد شاگردان" : "Student trust"}</span>
+                        <span className="text-slate-900">
+                          {Number(course.ratingCount || 0) > 0
+                            ? `${Number(course.rating || 0).toFixed(1)} / 5 (${pageNumberFormatter.format(Number(course.ratingCount || 0))})`
+                            : isFa
+                              ? "بدون امتیاز ثبت‌شده"
+                              : "No ratings yet"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{isFa ? "سطح کورس" : "Course level"}</span>
+                        <span className="text-slate-900">
+                          {course.level || "-"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{isFa ? "مجموع جلسات" : "Total sessions"}</span>
+                        <span className="text-slate-900">
+                          {Number(course.totalSessions || 0) > 0
+                            ? pageNumberFormatter.format(Number(course.totalSessions || 0))
+                            : "-"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{isFa ? "حالت برگزاری" : "Delivery mode"}</span>
+                        <span className="text-slate-900">
+                          {getMeetingTypeLabel(course.meetingType, isFa) || "-"}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </article>

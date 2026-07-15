@@ -5,7 +5,6 @@ import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPageLoader from "../components/common/TeacherPageLoader";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
 import useLiveDataRefresh from "../hooks/useLiveDataRefresh";
-import GroupMessageModal from "../components/students/GroupMessageModal";
 import NewStudentsCard from "../components/students/NewStudentsCard";
 import StudentProfileModal from "../components/students/StudentProfileModal";
 import StudentQuickActionsCard from "../components/students/StudentQuickActionsCard";
@@ -74,7 +73,6 @@ export default function TeacherStudents() {
   const [course, setCourse] = useState(initialCourse);
   const [page, setPage] = useState(1);
   const [openMenuId, setOpenMenuId] = useState(null);
-  const [showGroupModal, setShowGroupModal] = useState(false);
   const [profileStudent, setProfileStudent] = useState(null);
   const [toastMessage, setToastMessage] = useState("");
   const [students, setStudents] = useState(initialStudentsCache?.students || []);
@@ -213,10 +211,6 @@ export default function TeacherStudents() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  const handleMessageStudent = () => {
-    navigate("/teacher/messages");
-  };
-
   const handleMoreAction = (action, student) => {
     setOpenMenuId(null);
 
@@ -225,20 +219,10 @@ export default function TeacherStudents() {
       return;
     }
 
-    if (action === "ارسال پیام") {
-      navigate("/teacher/messages");
-      return;
-    }
-
     showToast(`عملیات «${action}» برای ${student.name} انجام شد`);
   };
 
   const handleQuickAction = (action) => {
-    if (action === "groupMessage") {
-      setShowGroupModal(true);
-      return;
-    }
-
     if (action === "downloadList") {
       const headers = ["Name", "Email", "Phone", "Course", "Progress", "Attendance", "Assignments", "Enrollment Status"];
       const rows = students.map((student) => [
@@ -272,11 +256,6 @@ export default function TeacherStudents() {
     }
 
     navigate("/teacher/attendance");
-  };
-
-  const handleGroupSubmit = () => {
-    setShowGroupModal(false);
-    showToast("پیام گروهی موفقانه ارسال شد");
   };
 
   const stats = [
@@ -371,7 +350,6 @@ export default function TeacherStudents() {
             <TeacherStudentsTable
               students={students}
               onView={(student) => setProfileStudent(student)}
-              onMessage={handleMessageStudent}
               onMoreToggle={(studentId) => setOpenMenuId((previous) => (previous === studentId ? null : studentId))}
               openMenuId={openMenuId}
               onMoreAction={handleMoreAction}
@@ -384,17 +362,10 @@ export default function TeacherStudents() {
           )}
         </section>
 
-        <GroupMessageModal
-          open={showGroupModal}
-          onClose={() => setShowGroupModal(false)}
-          onSubmit={handleGroupSubmit}
-        />
-
         <StudentProfileModal
           open={Boolean(profileStudent)}
           student={profileStudent}
           onClose={() => setProfileStudent(null)}
-          onMessage={handleMessageStudent}
         />
 
         {toastMessage ? (

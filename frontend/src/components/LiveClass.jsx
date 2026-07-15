@@ -418,17 +418,26 @@ export default function LiveClass({ language = "fa" }) {
   }, [nowMs, rows]);
 
   const upcomingClasses = useMemo(() => {
-    return rows.map((row) => ({
-      id: row.id,
-      course: row.courseTitle,
-      topic: row.topic,
-      date: row.date,
-      time: row.time,
-      teacher: row.teacher,
-      status: row.status,
-      statusLabel: t.statusLabels[row.status] || t.statusLabels.scheduled,
-    }));
-  }, [rows, t]);
+    const now = nowMs || Date.now();
+    return rows
+      .filter((row) => {
+        if (row.status === "cancelled" || row.status === "completed" || row.status === "live") {
+          return false;
+        }
+        const startAt = new Date(row.startAt || 0).getTime();
+        return Number.isFinite(startAt) && startAt > now;
+      })
+      .map((row) => ({
+        id: row.id,
+        course: row.courseTitle,
+        topic: row.topic,
+        date: row.date,
+        time: row.time,
+        teacher: row.teacher,
+        status: row.status,
+        statusLabel: t.statusLabels[row.status] || t.statusLabels.scheduled,
+      }));
+  }, [nowMs, rows, t]);
   const hasNoClasses = !currentClass && upcomingClasses.length === 0;
 
   const handleJoin = async (session) => {

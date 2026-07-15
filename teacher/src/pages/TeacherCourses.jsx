@@ -23,11 +23,11 @@ import {
 } from "../utils/courseProgress";
 import {
   createTeacherCourse,
-  endTeacherCourseClass,
   fetchCategories,
   fetchTeacherCourseById,
   fetchTeacherCoursePricingSettings,
   fetchTeacherCourses,
+  requestTeacherCourseEndReview,
   requestTeacherCourseCancellation,
   startTeacherCourseClass,
   updateTeacherCourse,
@@ -97,22 +97,23 @@ const localDateKey = (value) => {
 
 const isTodayDate = (value) => Boolean(localDateKey(value)) && localDateKey(value) === localDateKey(new Date());
 
-const isPastOrNow = (value) => {
-  if (!value) return false;
-  const date = new Date(value);
-  return !Number.isNaN(date.getTime()) && date <= new Date();
-};
-
 const DEFAULT_PRICING_SETTINGS = {
   minTeacherCoursePrice: null,
   teacherDeductionPercentage: 0,
   globalCourseDiscountPercentage: 0,
 };
 const TEACHER_COURSES_PAGE_SIZE = 3;
+const TEACHER_SPECIAL_STATUS_FETCH_LIMIT = 100;
 const COURSE_AUX_CACHE_TTL_MS = 5 * 60 * 1000;
 const COURSE_CATEGORIES_CACHE_KEY = getTeacherPageCacheKey("courses-categories");
 const COURSE_PRICING_CACHE_KEY = getTeacherPageCacheKey("courses-pricing");
 const COURSE_GOOGLE_STATUS_CACHE_KEY = getTeacherPageCacheKey("courses-google-status");
+const TEACHER_UI_SPECIAL_STATUSES = new Set([
+  "class_started",
+  "class_ended",
+  "cancellation_pending",
+]);
+const isEndedCourse = (course = {}) => Boolean(course?.classEndedAt);
 
 const getCoursesCacheKey = ({ search, category, status, page, language }) =>
   getTeacherPageCacheKey("courses", {
@@ -168,6 +169,48 @@ function resolveTeacherDiscountPercentage(course) {
   return 0;
 }
 
+const paginateRows = (rows = [], page = 1, limit = TEACHER_COURSES_PAGE_SIZE) => {
+  const safeLimit = Math.max(1, Number(limit) || TEACHER_COURSES_PAGE_SIZE);
+  const safePage = Math.max(1, Number(page) || 1);
+  const total = Array.isArray(rows) ? rows.length : 0;
+  const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+  const currentPage = Math.min(safePage, totalPages);
+  const start = (currentPage - 1) * safeLimit;
+  return {
+    rows: (Array.isArray(rows) ? rows : []).slice(start, start + safeLimit),
+    meta: {
+      page: currentPage,
+      limit: safeLimit,
+      total,
+      totalPages,
+    },
+  };
+};
+
+const filterTeacherCoursesByUiStatus = (rows = [], status = "all") => {
+  if (status === "class_started") {
+    return rows.filter((course) =>
+      Boolean(course?.classStartedAt) &&
+      !course?.classEndedAt &&
+      !course?.classCancelledAt &&
+      String(course?.cancellationRequest?.status || "") !== "pending",
+    );
+  }
+
+  if (status === "class_ended") {
+    return rows.filter((course) => Boolean(course?.classEndedAt));
+  }
+
+  if (status === "cancellation_pending") {
+    return rows.filter((course) =>
+      String(course?.cancellationRequest?.status || "") === "pending" &&
+      !course?.classCancelledAt,
+    );
+  }
+
+  return rows;
+};
+
 function resolveTeacherReceiveAmount(course, pricingSettings = {}) {
   const basePrice = Number(course?.price || 0);
   if (Boolean(course?.isFree) || basePrice <= 0) {
@@ -215,6 +258,7 @@ function mapCourse(course, language, pricingSettings = {}) {
   const classStartedAt = course.classStartedAt || null;
   const classCancelledAt = course.classCancelledAt || null;
   const cancellationRequest = course.cancellationRequest || {};
+  const endRequest = course.endRequest || {};
   const progress = calculateCourseProgress(course);
   const receivePricing = resolveTeacherReceiveAmount(course, pricingSettings);
 
@@ -251,6 +295,10 @@ function mapCourse(course, language, pricingSettings = {}) {
         ? language === "fa"
           ? "درخواست لغو در انتظار"
           : "Cancellation pending"
+      : endRequest?.status === "pending"
+        ? language === "fa"
+          ? "درخواست پایان در انتظار"
+          : "End request pending"
       : classEndedAt
       ? language === "fa"
         ? "صنف پایان یافت"
@@ -287,8 +335,9 @@ function mapCourse(course, language, pricingSettings = {}) {
     ),
     endDate: course.endDate || null,
     canStartToday: isTodayDate(course.startDate),
-    canEndNow: Boolean(classStartedAt) && !classEndedAt && isPastOrNow(course.endDate),
+    canEndNow: Boolean(classStartedAt) && !classEndedAt && endRequest?.status !== "pending",
     cancellationRequest,
+    endRequest,
     classCancelledAt,
     classStartedAt,
     classEndedAt,
@@ -401,29 +450,49 @@ export default function TeacherCourses() {
 
         try {
           setError("");
-
-          const { courses: rows, meta, extra } = await fetchTeacherCourses({
+          const isSpecialStatus = TEACHER_UI_SPECIAL_STATUSES.has(status);
+          const query = {
             search,
             category: category === "all" ? undefined : category,
-            status: status === "all" ? undefined : status,
-            page,
-            limit: TEACHER_COURSES_PAGE_SIZE,
-          });
+            page: isSpecialStatus ? 1 : page,
+            limit: isSpecialStatus
+              ? TEACHER_SPECIAL_STATUS_FETCH_LIMIT
+              : TEACHER_COURSES_PAGE_SIZE,
+          };
+
+          if (status === "cancellation_pending") {
+            query.cancellationRequestStatus = "pending";
+          } else if (!isSpecialStatus && status !== "all") {
+            query.status = status;
+          }
+
+          const { courses: rows, meta, extra } = await fetchTeacherCourses(query);
 
           let nextPricingSettings = pricingSettingsRef.current;
           if (extra && typeof extra === "object") {
             nextPricingSettings = applyPricingSettings(extra);
           }
 
-          const nextCourses = rows.map((course) =>
+          const mappedRows = rows.map((course) =>
             mapCourse(course, language, nextPricingSettings),
           );
-          const nextPagination = {
-            page: Number(meta?.page || page),
-            limit: Number(meta?.limit || TEACHER_COURSES_PAGE_SIZE),
-            total: Number(meta?.total || rows.length),
-            totalPages: Math.max(1, Number(meta?.totalPages || 1)),
-          };
+          const filteredRows = isSpecialStatus
+            ? filterTeacherCoursesByUiStatus(mappedRows, status)
+            : mappedRows;
+          const pagedSpecialRows = isSpecialStatus
+            ? paginateRows(filteredRows, page, TEACHER_COURSES_PAGE_SIZE)
+            : null;
+          const nextCourses = isSpecialStatus
+            ? pagedSpecialRows.rows
+            : filteredRows;
+          const nextPagination = isSpecialStatus
+            ? pagedSpecialRows.meta
+            : {
+                page: Number(meta?.page || page),
+                limit: Number(meta?.limit || TEACHER_COURSES_PAGE_SIZE),
+                total: Number(meta?.total || rows.length),
+                totalPages: Math.max(1, Number(meta?.totalPages || 1)),
+              };
 
           setCourses(nextCourses);
           setPagination(nextPagination);
@@ -615,7 +684,7 @@ export default function TeacherCourses() {
     }
   };
 
-  const handleEndCourseClass = async (course) => {
+  const handleRequestEndReview = async (course) => {
     if (!course?.id) return;
     if (course?.classEndedAt) {
       setToast(language === "fa" ? "این صنف قبلاً پایان یافته است." : "This class is already ended.");
@@ -625,33 +694,33 @@ export default function TeacherCourses() {
       setToast(language === "fa" ? "اول صنف را شروع کنید." : "Start the class first.");
       return;
     }
-    if (!course?.canEndNow) {
-      setToast(
-        language === "fa"
-          ? "صنف فقط بعد از رسیدن تاریخ و زمان ختم کورس قابل پایان دادن است."
-          : "Class can only be ended after the scheduled end date and time.",
-      );
+    if (course?.endRequest?.status === "pending") {
+      setToast(language === "fa" ? "درخواست پایان این صنف قبلاً ارسال شده است." : "An end request is already pending for this class.");
       return;
     }
 
-    const shouldEnd = window.confirm(
+    const reason = window.prompt(
       language === "fa"
-        ? "آیا مطمئن هستید که می‌خواهید این صنف را پایان دهید؟ پس از این کار، شاگردان تکمیل می‌شوند و سرتیفیکیت دریافت می‌کنند."
-        : "Are you sure you want to end this class? Students will be marked completed and certificates will be issued.",
+        ? "دلیل درخواست پایان صنف را بنویسید:"
+        : "Enter the reason for requesting to end this class:",
+      "",
     );
-    if (!shouldEnd) return;
+    if (reason === null) return;
+    if (String(reason || "").trim().length < 10) {
+      setToast(language === "fa" ? "دلیل باید حداقل ۱۰ حرف باشد." : "Reason must be at least 10 characters.");
+      return;
+    }
 
     try {
-      const result = await endTeacherCourseClass(course.id);
-      const completedCount = Number(result?.completedStudents || 0);
+      await requestTeacherCourseEndReview(course.id, reason);
       setToast(
         language === "fa"
-          ? `صنف پایان یافت. ${completedCount} شاگرد تکمیل شد و سرتیفیکیت دریافت کرد.`
-          : `Class ended. ${completedCount} students were completed and issued certificates.`,
+          ? "درخواست پایان صنف به ادمین ارسال شد."
+          : "Class end request was sent to admin.",
       );
       window.dispatchEvent(new Event("edutech_data_changed"));
     } catch (err) {
-      setToast(err?.message || (language === "fa" ? "پایان صنف ناموفق بود" : "Failed to end class"));
+      setToast(err?.message || (language === "fa" ? "ارسال درخواست پایان ناموفق بود" : "Failed to send end request"));
     }
   };
 
@@ -756,12 +825,20 @@ export default function TeacherCourses() {
 
   const handleManageCourseStudents = (course) => {
     if (!course?.title) return;
+    if (isEndedCourse(course)) {
+      setToast(language === "fa" ? "برای کورس پایان‌یافته مدیریت شاگردان غیرفعال است." : "Student management is disabled for ended courses.");
+      return;
+    }
     setDetailsCourse(null);
     navigate(`/teacher/students?course=${encodeURIComponent(course.title)}`);
   };
 
   const handleManageCourseContent = (course) => {
     if (!course?.id) return;
+    if (isEndedCourse(course)) {
+      setToast(language === "fa" ? "برای کورس پایان‌یافته مدیریت محتوا غیرفعال است." : "Content management is disabled for ended courses.");
+      return;
+    }
     const params = new URLSearchParams({
       course: buildCourseQueryValue(course),
     });
@@ -797,6 +874,10 @@ export default function TeacherCourses() {
 
   const handleOpenEditCourse = async (course) => {
     if (!course?.id) return;
+    if (isEndedCourse(course)) {
+      setToast(language === "fa" ? "ویرایش کورس پایان‌یافته غیرفعال است." : "Editing is disabled for ended courses.");
+      return;
+    }
 
     try {
       const latestPricingSettings = await refreshPricingSettings();
@@ -898,7 +979,7 @@ export default function TeacherCourses() {
             onEdit={handleOpenEditCourse}
             onDetails={handleOpenCourseDetails}
             onStartClass={handleStartCourseClass}
-            onEndClass={handleEndCourseClass}
+            onRequestEndReview={handleRequestEndReview}
             onRequestCancel={openCancellationRequest}
             pagination={pagination}
             onPageChange={setPage}

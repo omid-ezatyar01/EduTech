@@ -12,13 +12,6 @@ export default function CertificatePreview({ certificate }) {
   const issueDate =
     certificate?.issueDateCertificate || certificate?.issueDate || "-";
   const rawCertId = String(certificate?.certificateId || "").trim();
-  const fallbackSource = String(
-    certificate?.id || certificate?._id || "001",
-  ).replace(/[^a-zA-Z0-9]/g, "");
-  const fallbackSerial = (fallbackSource.slice(-3) || "001")
-    .padStart(3, "0")
-    .toUpperCase();
-  const certificateId = rawCertId || `ED-2026-${fallbackSerial}`;
   const verifyUrl = "verify.edutech.study";
   const founderName = certificate?.founderName || "Omid Ezatyar";
   const founderRole = certificate?.founderRole || "Founder & CEO";
@@ -36,7 +29,11 @@ export default function CertificatePreview({ certificate }) {
       className="certificate-preview-shell"
       dir="ltr"
     >
-      <p className="certificate-preview-corner-id">Certificate ID: {certificateId}</p>
+      {rawCertId ? (
+        <p className="certificate-preview-corner-id">
+          Certificate ID: {rawCertId}
+        </p>
+      ) : null}
 
       <div
         className="certificate-preview-curves certificate-preview-curves-top-left"
@@ -108,7 +105,7 @@ export default function CertificatePreview({ certificate }) {
           </div>
 
           <div className="certificate-preview-signature">
-            <p className="certificate-preview-signature-name certificate-preview-signature-script certificate-preview-signature-instructor">
+            <p className="certificate-preview-signature-name certificate-preview-signature-instructor">
               {instructorName}
             </p>
             <div

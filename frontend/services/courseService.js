@@ -123,7 +123,9 @@ export const fetchPublishedCourses = async (query = {}) => {
   });
   const data = await parseJsonResponse(response);
 
-  const rows = Array.isArray(data?.data) ? data.data : [];
+  const rows = Array.isArray(data?.data)
+    ? data.data.filter((course) => !course?.classEndedAt)
+    : [];
   const meta = data?.meta || {};
 
   return {
@@ -350,7 +352,7 @@ export const fetchPublicPlatformStats = async () => {
   const data = await fetchJsonWithCache(
     `${getApiBase()}/stats/platform`,
     {},
-    { ttlMs: getApiCacheTtl({ publicTtl: 10 * 60 * 1000 }) },
+    { ttlMs: 0 },
   );
   const stats = data?.data || {};
 

@@ -40,6 +40,7 @@ const DEFAULT_COURSE_PAGINATION = {
   total: 0,
   totalPages: 1,
 };
+const isManageableCourse = (course = {}) => !course?.classEndedAt;
 
 const bytesToMb = (bytes = 0) => `${Math.round(Number(bytes || 0) / 1024 / 1024)}MB`;
 
@@ -293,7 +294,10 @@ export default function TeacherResources() {
   useEffect(() => {
     if (!selectedCourseId) return;
     const selectedCourseRow = courses.find((course) => getCourseId(course) === String(selectedCourseId));
-    if (!selectedCourseRow) return;
+    if (!selectedCourseRow) {
+      clearCourseSelection();
+      return;
+    }
 
     const nextCourseValue = buildCourseQueryValue(selectedCourseRow);
     if (!nextCourseValue) return;
@@ -367,7 +371,7 @@ export default function TeacherResources() {
       try {
         const result = await fetchTeacherCourses({ page: coursePage, limit: COURSES_PER_PAGE });
         if (!mounted) return;
-        const rows = Array.isArray(result?.courses) ? result.courses : [];
+        const rows = (Array.isArray(result?.courses) ? result.courses : []).filter(isManageableCourse);
         const meta = result?.meta || {};
         const nextPagination = {
           page: Number(meta.page || coursePage),

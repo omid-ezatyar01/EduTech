@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-const tabs = ["خلاصه", "حضور", "تکالیف", "پیام‌ها"];
+const tabs = ["خلاصه", "حضور", "تکالیف"];
 
 const statusStyle = {
   active: "bg-[#DCFCE7] text-[#10B981]",
@@ -12,7 +12,7 @@ const statusStyle = {
 const emptyValue = "ثبت نشده";
 const STUDENT_AVATAR_FALLBACK = "/logo-en.png";
 
-export default function StudentProfileModal({ student, open, onClose, onMessage }) {
+export default function StudentProfileModal({ student, open, onClose }) {
   const [activeTab, setActiveTab] = useState("خلاصه");
 
   const details = useMemo(() => {
@@ -115,10 +115,6 @@ export default function StudentProfileModal({ student, open, onClose, onMessage 
                   : "برای این کورس هنوز تکلیف منتشرشده ثبت نشده است."}
               </p>
             </div>
-          ) : activeTab === "پیام‌ها" ? (
-            <div className="rounded-lg bg-white p-4 text-sm text-slate-700">
-              <p>برای مشاهده مکالمه واقعی با این شاگرد از دکمه ارسال پیام استفاده کنید.</p>
-            </div>
           ) : (
             <div className="rounded-lg bg-white p-4 text-sm text-slate-600">
               <p>اطلاعاتی برای نمایش وجود ندارد.</p>
@@ -126,14 +122,7 @@ export default function StudentProfileModal({ student, open, onClose, onMessage 
           )}
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <button
-            type="button"
-            onClick={() => onMessage(student)}
-            className="h-11 rounded-xl border border-[#0B4FD8] text-sm font-semibold text-[#0B4FD8]"
-          >
-            ارسال پیام
-          </button>
+        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <button
             type="button"
             disabled

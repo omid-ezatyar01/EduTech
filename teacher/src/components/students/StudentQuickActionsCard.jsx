@@ -1,12 +1,6 @@
-import { CalendarCheck, ClipboardPlus, Download, Send } from "lucide-react";
+import { CalendarCheck, ClipboardPlus, Download } from "lucide-react";
 
 const actions = [
-  {
-    key: "groupMessage",
-    label: "ارسال پیام گروهی",
-    icon: Send,
-    className: "bg-[#DBEAFE] text-[#0B4FD8]",
-  },
   {
     key: "createAssignment",
     label: "ایجاد تمرین",

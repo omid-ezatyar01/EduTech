@@ -276,6 +276,7 @@ export default function CourseDetailsModal({
   }, [onClose, open]);
 
   const normalizedCourse = course || null;
+  const isEndedCourse = Boolean(normalizedCourse?.classEndedAt);
 
   const derived = useMemo(() => {
     const current = normalizedCourse || {};
@@ -570,7 +571,12 @@ export default function CourseDetailsModal({
           <button
             type="button"
             onClick={onManageStudents}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-[#E2E8F0] bg-white px-4 text-sm font-black text-slate-700 transition hover:border-[#0B4FD8] hover:bg-[#0B4FD8]/5 hover:text-[#0B4FD8]"
+            disabled={isEndedCourse}
+            className={`inline-flex h-12 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-black transition ${
+              isEndedCourse
+                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                : "border-[#E2E8F0] bg-white text-slate-700 hover:border-[#0B4FD8] hover:bg-[#0B4FD8]/5 hover:text-[#0B4FD8]"
+            }`}
           >
             <Users size={16} />
             {language === "fa" ? "مدیریت شاگردان" : "Manage students"}
@@ -578,7 +584,12 @@ export default function CourseDetailsModal({
           <button
             type="button"
             onClick={onManageContent}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#0B4FD8] to-[#00B8A9] px-4 text-sm font-black text-white shadow-sm transition hover:opacity-95"
+            disabled={isEndedCourse}
+            className={`inline-flex h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black shadow-sm transition ${
+              isEndedCourse
+                ? "cursor-not-allowed bg-slate-200 text-slate-500"
+                : "bg-gradient-to-l from-[#0B4FD8] to-[#00B8A9] text-white hover:opacity-95"
+            }`}
           >
             <FolderOpen size={16} />
             {language === "fa" ? "مدیریت محتوا" : "Manage content"}

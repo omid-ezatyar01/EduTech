@@ -58,7 +58,6 @@ const loadLiveClass = () => import("./components/LiveClass.jsx");
 const loadAttendance = () => import("./components/Attendance.jsx");
 const loadCertificates = () => import("./components/Certificates.jsx");
 const loadPayments = () => import("./components/Payments.jsx");
-const loadMessages = () => import("./components/Messages.jsx");
 const loadNotifications = () => import("./components/Notifications.jsx");
 const loadSchedule = () => import("./components/Schedule.jsx");
 const loadAssignments = () => import("./components/Assignments.jsx");
@@ -71,7 +70,6 @@ const LiveClass = lazy(loadLiveClass);
 const Attendance = lazy(loadAttendance);
 const Certificates = lazy(loadCertificates);
 const Payments = lazy(loadPayments);
-const Messages = lazy(loadMessages);
 const Notifications = lazy(loadNotifications);
 const Schedule = lazy(loadSchedule);
 const Assignments = lazy(loadAssignments);
@@ -117,7 +115,6 @@ const preloadRoutes = [
     load: loadCertificates,
   },
   { key: "student-payments", test: (path) => path === "/student/payments", load: loadPayments },
-  { key: "student-messages", test: (path) => path === "/student/messages", load: loadMessages },
   {
     key: "student-notifications",
     test: (path) => path === "/student/notifications",
@@ -499,14 +496,7 @@ export default function App() {
             />
             <Route
               path="/student/messages"
-              element={
-                <ProtectedRoute
-                  isAuthenticated={isAuthenticated}
-                  language={language}
-                >
-                  <Messages language={language} />
-                </ProtectedRoute>
-              }
+              element={<Navigate to="/student/dashboard" replace />}
             />
             <Route
               path="/student/notifications"

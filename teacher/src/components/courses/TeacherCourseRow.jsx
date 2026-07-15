@@ -1,4 +1,4 @@
-import { Ban, CheckCircle2, Edit3, Eye, PlayCircle, Trash2 } from "lucide-react";
+import { Ban, Edit3, Eye, PlayCircle, Send, Trash2 } from "lucide-react";
 import { formatProgressLabel } from "../../utils/courseProgress";
 
 const COURSE_IMAGE_FALLBACK = "/logo-en.png";
@@ -34,7 +34,7 @@ export default function TeacherCourseRow({
   onDetails,
   onDelete,
   onStartClass,
-  onEndClass,
+  onRequestEndReview,
   onRequestCancel,
 }) {
   const statusClassMap = {
@@ -50,6 +50,8 @@ export default function TeacherCourseRow({
       ? "bg-rose-100 text-rose-700"
     : course.cancellationRequest?.status === "pending"
       ? "bg-amber-100 text-amber-700"
+    : course.endRequest?.status === "pending"
+      ? "bg-sky-100 text-sky-700"
     : course.classStartedAt
       ? "bg-emerald-100 text-emerald-700"
     : (statusClassMap[course.status] || "bg-slate-100 text-slate-700");
@@ -69,19 +71,24 @@ export default function TeacherCourseRow({
           : !course.minimumStudentsReached
             ? "Minimum students not reached yet, but teacher can still start manually"
           : "Start class";
-  const canEndClass = Boolean(course.canEndNow);
-  const endClassTitle = course.classEndedAt
-    ? "Class ended"
-    : !course.classStartedAt
-      ? "Start class first"
-      : !course.canEndNow
-        ? "Can end only after scheduled end date and time"
-        : "End class";
+  const canRequestEndReview =
+    Boolean(course.classStartedAt) &&
+    !course.classEndedAt &&
+    course.endRequest?.status !== "pending";
+  const requestEndTitle = course.endRequest?.status === "pending"
+    ? "End request pending"
+    : course.classEndedAt
+      ? "Class ended"
+      : !course.classStartedAt
+        ? "Start class first"
+        : "Request admin end review";
   const canRequestCancel =
     course.status !== "cancelled" &&
     !course.classCancelledAt &&
     !course.classEndedAt &&
     course.cancellationRequest?.status !== "pending";
+  const canEditCourse = !course.classEndedAt;
+  const canDeleteCourse = !course.classEndedAt;
   const cancelTitle = course.cancellationRequest?.status === "pending"
     ? "Cancellation request pending"
     : course.status === "cancelled" || course.classCancelledAt
@@ -137,8 +144,13 @@ export default function TeacherCourseRow({
           <button
             type="button"
             onClick={onEdit}
-            className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-[#0B4FD8] xl:h-9 xl:w-9"
-            title="Edit"
+            disabled={!canEditCourse}
+            className={`grid h-8 w-8 place-items-center rounded-lg xl:h-9 xl:w-9 ${
+              canEditCourse
+                ? "text-slate-500 hover:bg-slate-100 hover:text-[#0B4FD8]"
+                : "cursor-not-allowed text-slate-300"
+            }`}
+            title={canEditCourse ? "Edit" : "Ended course"}
           >
             <Edit3 size={16} />
           </button>
@@ -157,16 +169,16 @@ export default function TeacherCourseRow({
           </button>
           <button
             type="button"
-            onClick={onEndClass}
-            disabled={!canEndClass}
+            onClick={onRequestEndReview}
+            disabled={!canRequestEndReview}
             className={`grid h-8 w-8 place-items-center rounded-lg xl:h-9 xl:w-9 ${
-              !canEndClass
-                ? "cursor-not-allowed text-[#0B4FD8]/50"
-                : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
+              canRequestEndReview
+                ? "text-slate-500 hover:bg-sky-50 hover:text-sky-600"
+                : "cursor-not-allowed text-sky-600/40"
             }`}
-            title={endClassTitle}
+            title={requestEndTitle}
           >
-            <CheckCircle2 size={16} />
+            <Send size={16} />
           </button>
           <button
             type="button"
@@ -184,8 +196,13 @@ export default function TeacherCourseRow({
           <button
             type="button"
             onClick={onDelete}
-            className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-[#EF4444] xl:h-9 xl:w-9"
-            title="Delete"
+            disabled={!canDeleteCourse}
+            className={`grid h-8 w-8 place-items-center rounded-lg xl:h-9 xl:w-9 ${
+              canDeleteCourse
+                ? "text-slate-500 hover:bg-red-50 hover:text-[#EF4444]"
+                : "cursor-not-allowed text-slate-300"
+            }`}
+            title={canDeleteCourse ? "Delete" : "Ended course"}
           >
             <Trash2 size={16} />
           </button>

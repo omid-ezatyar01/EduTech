@@ -6,6 +6,7 @@ import courseThumbnailUpload from "../middlewares/courseThumbnailUpload.js";
 import normalizeCoursePayload from "../middlewares/normalizeCoursePayload.js";
 import {
   approveCourseCancellation,
+  approveCourseEndRequest,
   approveCourse,
   createAdminCourse,
   deleteAdminCourse,
@@ -13,6 +14,7 @@ import {
   getAdminCourses,
   publishCourse,
   rejectCourseCancellation,
+  rejectCourseEndRequest,
   rejectCourse,
   unpublishCourse,
   updateAdminCourse,
@@ -23,6 +25,7 @@ import {
   idParamSchema,
   rejectCourseSchema,
   reviewCourseCancellationSchema,
+  reviewCourseEndSchema,
   updateCourseByAdminSchema,
 } from "../validators/course.validators.js";
 
@@ -72,6 +75,18 @@ router.patch(
   validateRequest(idParamSchema, "params"),
   validateRequest(reviewCourseCancellationSchema),
   rejectCourseCancellation,
+);
+router.patch(
+  "/courses/:id/end-request/approve",
+  validateRequest(idParamSchema, "params"),
+  validateRequest(reviewCourseEndSchema),
+  approveCourseEndRequest,
+);
+router.patch(
+  "/courses/:id/end-request/reject",
+  validateRequest(idParamSchema, "params"),
+  validateRequest(reviewCourseEndSchema),
+  rejectCourseEndRequest,
 );
 
 export default router;

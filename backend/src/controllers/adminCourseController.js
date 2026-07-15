@@ -20,6 +20,7 @@ import {
   resolveCourseCategoryAssignment,
 } from "../utils/courseCategory.js";
 import { normalizeTeacherCourseDiscountPercentage } from "../utils/platformSettings.js";
+import { finalizeCourseEnd } from "../services/courseCompletion.service.js";
 
 const buildSort = ({ sortBy = "newest", sortOrder = "desc" }) => {
   if (sortBy === "price") return { price: sortOrder === "asc" ? 1 : -1 };
@@ -42,6 +43,9 @@ const buildFilter = async (query = {}) => {
   if (query.teacher) filter.$or = [{ teacher: query.teacher }, { teacherId: query.teacher }];
   if (query.cancellationRequestStatus) {
     filter["cancellationRequest.status"] = query.cancellationRequestStatus;
+  }
+  if (query.endRequestStatus) {
+    filter["endRequest.status"] = query.endRequestStatus;
   }
   return filter;
 };
@@ -515,6 +519,71 @@ export const rejectCourseCancellation = asyncHandler(async (req, res) => {
   return res.json(
     new ApiResponse({
       message: "Course cancellation rejected successfully",
+      data: course,
+    }),
+  );
+});
+
+export const approveCourseEndRequest = asyncHandler(async (req, res) => {
+  const course = await Course.findById(req.params.id)
+    .populate("teacher", "name")
+    .populate("createdBy", "name");
+
+  if (!course) {
+    throw new ApiError(404, "Course not found");
+  }
+
+  if (course.endRequest?.status !== "pending") {
+    throw new ApiError(400, "No pending end request for this course");
+  }
+
+  course.endRequest.status = "approved";
+  course.endRequest.reviewedAt = new Date();
+  course.endRequest.reviewedBy = req.user._id;
+  course.endRequest.adminResponse = String(req.body?.adminResponse || "").trim();
+
+  let result;
+  try {
+    result = await finalizeCourseEnd({
+      course,
+      endedAt: new Date(),
+      forceCourseUpdate: true,
+    });
+  } catch (error) {
+    throw new ApiError(500, error?.message || "Failed to finalize class enrollments");
+  }
+
+  return res.json(
+    new ApiResponse({
+      message: "Course end request approved successfully",
+      data: {
+        course,
+        completion: result,
+      },
+    }),
+  );
+});
+
+export const rejectCourseEndRequest = asyncHandler(async (req, res) => {
+  const course = await Course.findById(req.params.id);
+
+  if (!course) {
+    throw new ApiError(404, "Course not found");
+  }
+
+  if (course.endRequest?.status !== "pending") {
+    throw new ApiError(400, "No pending end request for this course");
+  }
+
+  course.endRequest.status = "rejected";
+  course.endRequest.reviewedAt = new Date();
+  course.endRequest.reviewedBy = req.user._id;
+  course.endRequest.adminResponse = String(req.body?.adminResponse || "").trim();
+  await course.save();
+
+  return res.json(
+    new ApiResponse({
+      message: "Course end request rejected successfully",
       data: course,
     }),
   );

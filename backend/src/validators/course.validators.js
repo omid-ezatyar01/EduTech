@@ -361,7 +361,15 @@ export const requestCourseCancellationSchema = Joi.object({
   reason: Joi.string().trim().min(10).max(1000).required(),
 });
 
+export const requestCourseEndReviewSchema = Joi.object({
+  reason: Joi.string().trim().min(10).max(1000).required(),
+});
+
 export const reviewCourseCancellationSchema = Joi.object({
+  adminResponse: Joi.string().trim().max(1000).allow(""),
+});
+
+export const reviewCourseEndSchema = Joi.object({
   adminResponse: Joi.string().trim().max(1000).allow(""),
 });
 
@@ -379,8 +387,19 @@ export const courseListQuerySchema = Joi.object({
   paymentPlan: paymentPlanSchema,
   minPrice: Joi.number().min(0).max(PRICE_MAX_USD),
   maxPrice: Joi.number().min(0).max(PRICE_MAX_USD),
-  status: Joi.string().valid("draft", "pending", "approved", "rejected", "published", "cancelled"),
+  status: Joi.string().valid(
+    "draft",
+    "pending",
+    "approved",
+    "rejected",
+    "published",
+    "cancelled",
+    "class_started",
+    "class_ended",
+    "cancellation_pending",
+  ),
   cancellationRequestStatus: Joi.string().valid("none", "pending", "approved", "rejected"),
+  endRequestStatus: Joi.string().valid("none", "pending", "approved", "rejected"),
   teacher: objectId,
   sortBy: Joi.string().valid("popular", "newest", "price", "startDate").default("popular"),
   sortOrder: Joi.string().valid("asc", "desc").default("desc"),

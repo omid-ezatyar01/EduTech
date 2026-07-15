@@ -53,9 +53,13 @@ export default function CourseProgressCard({ course, language = "fa" }) {
               ? language === "fa"
                 ? "وضعیت: "
                 : "Status: "
-              : language === "fa"
-                ? "جلسه بعدی: "
-                : "Next Session: "}
+              : isCompleted
+                ? language === "fa"
+                  ? "وضعیت کورس: "
+                  : "Course status: "
+                : language === "fa"
+                  ? "جلسه بعدی: "
+                  : "Next Session: "}
             {course.nextClass}
           </span>
         </div>

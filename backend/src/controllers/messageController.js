@@ -103,7 +103,7 @@ const getTeacherOwnedCourses = async (teacherId, courseId = "") => {
   };
   if (courseId) filter._id = courseId;
 
-  return Course.find(filter).select("_id title");
+  return Course.find(filter).select("_id title classEndedAt allowStudentGroupMessages");
 };
 
 const assertTeacherCanMessageStudent = async (teacherId, studentId, courseId = "") => {
@@ -218,6 +218,12 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
     throw new ApiError(404, "Course not found or not owned by teacher");
   }
   return courses[0];
+};
+
+const assertTeacherCanManageCourseMessaging = (course) => {
+  if (course?.classEndedAt) {
+    throw new ApiError(400, "Ended courses cannot be managed by teacher");
+  }
 };
 
 const getStudentActiveEnrollmentByCourse = async (studentId, courseId) => {
@@ -387,6 +393,8 @@ export const updateTeacherCourseGroupMessageSettings = asyncHandler(async (req, 
   const teacherId = req.user._id;
   const courseId = String(req.params.courseId || "").trim();
   const allowStudentGroupMessages = Boolean(req.body?.allowStudentGroupMessages);
+  const ownedCourse = await assertTeacherOwnsCourse(teacherId, courseId);
+  assertTeacherCanManageCourseMessaging(ownedCourse);
 
   const course = await Course.findOneAndUpdate(
     {
@@ -981,7 +989,8 @@ export const deleteTeacherCourseBroadcastMessages = asyncHandler(async (req, res
   const courseId = String(req.params.courseId || "").trim();
   const payload = req.body || {};
 
-  await assertTeacherOwnsCourse(teacherId, courseId);
+  const ownedCourse = await assertTeacherOwnsCourse(teacherId, courseId);
+  assertTeacherCanManageCourseMessaging(ownedCourse);
 
   let deletedCount = 0;
 
@@ -1043,6 +1052,7 @@ export const sendTeacherCourseBroadcastMessage = asyncHandler(async (req, res) =
   if (!courses.length) {
     throw new ApiError(404, "Course not found or not owned by teacher");
   }
+  assertTeacherCanManageCourseMessaging(courses[0]);
 
   const enrollments = await Enrollment.find({
     courseId,
