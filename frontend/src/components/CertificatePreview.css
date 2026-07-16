@@ -70,7 +70,7 @@
   left: 2.4cqw;
   z-index: 3;
   margin: 0;
-  font-family: "Inter", sans-serif;
+  font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
   font-size: 1.2cqw;
   font-weight: 600;
   line-height: 1.25;
@@ -108,7 +108,7 @@
 
 .certificate-preview-header {
   margin: 2.5cqw 0 3.4cqw;
-  font-family: "Inter", sans-serif;
+  font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
   font-size: 1.82cqw;
   font-weight: 500;
   letter-spacing: 0.28em;
@@ -118,7 +118,7 @@
 
 .certificate-preview-title {
   margin: 0;
-  font-family: "Playfair Display", Georgia, serif;
+  font-family: Georgia, "Times New Roman", serif;
   font-size: 4.5cqw;
   font-weight: 700;
   line-height: 1.07;
@@ -131,7 +131,7 @@
 .certificate-preview-body {
   margin: 1.55cqw 0 0;
   max-width: 79%;
-  font-family: "Inter", sans-serif;
+  font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
   font-size: 1.78cqw;
   font-weight: 400;
   line-height: 1.56;
@@ -140,7 +140,7 @@
 
 .certificate-preview-recipient {
   margin: 2.1cqw 0 1.8cqw;
-  font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+  font-family: Georgia, "Times New Roman", serif;
   font-size: 4.62cqw;
   font-weight: 700;
   line-height: 1.05;
@@ -148,10 +148,17 @@
   color: #dfff00;
 }
 
+.certificate-preview-recipient-rtl {
+  font-family: "Vazirmatn", "Plus Jakarta Sans", sans-serif;
+  font-size: 4.15cqw;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
 .certificate-preview-course {
   margin: 1.9cqw 0 1.1cqw;
   max-width: 90%;
-  font-family: "Inter", sans-serif;
+  font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
   font-size: 2.35cqw;
   font-weight: 700;
   line-height: 1.35;
@@ -183,7 +190,7 @@
 
 .certificate-preview-verify-label {
   margin: 0;
-  font-family: "Inter", sans-serif;
+  font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
   font-size: 1.1cqw;
   font-weight: 500;
   color: #cfd6df;
@@ -191,7 +198,7 @@
 
 .certificate-preview-verify-value {
   margin: 0.2cqw 0 0;
-  font-family: "Inter", sans-serif;
+  font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
   font-size: 1.22cqw;
   font-weight: 700;
   color: #f5f8fc;
@@ -212,7 +219,7 @@
 
 .certificate-preview-signature-name {
   margin: 0 0 0.65cqw;
-  font-family: "Inter", sans-serif;
+  font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
   font-size: 2.82cqw;
   font-weight: 700;
   line-height: 1.2;
@@ -221,7 +228,7 @@
 
 .certificate-preview-signature-role {
   margin: 0;
-  font-family: "Inter", sans-serif;
+  font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
   font-size: 1.48cqw;
   font-weight: 400;
   color: #d8dde6;
@@ -245,4 +252,10 @@
   font-weight: 700;
   line-height: 1.2;
   margin-bottom: 0.05cqw;
+}
+
+.certificate-preview-signature-name-rtl {
+  font-family: "Vazirmatn", "Plus Jakarta Sans", sans-serif;
+  font-size: 2.7cqw;
+  line-height: 1.25;
 }

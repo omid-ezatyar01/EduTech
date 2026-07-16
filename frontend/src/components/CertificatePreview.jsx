@@ -1,8 +1,25 @@
 import "./CertificatePreview.css";
 
 export default function CertificatePreview({ certificate }) {
-  const studentName =
-    certificate?.studentEn || certificate?.student || "Jason Michael Turner";
+  const hasArabicScript = (value = "") =>
+    /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/.test(String(value));
+  const pickCertificateName = (
+    primaryValue = "",
+    secondaryValue = "",
+    fallbackValue = "",
+  ) => {
+    const primary = String(primaryValue || "").trim();
+    const secondary = String(secondaryValue || "").trim();
+
+    if (hasArabicScript(primary)) return primary;
+    if (hasArabicScript(secondary)) return secondary;
+    return primary || secondary || fallbackValue;
+  };
+  const studentName = pickCertificateName(
+    certificate?.student,
+    certificate?.studentEn,
+    "Jason Michael Turner",
+  );
 
   const courseTitle =
     certificate?.courseEn ||
@@ -15,13 +32,18 @@ export default function CertificatePreview({ certificate }) {
   const verifyUrl = "verify.edutech.study";
   const founderName = certificate?.founderName || "Omid Ezatyar";
   const founderRole = certificate?.founderRole || "Founder & CEO";
-  const rawInstructorName =
-    certificate?.teacherEn || certificate?.teacher || "";
+  const rawInstructorName = pickCertificateName(
+    certificate?.teacher,
+    certificate?.teacherEn,
+    "",
+  );
   const instructorName =
     !rawInstructorName || rawInstructorName.trim() === "استاد"
       ? "EduTech Instructor"
       : rawInstructorName;
   const instructorRole = certificate?.instructorRole || "Course Instructor";
+  const studentNameIsRtl = hasArabicScript(studentName);
+  const instructorNameIsRtl = hasArabicScript(instructorName);
 
   return (
     <div
@@ -72,7 +94,15 @@ export default function CertificatePreview({ certificate }) {
 
         <p className="certificate-preview-body">This is to certify that</p>
 
-        <p className="certificate-preview-recipient">{studentName}</p>
+        <p
+          className={`certificate-preview-recipient ${
+            studentNameIsRtl ? "certificate-preview-recipient-rtl" : ""
+          }`}
+          dir={studentNameIsRtl ? "rtl" : "ltr"}
+          lang={studentNameIsRtl ? "fa" : "en"}
+        >
+          {studentName}
+        </p>
 
         <p className="certificate-preview-body">
           has successfully completed the prescribed course of study and training
@@ -105,7 +135,15 @@ export default function CertificatePreview({ certificate }) {
           </div>
 
           <div className="certificate-preview-signature">
-            <p className="certificate-preview-signature-name certificate-preview-signature-instructor">
+            <p
+              className={`certificate-preview-signature-name certificate-preview-signature-instructor ${
+                instructorNameIsRtl
+                  ? "certificate-preview-signature-name-rtl"
+                  : ""
+              }`}
+              dir={instructorNameIsRtl ? "rtl" : "ltr"}
+              lang={instructorNameIsRtl ? "fa" : "en"}
+            >
               {instructorName}
             </p>
             <div

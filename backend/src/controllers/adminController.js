@@ -640,8 +640,8 @@ export const createTeacherByAdmin = async (req, res) => {
       });
     }
 
-    const emailPrefix = email.split("@")[0] || "teacher";
-    const formattedName = `Teacher ${emailPrefix}`;
+    const emailPrefix = String(email.split("@")[0] || "teacher").trim() || "teacher";
+    const formattedName = emailPrefix;
 
     const presetTeacherData = {
       name: formattedName,
