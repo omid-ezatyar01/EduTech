@@ -70,6 +70,24 @@ const enrollmentSchema = new mongoose.Schema(
     certificateIssuedAt: {
       type: Date,
     },
+    certificateApprovalStatus: {
+      type: String,
+      enum: ["approved", "rejected"],
+      default: "approved",
+      index: true,
+    },
+    certificateReviewedAt: {
+      type: Date,
+    },
+    certificateReviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    certificateRejectionReason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   { timestamps: true },
 );

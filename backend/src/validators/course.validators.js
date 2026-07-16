@@ -19,6 +19,11 @@ const COURSE_START_DATE_DAYS = [1, 15];
 const COURSE_CURRENCIES = ["USD", "AFN", "IRR"];
 const courseTypeSchema = Joi.string().valid("general", "special");
 const paymentPlanSchema = Joi.string().valid("monthly", "whole_period");
+const notificationAudienceSchema = Joi.string().valid("all", "students", "teachers");
+const notificationChannelsSchema = Joi.object({
+  push: Joi.boolean().default(false),
+  telegram: Joi.boolean().default(false),
+}).default({ push: false, telegram: false });
 
 const getYouTubeVideoKey = (value = "") => {
   try {
@@ -371,6 +376,11 @@ export const reviewCourseCancellationSchema = Joi.object({
 
 export const reviewCourseEndSchema = Joi.object({
   adminResponse: Joi.string().trim().max(1000).allow(""),
+});
+
+export const adminCoursePublishSchema = Joi.object({
+  notificationAudience: notificationAudienceSchema.default("all"),
+  notificationChannels: notificationChannelsSchema,
 });
 
 export const courseListQuerySchema = Joi.object({

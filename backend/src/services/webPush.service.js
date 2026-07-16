@@ -122,7 +122,14 @@ const sendToSubscription = async (row, payload) => {
   }
 };
 
-export const notifyPublishedCourse = async (course = {}) => {
+const normalizeAudienceRoles = (audience = "all") => {
+  if (audience === "students") return ["student"];
+  if (audience === "teachers") return ["teacher"];
+  return ["student", "teacher"];
+};
+
+export const notifyPublishedCourse = async (course = {}, options = {}) => {
+  const audienceRoles = normalizeAudienceRoles(options?.audience || "all");
   if (!(await isCoursePubliclyVisible(course))) {
     return { skipped: true, reason: "course_not_publicly_visible" };
   }
@@ -131,13 +138,13 @@ export const notifyPublishedCourse = async (course = {}) => {
     return { skipped: true, reason: "web_push_not_configured" };
   }
 
-  const rows = await PushSubscription.find({ role: { $in: ["student", "teacher"] } })
+  const rows = await PushSubscription.find({ role: { $in: audienceRoles } })
     .populate("userId", "role status notifications")
     .lean();
 
   const recipients = rows.filter((row) => {
     const user = row.userId;
-    if (!user || !["student", "teacher"].includes(user.role)) return false;
+    if (!user || !audienceRoles.includes(user.role)) return false;
     if (user.status !== "active") return false;
     return user.notifications?.course !== false;
   });
@@ -168,18 +175,19 @@ export const notifyPublishedCourse = async (course = {}) => {
   return { sent, failed };
 };
 
-export const notifyApprovedTeacherApplication = async (teacher = {}) => {
+export const notifyApprovedTeacherApplication = async (teacher = {}, options = {}) => {
+  const audienceRoles = normalizeAudienceRoles(options?.audience || "all");
   if (!configureWebPush()) {
     return { skipped: true, reason: "web_push_not_configured" };
   }
 
-  const rows = await PushSubscription.find({ role: { $in: ["student", "teacher"] } })
+  const rows = await PushSubscription.find({ role: { $in: audienceRoles } })
     .populate("userId", "role status notifications")
     .lean();
 
   const recipients = rows.filter((row) => {
     const user = row.userId;
-    if (!user || !["student", "teacher"].includes(user.role)) return false;
+    if (!user || !audienceRoles.includes(user.role)) return false;
     if (user.status !== "active") return false;
     return user.notifications?.important !== false;
   });

@@ -997,6 +997,32 @@ export default function AdminCoursesPage() {
     }
   };
 
+  const collectPublishNotificationOptions = () => {
+    const shouldNotify = window.confirm("Send course notification now?");
+    if (!shouldNotify) {
+      return {
+        notificationAudience: "all",
+        notificationChannels: { push: false, telegram: false },
+      };
+    }
+
+    const audienceInput = window.prompt(
+      "Notification audience: all, students, or teachers",
+      "all",
+    );
+    if (audienceInput === null) return null;
+    const normalizedAudience = String(audienceInput || "all").trim().toLowerCase();
+    return {
+      notificationAudience: ["all", "students", "teachers"].includes(normalizedAudience)
+        ? normalizedAudience
+        : "all",
+      notificationChannels: {
+        push: window.confirm("Send web push notification?"),
+        telegram: window.confirm("Send Telegram announcement?"),
+      },
+    };
+  };
+
   const toggleCreateDay = (dayKey) => {
     setCreateForm((prev) => {
       if (prev.selectedDays.includes(dayKey)) {
@@ -1848,7 +1874,14 @@ export default function AdminCoursesPage() {
 
                       {course.status === "approved" || course.status === "draft" ? (
                         <button
-                          onClick={() => handleAction(() => publishAdminCourse(course._id), "Course published")}
+                          onClick={() => {
+                            const notificationPayload = collectPublishNotificationOptions();
+                            if (notificationPayload === null) return;
+                            handleAction(
+                              () => publishAdminCourse(course._id, notificationPayload),
+                              "Course published",
+                            );
+                          }}
                           className="rounded-xl p-2 text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-600"
                           title={pageTr("Publish")}
                         >

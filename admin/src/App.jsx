@@ -16,6 +16,7 @@ const loadAdminLoginPage = () => import("./pages/AdminLoginPage");
 const loadAdminDashboardPage = () => import("./pages/AdminDashboardPage");
 const loadAdminStudentsPage = () => import("./pages/AdminStudentsPage");
 const loadAdminTeachersPage = () => import("./pages/AdminTeachersPage");
+const loadAdminCertificatesPage = () => import("./pages/AdminCertificatesPage");
 const loadAdminCoursesPage = () => import("./pages/AdminCoursesPage");
 const loadAdminCategoriesPage = () => import("./pages/AdminCategoriesPage");
 const loadAdminOrdersPage = () => import("./pages/AdminOrdersPage");
@@ -33,6 +34,7 @@ const AdminLoginPage = lazy(loadAdminLoginPage);
 const AdminDashboardPage = lazy(loadAdminDashboardPage);
 const AdminStudentsPage = lazy(loadAdminStudentsPage);
 const AdminTeachersPage = lazy(loadAdminTeachersPage);
+const AdminCertificatesPage = lazy(loadAdminCertificatesPage);
 const AdminCoursesPage = lazy(loadAdminCoursesPage);
 const AdminCategoriesPage = lazy(loadAdminCategoriesPage);
 const AdminOrdersPage = lazy(loadAdminOrdersPage);
@@ -52,6 +54,7 @@ const preloadRoutes = [
   { key: "students-legacy", test: (path) => path === "/users/students", load: loadAdminStudentsPage },
   { key: "students", test: (path) => path === "/students", load: loadAdminStudentsPage },
   { key: "teachers", test: (path) => path === "/teachers", load: loadAdminTeachersPage },
+  { key: "certificates", test: (path) => path === "/certificates", load: loadAdminCertificatesPage },
   { key: "courses", test: (path) => path === "/courses", load: loadAdminCoursesPage },
   { key: "categories", test: (path) => path === "/categories", load: loadAdminCategoriesPage },
   { key: "orders", test: (path) => path === "/orders", load: loadAdminOrdersPage },
@@ -76,6 +79,7 @@ const KNOWN_ADMIN_ROUTE_SUFFIXES = [
   "/users/students",
   "/students",
   "/teachers",
+  "/certificates",
   "/courses",
   "/categories",
   "/orders",
@@ -249,6 +253,7 @@ function AppContent() {
             <Route path="/users/students" element={<Navigate to="/students" replace />} />
             <Route path="/students" element={<AdminStudentsPage />} />
             <Route path="/teachers" element={<AdminTeachersPage />} />
+            <Route path="/certificates" element={<AdminCertificatesPage />} />
             <Route path="/courses" element={<AdminCoursesPage />} />
             <Route path="/categories" element={<AdminCategoriesPage />} />
             <Route path="/orders" element={<AdminOrdersPage />} />

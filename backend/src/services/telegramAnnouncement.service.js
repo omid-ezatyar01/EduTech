@@ -459,19 +459,23 @@ const announceEntity = async ({
   refId,
   isEnabled,
   formatter,
+  force = false,
+  replaceExisting = false,
 }) => {
   if (!refId || !mongoose.isValidObjectId(String(refId))) {
     console.log(`Telegram posting skipped for ${type}: invalid reference ID`);
     return { skipped: true, reason: "Invalid reference ID" };
   }
 
-  if (!isEnabled) {
+  if (!isEnabled && !force) {
     console.log(`Telegram posting skipped for ${type}: auto-posting disabled`);
     return { skipped: true, reason: "Auto-posting disabled" };
   }
 
   const existing = await TelegramPost.findOne({ type, refId }).lean();
-  if (existing?.status === "posted" || existing?.status === "removed") {
+  if (replaceExisting && existing) {
+    await removeTelegramPostByTypeAndRef(type, refId);
+  } else if (existing?.status === "posted" || existing?.status === "removed") {
     console.log(`Telegram posting skipped for ${type}: already posted`);
     return { skipped: true, reason: "Already posted", post: existing };
   }
@@ -752,7 +756,7 @@ export const sendTelegramTestPost = async () => {
   };
 };
 
-export const postNewCourse = async (course = {}) => {
+export const postNewCourse = async (course = {}, options = {}) => {
   const settings = await getTelegramSettings();
   const frontendUrl = resolveFrontendUrl() || "https://edutech.study";
 
@@ -760,6 +764,8 @@ export const postNewCourse = async (course = {}) => {
     type: "course",
     refId: course?._id || course?.id,
     isEnabled: settings.autoPostCourses,
+    force: Boolean(options?.force),
+    replaceExisting: Boolean(options?.replaceExisting),
     formatter: async () => {
       const teacherName = await resolveCourseTeacherName(course);
       const courseTitle = String(course?.title || "Course").trim();
@@ -786,7 +792,7 @@ export const postNewCourse = async (course = {}) => {
   });
 };
 
-export const postNewTeacher = async (teacher = {}) => {
+export const postNewTeacher = async (teacher = {}, options = {}) => {
   const settings = await getTelegramSettings();
   const frontendUrl = resolveFrontendUrl() || "https://edutech.study";
 
@@ -794,6 +800,8 @@ export const postNewTeacher = async (teacher = {}) => {
     type: "teacher",
     refId: teacher?._id || teacher?.id,
     isEnabled: settings.autoPostTeachers,
+    force: Boolean(options?.force),
+    replaceExisting: Boolean(options?.replaceExisting),
     formatter: async () => {
       const fullTeacher = await resolveTeacherPostEntity(teacher);
       const teacherUrl = `${frontendUrl}${buildTeacherPath(fullTeacher)}`;
@@ -893,3 +901,9 @@ export const hydrateCourseForTelegram = async (courseId) => {
     .populate("teacherId", "name username")
     .lean();
 };
+
+export const sendTelegramCourseAnnouncementByAdmin = async (course = {}) =>
+  postNewCourse(course, { force: true, replaceExisting: true });
+
+export const sendTelegramTeacherAnnouncementByAdmin = async (teacher = {}) =>
+  postNewTeacher(teacher, { force: true, replaceExisting: true });

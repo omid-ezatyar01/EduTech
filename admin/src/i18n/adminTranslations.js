@@ -31,6 +31,7 @@ export const adminTranslations = {
         dashboard: "داشبورد",
         students: "شاگردان",
         teachers: "مدرسان",
+        certificates: "سرتیفیکیت‌ها",
         courses: "کورس‌ها",
         categories: "دسته‌بندی‌ها",
         orders: "سفارش‌ها",
@@ -59,6 +60,10 @@ export const adminTranslations = {
         title: "مدرسان",
         subtitle: "مدیریت و مشاهده مدرسان",
         addButton: "افزودن مدرس جدید",
+      },
+      certificates: {
+        title: "سرتیفیکیت‌ها",
+        subtitle: "بررسی و مدیریت سرتیفیکیت‌های صادرشده برای شاگردان",
       },
       courses: {
         title: "کورس‌ها",
@@ -148,6 +153,7 @@ export const adminTranslations = {
         dashboard: "Dashboard",
         students: "Students",
         teachers: "Teachers",
+        certificates: "Certificates",
         courses: "Courses",
         categories: "Categories",
         orders: "Orders",
@@ -176,6 +182,10 @@ export const adminTranslations = {
         title: "Teachers",
         subtitle: "Manage and view teachers",
         addButton: "Add New Teacher",
+      },
+      certificates: {
+        title: "Certificates",
+        subtitle: "Review and manage certificates issued to students",
       },
       courses: {
         title: "Courses",

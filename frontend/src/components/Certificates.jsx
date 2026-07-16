@@ -117,10 +117,12 @@ const isCertificateReady = (enrollment = {}) => {
     enrollment?.courseId && typeof enrollment.courseId === "object"
       ? enrollment.courseId
       : {};
+  const approvalStatus = String(enrollment?.certificateApprovalStatus || "approved");
   return (
     String(enrollment?.enrollmentStatus || "") === "completed" &&
     Boolean(course?.classEndedAt) &&
-    isPaidCourse(course)
+    isPaidCourse(course) &&
+    approvalStatus !== "rejected"
   );
 };
 
@@ -347,6 +349,7 @@ export default function Certificates({ language = "fa" }) {
           ? enrollments.filter(
               (enrollment) =>
                 hasExistingCourse(enrollment) &&
+                String(enrollment?.certificateApprovalStatus || "approved") !== "rejected" &&
                 isPaidCourse(
                   enrollment?.courseId && typeof enrollment.courseId === "object"
                     ? enrollment.courseId

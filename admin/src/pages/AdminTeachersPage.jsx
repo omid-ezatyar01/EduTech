@@ -765,6 +765,31 @@ export default function AdminTeachersPage() {
         ? window.prompt("Rejection reason:", "Please complete required profile fields.") || ""
         : window.prompt("Approval note (optional):", "") || "";
 
+    let notificationPayload = {
+      notificationAudience: "all",
+      notificationChannels: { push: false, telegram: false },
+    };
+    if (decision === "approved") {
+      const shouldNotify = window.confirm("Send approval notification now?");
+      if (shouldNotify) {
+        const audienceInput = window.prompt(
+          "Notification audience: all, students, or teachers",
+          "all",
+        );
+        if (audienceInput === null) return;
+        const normalizedAudience = String(audienceInput || "all").trim().toLowerCase();
+        notificationPayload = {
+          notificationAudience: ["all", "students", "teachers"].includes(normalizedAudience)
+            ? normalizedAudience
+            : "all",
+          notificationChannels: {
+            push: window.confirm("Send web push notification?"),
+            telegram: window.confirm("Send Telegram announcement?"),
+          },
+        };
+      }
+    }
+
     try {
       setActionLoadingId(teacherId);
       const apiUrl = getApiBase();
@@ -778,6 +803,7 @@ export default function AdminTeachersPage() {
         body: JSON.stringify({
           decision,
           note,
+          ...notificationPayload,
         }),
       });
       const data = await response.json().catch(() => ({}));

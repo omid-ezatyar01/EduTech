@@ -15,6 +15,15 @@ export const adminTeachersQuerySchema = paginationQuerySchema.keys({
   status: Joi.string().valid("active", "blocked", "pending_verification"),
 });
 
+export const adminCertificatesQuerySchema = paginationQuerySchema.keys({
+  status: Joi.string().valid("approved", "rejected", ""),
+});
+
+export const adminCertificateDecisionSchema = Joi.object({
+  decision: Joi.string().valid("approved", "rejected").required(),
+  reason: Joi.string().trim().max(1000).allow("").default(""),
+});
+
 export const adminPlatformSettingsSchema = Joi.object({
   teacherDeductionPercentage: Joi.number().min(0).max(100).required(),
   minTeacherCoursePrice: Joi.number().min(0).max(10000).required(),

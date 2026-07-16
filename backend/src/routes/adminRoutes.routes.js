@@ -15,6 +15,8 @@ import {
   deleteUserByAdmin,
   getAdminPlatformSettings,
   updateAdminPlatformSettings,
+  getAdminCertificates,
+  reviewAdminCertificate,
 } from "../controllers/adminController.js";
 import {
   replyAdminMessage,
@@ -41,6 +43,8 @@ import {
   adminTelegramSettingsSchema,
   adminTeachersQuerySchema,
   adminUsersQuerySchema,
+  adminCertificatesQuerySchema,
+  adminCertificateDecisionSchema,
 } from "../validators/admin.validators.js";
 import {
   messageIdParamSchema,
@@ -77,6 +81,17 @@ router.get(
   getAdminTelegramPosts,
 );
 router.get("/otp-email-statuses", getOtpEmailStatuses);
+router.get(
+  "/certificates",
+  validateRequest(adminCertificatesQuerySchema, "query"),
+  getAdminCertificates,
+);
+router.patch(
+  "/certificates/:id/review",
+  validateRequest(adminEntityIdParamSchema, "params"),
+  validateRequest(adminCertificateDecisionSchema),
+  reviewAdminCertificate,
+);
 
 router.post(
   "/messages/email",

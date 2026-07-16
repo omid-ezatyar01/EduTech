@@ -117,10 +117,11 @@ export const deleteAdminCourse = async (courseId) => {
   return parseJsonResponse(response);
 };
 
-export const publishAdminCourse = async (courseId) => {
+export const publishAdminCourse = async (courseId, payload = {}) => {
   const response = await fetch(`${getApiBase()}/admin/courses/${courseId}/publish`, {
     method: "PATCH",
     headers: buildAuthHeaders(),
+    body: JSON.stringify(payload),
   });
   const data = await parseJsonResponse(response);
   return data?.data;

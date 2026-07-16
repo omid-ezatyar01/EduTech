@@ -21,7 +21,9 @@ import { notifyApprovedTeacherApplication } from "../services/webPush.service.js
 import {
   triggerTelegramPostRemoval,
   triggerTelegramTeacherAnnouncement,
+  sendTelegramTeacherAnnouncementByAdmin,
 } from "../services/telegramAnnouncement.service.js";
+import { buildCertificateId, normalizeCertificateId } from "../utils/certificate.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -144,12 +146,93 @@ const createTeacherByAdminSchema = Joi.object({
 const reviewTeacherApplicationSchema = Joi.object({
   decision: Joi.string().valid("approved", "rejected").required(),
   note: Joi.string().trim().allow("").max(1000).default(""),
+  notificationAudience: Joi.string().valid("all", "students", "teachers").default("all"),
+  notificationChannels: Joi.object({
+    push: Joi.boolean().default(false),
+    telegram: Joi.boolean().default(false),
+  }).default({ push: false, telegram: false }),
 });
 
 const DEFAULT_ADMIN_CREATED_TEACHER_PASSWORD = "123456";
 const getTeacherCourseFilter = (teacherId) => ({
   $or: [{ teacher: teacherId }, { teacherId }, { createdBy: teacherId }],
 });
+const isCertificateApproved = (enrollment = {}) =>
+  String(enrollment?.certificateApprovalStatus || "approved") !== "rejected";
+
+const resolveAdminCertificateIssuedAt = (enrollment = {}) =>
+  enrollment?.certificateIssuedAt ||
+  (String(enrollment?.enrollmentStatus || "") === "completed"
+    ? enrollment?.updatedAt || enrollment?.createdAt || null
+    : null);
+
+const mapAdminCertificateRecord = (enrollment = {}) => {
+  const row =
+    typeof enrollment?.toObject === "function" ? enrollment.toObject() : enrollment || {};
+  const student = row?.studentId && typeof row.studentId === "object" ? row.studentId : {};
+  const course = row?.courseId && typeof row.courseId === "object" ? row.courseId : {};
+  const teacher =
+    (course?.teacher && String(course.teacher?.name || "").trim() ? course.teacher : null) ||
+    (course?.createdBy && String(course.createdBy?.name || "").trim() ? course.createdBy : null) ||
+    {};
+  const reviewedBy =
+    row?.certificateReviewedBy && typeof row.certificateReviewedBy === "object"
+      ? row.certificateReviewedBy
+      : {};
+  const issuedAt = resolveAdminCertificateIssuedAt(row);
+  const fullNameFa = [student?.firstNameFa, student?.lastNameFa]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  const studentName = String(student?.name || "").trim() || fullNameFa || "Student";
+  const certificateId = normalizeCertificateId(
+    row?.certificateId || buildCertificateId(row?._id, issuedAt),
+  );
+
+  return {
+    id: String(row?._id || ""),
+    certificateId,
+    issuedAt,
+    studentName,
+    studentEmail: String(student?.email || "").trim(),
+    courseTitle: String(course?.title || "").trim() || "Course",
+    teacherName: String(teacher?.name || "").trim() || "EduTech Instructor",
+    certificateApprovalStatus: isCertificateApproved(row) ? "approved" : "rejected",
+    certificateRejectionReason: String(row?.certificateRejectionReason || "").trim(),
+    certificateReviewedAt: row?.certificateReviewedAt || null,
+    certificateReviewedByName: String(reviewedBy?.name || "").trim(),
+    enrollmentStatus: String(row?.enrollmentStatus || ""),
+  };
+};
+
+const notifyTeacherApprovalByAdminChoice = async ({
+  teacher,
+  notificationAudience = "all",
+  notificationChannels = {},
+} = {}) => {
+  const sendPush = Boolean(notificationChannels?.push);
+  const sendTelegram = Boolean(notificationChannels?.telegram);
+
+  const tasks = [];
+  if (sendPush) {
+    tasks.push(
+      notifyApprovedTeacherApplication(teacher, {
+        audience: notificationAudience || "all",
+      }).catch((error) => {
+        console.warn(`Failed to send teacher approval push notification: ${error.message}`);
+      }),
+    );
+  }
+  if (sendTelegram) {
+    tasks.push(
+      sendTelegramTeacherAnnouncementByAdmin(teacher).catch((error) => {
+        console.warn(`Failed to send teacher approval Telegram announcement: ${error.message}`);
+      }),
+    );
+  }
+
+  await Promise.all(tasks);
+};
 
 const mapPlatformSettings = (settings = null) => {
   const deduction = normalizeTeacherDeductionPercentage(
@@ -722,6 +805,171 @@ export const getAllTeachers = async (req, res) => {
   }
 };
 
+// @desc    Get issued certificate records for admin review
+// @route   GET /api/v1/admin/certificates
+// @access  Admin
+export const getAdminCertificates = async (req, res) => {
+  try {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const statusFilter = String(req.query.status || "").trim();
+    const search = String(req.query.search || "").trim();
+    const skip = (page - 1) * limit;
+
+    const certificatePresenceFilter = [
+      { certificateId: { $exists: true, $ne: "" } },
+      { certificateIssuedAt: { $exists: true, $ne: null } },
+    ];
+    const filter = {
+      enrollmentStatus: "completed",
+      $and: [{ $or: certificatePresenceFilter }],
+    };
+
+    if (statusFilter === "approved" || statusFilter === "rejected") {
+      filter.certificateApprovalStatus = statusFilter;
+    }
+
+    if (search) {
+      filter.$and.push({
+        $or: [{ certificateId: { $regex: search, $options: "i" } }],
+      });
+    }
+
+    const [rows, totalCertificates] = await Promise.all([
+      Enrollment.find(filter)
+        .populate("studentId", "name firstNameFa lastNameFa email")
+        .populate({
+          path: "courseId",
+          select: "title teacher createdBy",
+          populate: [
+            { path: "teacher", select: "name" },
+            { path: "createdBy", select: "name" },
+          ],
+        })
+        .populate("certificateReviewedBy", "name")
+        .sort({ certificateIssuedAt: -1, updatedAt: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Enrollment.countDocuments(filter),
+    ]);
+
+    const mappedRows = rows
+      .map(mapAdminCertificateRecord)
+      .filter((row) => {
+        if (!search) return true;
+        const haystack = [
+          row.certificateId,
+          row.studentName,
+          row.studentEmail,
+          row.courseTitle,
+          row.teacherName,
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(search.toLowerCase());
+      });
+
+    const [approvedCount, rejectedCount] = await Promise.all([
+      Enrollment.countDocuments({
+        enrollmentStatus: "completed",
+        $and: [{ $or: certificatePresenceFilter }],
+        $or: [
+          { certificateApprovalStatus: "approved" },
+          { certificateApprovalStatus: { $exists: false } },
+          { certificateApprovalStatus: null },
+          { certificateApprovalStatus: "" },
+        ],
+      }),
+      Enrollment.countDocuments({
+        enrollmentStatus: "completed",
+        certificateApprovalStatus: "rejected",
+        $and: [{ $or: certificatePresenceFilter }],
+      }),
+    ]);
+
+    return res.json({
+      message: "Admin certificates fetched successfully",
+      certificates: mappedRows,
+      stats: {
+        total: totalCertificates,
+        approved: approvedCount,
+        rejected: rejectedCount,
+      },
+      pagination: {
+        page,
+        limit,
+        totalCertificates,
+        totalPages: Math.max(1, Math.ceil(totalCertificates / limit)),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+// @desc    Approve or reject an issued certificate
+// @route   PATCH /api/v1/admin/certificates/:id/review
+// @access  Admin
+export const reviewAdminCertificate = async (req, res) => {
+  try {
+    const { decision, reason = "" } = req.body || {};
+    const enrollment = await Enrollment.findById(req.params.id).populate({
+      path: "courseId",
+      select: "title classEndedAt isFree price teacher createdBy",
+    });
+
+    if (!enrollment) {
+      return res.status(404).json({ message: "Certificate record not found" });
+    }
+
+    if (String(enrollment.enrollmentStatus || "") !== "completed") {
+      return res.status(400).json({ message: "Only completed enrollments can be reviewed as certificates" });
+    }
+
+    const issuedAt = resolveAdminCertificateIssuedAt(enrollment);
+    if (!enrollment.certificateId && issuedAt) {
+      enrollment.certificateId = normalizeCertificateId(
+        buildCertificateId(enrollment._id, issuedAt),
+      );
+      enrollment.certificateIssuedAt = issuedAt;
+    }
+
+    enrollment.certificateApprovalStatus = decision;
+    enrollment.certificateReviewedAt = new Date();
+    enrollment.certificateReviewedBy = req.user?._id || null;
+    enrollment.certificateRejectionReason =
+      decision === "rejected" ? String(reason || "").trim() : "";
+
+    await enrollment.save();
+
+    const refreshed = await Enrollment.findById(enrollment._id)
+      .populate("studentId", "name firstNameFa lastNameFa email")
+      .populate({
+        path: "courseId",
+        select: "title teacher createdBy",
+        populate: [
+          { path: "teacher", select: "name" },
+          { path: "createdBy", select: "name" },
+        ],
+      })
+      .populate("certificateReviewedBy", "name");
+
+    return res.json({
+      message:
+        decision === "rejected"
+          ? "Certificate rejected successfully"
+          : "Certificate approved successfully",
+      certificate: mapAdminCertificateRecord(refreshed),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
 // @desc    Get single teacher
 // @route   GET /api/v1/admin/teachers/:id
 // @access  Admin
@@ -928,10 +1176,11 @@ export const reviewTeacherApplicationByAdmin = async (req, res) => {
     await teacher.save();
 
     if (value.decision === "approved") {
-      notifyApprovedTeacherApplication(teacher).catch((error) => {
-        console.warn(`Failed to send teacher approval push notification: ${error.message}`);
+      await notifyTeacherApprovalByAdminChoice({
+        teacher,
+        notificationAudience: value.notificationAudience,
+        notificationChannels: value.notificationChannels,
       });
-      triggerTelegramTeacherAnnouncement(teacher);
     }
 
     await removeOldTeacherCvIfLocal(existingCvUrl);

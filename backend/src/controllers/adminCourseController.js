@@ -11,8 +11,7 @@ import { deleteCourseWithRelationsByFilter } from "../services/courseCascadeDele
 import { notifyPublishedCourse } from "../services/webPush.service.js";
 import {
   hydrateCourseForTelegram,
-  syncTelegramCourseAnnouncement,
-  triggerTelegramCourseAnnouncement,
+  sendTelegramCourseAnnouncementByAdmin,
   triggerTelegramPostRemoval,
 } from "../services/telegramAnnouncement.service.js";
 import {
@@ -77,6 +76,39 @@ const roundCurrencyAmount = (value, decimalPlaces = 2) => {
   return Math.round(numeric * factor) / factor;
 };
 
+const notifyPublishedCourseByAdminChoice = async ({
+  course,
+  notificationAudience = "all",
+  notificationChannels = {},
+} = {}) => {
+  const sendPush = Boolean(notificationChannels?.push);
+  const sendTelegram = Boolean(notificationChannels?.telegram);
+
+  const tasks = [];
+  if (sendPush) {
+    tasks.push(
+      notifyPublishedCourse(course, {
+        audience: notificationAudience || "all",
+      }).catch((error) => {
+        console.warn(`Failed to send new course push notification: ${error.message}`);
+      }),
+    );
+  }
+  if (sendTelegram) {
+    tasks.push(
+      hydrateCourseForTelegram(course?._id)
+        .then((fullCourse) => (
+          fullCourse ? sendTelegramCourseAnnouncementByAdmin(fullCourse) : null
+        ))
+        .catch((error) => {
+          console.warn(`Failed to send course Telegram announcement: ${error.message}`);
+        }),
+    );
+  }
+
+  await Promise.all(tasks);
+};
+
 export const createAdminCourse = asyncHandler(async (req, res) => {
   const payload = { ...req.body };
 
@@ -129,18 +161,6 @@ export const createAdminCourse = asyncHandler(async (req, res) => {
   }
 
   const course = await Course.create(payload);
-  if (course.status === "published" && course.isPublished === true) {
-    notifyPublishedCourse(course).catch((error) => {
-      console.warn(`Failed to send new course push notification: ${error.message}`);
-    });
-    hydrateCourseForTelegram(course._id)
-      .then((fullCourse) => {
-        if (fullCourse) triggerTelegramCourseAnnouncement(fullCourse);
-      })
-      .catch((error) => {
-        console.warn(`Failed to prepare Telegram course announcement: ${error.message}`);
-      });
-  }
 
   return res.status(201).json(
     new ApiResponse({
@@ -306,32 +326,6 @@ export const updateAdminCourse = asyncHandler(async (req, res) => {
     await removeOldCourseThumbnailIfLocal(previousThumbnail);
   }
 
-  const isPublishedNow = course.status === "published" && course.isPublished === true;
-  const isNewlyPublished = !wasPublished && course.status === "published" && course.isPublished === true;
-  if (isNewlyPublished) {
-    notifyPublishedCourse(course).catch((error) => {
-      console.warn(`Failed to send new course push notification: ${error.message}`);
-    });
-    hydrateCourseForTelegram(course._id)
-      .then((fullCourse) => {
-        if (fullCourse) triggerTelegramCourseAnnouncement(fullCourse);
-      })
-      .catch((error) => {
-        console.warn(`Failed to prepare Telegram course announcement: ${error.message}`);
-      });
-  } else if (wasPublished && isPublishedNow) {
-    hydrateCourseForTelegram(course._id)
-      .then((fullCourse) => {
-        if (fullCourse) {
-          return syncTelegramCourseAnnouncement(fullCourse);
-        }
-        return null;
-      })
-      .catch((error) => {
-        console.warn(`Failed to sync Telegram course announcement: ${error.message}`);
-      });
-  }
-
   return res.json(
     new ApiResponse({
       message: "Course updated successfully",
@@ -425,16 +419,11 @@ export const publishCourse = asyncHandler(async (req, res) => {
   );
 
   if (!(existingCourse.status === "published" && existingCourse.isPublished === true)) {
-    notifyPublishedCourse(course).catch((error) => {
-      console.warn(`Failed to send new course push notification: ${error.message}`);
+    await notifyPublishedCourseByAdminChoice({
+      course,
+      notificationAudience: req.body?.notificationAudience || "all",
+      notificationChannels: req.body?.notificationChannels || {},
     });
-    hydrateCourseForTelegram(course._id)
-      .then((fullCourse) => {
-        if (fullCourse) triggerTelegramCourseAnnouncement(fullCourse);
-      })
-      .catch((error) => {
-        console.warn(`Failed to prepare Telegram course announcement: ${error.message}`);
-      });
   }
 
   return res.json(

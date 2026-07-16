@@ -146,6 +146,9 @@ const isPaidCourse = (course = null) => {
   return !Boolean(resolvedCourse?.isFree) && Number(resolvedCourse?.price || 0) > 0;
 };
 
+const isCertificateApproved = (enrollment = {}) =>
+  String(enrollment?.certificateApprovalStatus || "approved") !== "rejected";
+
 const shouldClearCertificateState = (enrollment = {}, course = null) => {
   const resolvedCourse =
     course ||
@@ -172,6 +175,9 @@ const isCertificateEligible = (enrollment = {}, course = null) => {
     isPaidCourse(resolvedCourse)
   );
 };
+
+const isCertificateVisible = (enrollment = {}, course = null) =>
+  isCertificateEligible(enrollment, course) && isCertificateApproved(enrollment);
 
 const hasVisibleCourse = (course = null) =>
   Boolean(course && typeof course === "object" && String(course.title || "").trim());
@@ -381,9 +387,10 @@ export const getStudentEnrollments = asyncHandler(async (req, res) => {
         ? course.createdBy
         : null);
     const certificateEligible = isCertificateEligible(row, course);
-    const issuedAt = certificateEligible ? resolveCertificateIssuedAt(row) : null;
+    const certificateVisible = isCertificateVisible(row, course);
+    const issuedAt = certificateVisible ? resolveCertificateIssuedAt(row) : null;
     const certificateId =
-      certificateEligible
+      certificateVisible
         ? normalizeCertificateId(
             row?.certificateId || buildCertificateId(row?._id, issuedAt),
           )
@@ -428,6 +435,7 @@ export const getStudentEnrollments = asyncHandler(async (req, res) => {
       ...row,
       certificateIssuedAt: issuedAt,
       certificateId,
+      certificateApprovalStatus: String(row?.certificateApprovalStatus || "approved"),
       courseId: {
         ...course,
         teacher: teacherProfile,
@@ -476,7 +484,7 @@ export const verifyCertificateById = asyncHandler(async (req, res) => {
   if (
     enrollment &&
     hasVisibleCourse(enrollment.courseId) &&
-    isCertificateEligible(enrollment, enrollment.courseId)
+    isCertificateVisible(enrollment, enrollment.courseId)
   ) {
     return res.json(
       new ApiResponse({
@@ -487,7 +495,7 @@ export const verifyCertificateById = asyncHandler(async (req, res) => {
   }
 
   const legacyRows = await Enrollment.find({ enrollmentStatus: "completed" })
-    .select("_id courseId studentId enrollmentStatus updatedAt createdAt certificateIssuedAt certificateId")
+    .select("_id courseId studentId enrollmentStatus updatedAt createdAt certificateIssuedAt certificateId certificateApprovalStatus")
     .populate("studentId", "name firstNameFa lastNameFa")
     .populate({
       path: "courseId",
@@ -500,7 +508,7 @@ export const verifyCertificateById = asyncHandler(async (req, res) => {
 
   const matchedLegacy = legacyRows.find((row) => {
     if (!hasVisibleCourse(row?.courseId)) return false;
-    if (!isCertificateEligible(row, row?.courseId)) return false;
+    if (!isCertificateVisible(row, row?.courseId)) return false;
     const issuedAt = resolveCertificateIssuedAt(row);
     const generatedId = normalizeCertificateId(buildCertificateId(row?._id, issuedAt));
     const generatedShortId = normalizeCertificateId(

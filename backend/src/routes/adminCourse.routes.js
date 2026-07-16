@@ -26,6 +26,7 @@ import {
   rejectCourseSchema,
   reviewCourseCancellationSchema,
   reviewCourseEndSchema,
+  adminCoursePublishSchema,
   updateCourseByAdminSchema,
 } from "../validators/course.validators.js";
 
@@ -62,7 +63,12 @@ router.patch(
   validateRequest(rejectCourseSchema),
   rejectCourse,
 );
-router.patch("/courses/:id/publish", validateRequest(idParamSchema, "params"), publishCourse);
+router.patch(
+  "/courses/:id/publish",
+  validateRequest(idParamSchema, "params"),
+  validateRequest(adminCoursePublishSchema),
+  publishCourse,
+);
 router.patch("/courses/:id/unpublish", validateRequest(idParamSchema, "params"), unpublishCourse);
 router.patch(
   "/courses/:id/cancellation-request/approve",
