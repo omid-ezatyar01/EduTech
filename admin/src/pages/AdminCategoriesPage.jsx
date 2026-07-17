@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
+  ChevronRight,
   FolderTree,
   Layers,
   Plus,
@@ -97,6 +98,8 @@ const PAGE_TEXT = {
   "Edit category action": "ویرایش دسته‌بندی",
   "Delete category action": "حذف دسته‌بندی",
   "subcategories count": "زیر‌دسته",
+  Expand: "باز کردن",
+  Collapse: "بستن",
 };
 
 const translateText = (text, language) => {
@@ -180,6 +183,13 @@ const buildDisplayRows = (rows = []) => {
   return ordered;
 };
 
+const getInitiallyExpandedIds = (rows = []) =>
+  new Set(
+    (Array.isArray(rows) ? rows : [])
+      .filter((item) => Number(item?.childrenCount || 0) > 0)
+      .map((item) => normalizeCategoryId(item?._id)),
+  );
+
 export default function AdminCategoriesPage() {
   const { t, language, isRTL } = useAdminI18n();
   const pageTr = useCallback((text) => translateText(t(text), language), [t, language]);
@@ -198,6 +208,7 @@ export default function AdminCategoriesPage() {
     isActive: true,
   });
   const [parentSelectionPath, setParentSelectionPath] = useState([]);
+  const [expandedCategoryIds, setExpandedCategoryIds] = useState(() => new Set());
   const categoriesRequest = useLatestRequest();
 
   const loadCategories = useCallback(async () => {
@@ -217,6 +228,7 @@ export default function AdminCategoriesPage() {
     await categoriesRequest.runLatest(fetchAdminCategories, {
       onSuccess: (rows) => {
         setCategories(rows);
+        setExpandedCategoryIds(getInitiallyExpandedIds(rows));
         writeAdminPageCache(ADMIN_CATEGORIES_CACHE_KEY, rows);
       },
       onError: (err) => {
@@ -235,6 +247,7 @@ export default function AdminCategoriesPage() {
     await categoriesRequest.runLatest(fetchAdminCategories, {
       onSuccess: (rows) => {
         setCategories(rows);
+        setExpandedCategoryIds(getInitiallyExpandedIds(rows));
         writeAdminPageCache(ADMIN_CATEGORIES_CACHE_KEY, rows);
       },
       onError: (err) => {
@@ -260,8 +273,25 @@ export default function AdminCategoriesPage() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return orderedCategories.filter((item) => !q || formatCategoryPathLabel(item).toLowerCase().includes(q));
-  }, [orderedCategories, search]);
+    if (q) {
+      return orderedCategories.filter((item) => formatCategoryPathLabel(item).toLowerCase().includes(q));
+    }
+
+    return orderedCategories.filter((item) => {
+      if (item.treeDepth === 0) return true;
+
+      let currentParentId = normalizeCategoryId(item?.parent?._id || item?.parent);
+      while (currentParentId) {
+        if (!expandedCategoryIds.has(currentParentId)) return false;
+        const parentItem = categories.find(
+          (candidate) => normalizeCategoryId(candidate?._id) === currentParentId,
+        );
+        currentParentId = normalizeCategoryId(parentItem?.parent?._id || parentItem?.parent);
+      }
+
+      return true;
+    });
+  }, [categories, expandedCategoryIds, orderedCategories, search]);
 
   const selectableTree = useMemo(() => {
     const maps = buildCategoryMaps(categories);
@@ -427,6 +457,21 @@ export default function AdminCategoriesPage() {
     }
   };
 
+  const handleToggleExpanded = (categoryId) => {
+    const normalizedId = normalizeCategoryId(categoryId);
+    if (!normalizedId) return;
+
+    setExpandedCategoryIds((current) => {
+      const next = new Set(current);
+      if (next.has(normalizedId)) {
+        next.delete(normalizedId);
+      } else {
+        next.add(normalizedId);
+      }
+      return next;
+    });
+  };
+
   return (
     <div
       dir={isRTL ? "rtl" : "ltr"}
@@ -557,21 +602,31 @@ export default function AdminCategoriesPage() {
                             <span className="h-6 w-1 rounded-full bg-slate-200" />
                           ) : null}
                         </div>
+                        {Number(category.childrenCount || 0) > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleExpanded(category._id)}
+                            className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+                            title={
+                              expandedCategoryIds.has(normalizeCategoryId(category._id))
+                                ? pageTr("Collapse")
+                                : pageTr("Expand")
+                            }
+                          >
+                            {expandedCategoryIds.has(normalizeCategoryId(category._id)) ? (
+                              <ChevronDown size={16} />
+                            ) : (
+                              <ChevronRight size={16} className={isRTL ? "rotate-180" : ""} />
+                            )}
+                          </button>
+                        ) : (
+                          <span className="mt-1 inline-flex h-8 w-8 shrink-0" />
+                        )}
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
                           <Layers size={18} />
                         </div>
                         <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate font-bold text-slate-800">{category.name}</p>
-                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600">
-                              {category.treeDepth === 0
-                                ? pageTr("Top level")
-                                : `${pageTr("Level")} ${category.treeDepth + 1}`}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs font-semibold leading-6 text-slate-500">
-                            {category.childrenCount || 0} {pageTr("subcategories count")}
-                          </p>
+                          <p className="truncate font-bold text-slate-800">{category.name}</p>
                         </div>
                       </div>
                     </td>
@@ -633,9 +688,10 @@ export default function AdminCategoriesPage() {
       ) : null}
 
       {isFormOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 p-4">
+          <div className="flex min-h-full items-center justify-center py-4">
+            <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-6">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary-600">
                   {editingId ? pageTr("Edit category") : pageTr("Category workspace")}
@@ -654,114 +710,117 @@ export default function AdminCategoriesPage() {
               >
                 <X size={18} />
               </button>
-            </div>
+              </div>
 
-            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-              <label className="block">
-                <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Category name")}</span>
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder={pageTr("Enter category name")}
-                  className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10"
-                />
-              </label>
+              <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Category name")}</span>
+                    <input
+                      value={form.name}
+                      onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder={pageTr("Enter category name")}
+                      className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10"
+                    />
+                  </label>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="block sm:col-span-2">
-                  <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Parent category")}</span>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs font-semibold leading-6 text-slate-500">
-                      {pageTr("Choose parent step by step. Start from a main category, then continue deeper only if needed.")}
-                    </p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="block sm:col-span-2">
+                      <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Parent category")}</span>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold leading-6 text-slate-500">
+                          {pageTr("Choose parent step by step. Start from a main category, then continue deeper only if needed.")}
+                        </p>
 
-                    <div className="mt-4 space-y-3">
-                      <label className="block">
-                        <span className="mb-2 block text-sm font-bold text-slate-700">
-                          {pageTr("Main category")}
-                        </span>
-                        <select
-                          value={parentSelectionPath[0] || ""}
-                          onChange={(e) => handleParentLevelChange(0, e.target.value)}
-                          className="block h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500"
-                        >
-                          <option value="">{pageTr("Main category (no parent)")}</option>
-                          {(parentSelectorLevels[0]?.options || []).map((item) => (
-                            <option key={item._id} value={item._id}>
-                              {item.name}
-                            </option>
+                        <div className="mt-4 space-y-3">
+                          <label className="block">
+                            <span className="mb-2 block text-sm font-bold text-slate-700">
+                              {pageTr("Main category")}
+                            </span>
+                            <select
+                              value={parentSelectionPath[0] || ""}
+                              onChange={(e) => handleParentLevelChange(0, e.target.value)}
+                              className="block h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500"
+                            >
+                              <option value="">{pageTr("Main category (no parent)")}</option>
+                              {(parentSelectorLevels[0]?.options || []).map((item) => (
+                                <option key={item._id} value={item._id}>
+                                  {item.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          {parentSelectorLevels.slice(1).map((levelItem, index) => (
+                            <label key={`${levelItem.parentId}-${levelItem.level}`} className="block">
+                              <span className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+                                <ChevronDown size={14} className="text-slate-400" />
+                                {pageTr("Select subcategory")} {index + 1}
+                              </span>
+                              <select
+                                value={levelItem.selectedId}
+                                onChange={(e) => handleParentLevelChange(levelItem.level, e.target.value)}
+                                className="block h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500"
+                              >
+                                <option value="">{pageTr("Use this level")}</option>
+                                {levelItem.options.map((item) => (
+                                  <option key={item._id} value={item._id}>
+                                    {item.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
                           ))}
-                        </select>
-                      </label>
+                        </div>
 
-                      {parentSelectorLevels.slice(1).map((levelItem, index) => (
-                        <label key={`${levelItem.parentId}-${levelItem.level}`} className="block">
-                          <span className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
-                            <ChevronDown size={14} className="text-slate-400" />
-                            {pageTr("Select subcategory")} {index + 1}
-                          </span>
-                          <select
-                            value={levelItem.selectedId}
-                            onChange={(e) => handleParentLevelChange(levelItem.level, e.target.value)}
-                            className="block h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500"
-                          >
-                            <option value="">{pageTr("Use this level")}</option>
-                            {levelItem.options.map((item) => (
-                              <option key={item._id} value={item._id}>
-                                {item.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
+                        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+                            {pageTr("Selected parent")}
+                          </p>
+                          <p className="mt-2 text-sm font-black text-slate-800">
+                            {selectedParentCategory ? formatCategoryPathLabel(selectedParentCategory) : pageTr("No parent")}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold leading-6 text-slate-500">
+                            {selectedParentCategory
+                              ? pageTr("This category will be nested under the selected parent.")
+                              : pageTr("This category will be created at the top level.")}
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3">
-                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                        {pageTr("Selected parent")}
-                      </p>
-                      <p className="mt-2 text-sm font-black text-slate-800">
-                        {selectedParentCategory ? formatCategoryPathLabel(selectedParentCategory) : pageTr("No parent")}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold leading-6 text-slate-500">
-                        {selectedParentCategory
-                          ? pageTr("This category will be nested under the selected parent.")
-                          : pageTr("This category will be created at the top level.")}
-                      </p>
-                    </div>
+                    <label className="block sm:col-span-1">
+                      <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Status")}</span>
+                      <select
+                        value={form.isActive ? "active" : "inactive"}
+                        onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.value === "active" }))}
+                        className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500 focus:bg-white"
+                      >
+                        <option value="active">{pageTr("Active")}</option>
+                        <option value="inactive">{pageTr("Inactive")}</option>
+                      </select>
+                    </label>
                   </div>
                 </div>
 
-                <label className="block sm:col-span-1">
-                  <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Status")}</span>
-                  <select
-                    value={form.isActive ? "active" : "inactive"}
-                    onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.value === "active" }))}
-                    className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500 focus:bg-white"
+                <div className="flex shrink-0 items-center justify-end gap-3 border-t border-slate-100 px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 transition hover:bg-slate-50"
                   >
-                    <option value="active">{pageTr("Active")}</option>
-                    <option value="inactive">{pageTr("Inactive")}</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 transition hover:bg-slate-50"
-                >
-                  {pageTr("Cancel")}
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {saving ? pageTr("Saving") : editingId ? pageTr("Save changes") : pageTr("Create category")}
-                </button>
-              </div>
-            </form>
+                    {pageTr("Cancel")}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving ? pageTr("Saving") : editingId ? pageTr("Save changes") : pageTr("Create category")}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       ) : null}
