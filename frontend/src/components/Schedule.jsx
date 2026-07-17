@@ -13,9 +13,9 @@ import {
 } from "../../services/http.js";
 
 const mockStudent = {
-  id: 1,
-  nameFa: "امید عزتیار",
-  email: "student@edutech.com",
+  id: "",
+  nameFa: "",
+  email: "",
   avatar: "",
 };
 

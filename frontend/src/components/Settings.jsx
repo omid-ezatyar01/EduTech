@@ -11,38 +11,34 @@ import AccountSecurityModal from "./AccountSecurityModal";
 import NotificationManagementModal from "./NotificationManagementModal";
 
 const mockStudent = {
-  id: 1,
-  firstNameFa: "امید",
-  lastNameFa: "عزتیار",
-  nameFa: "امید عزتیار",
-  email: "student@edutech.com",
-  phone: "+93 70 123 4567",
+  id: "",
+  firstNameFa: "",
+  lastNameFa: "",
+  nameFa: "",
+  email: "",
+  phone: "",
   avatar: "",
-  birthDate: "1378/08/15",
-  gender: "مرد",
-  country: "افغانستان",
-  city: "کابل",
-  bio: "علاقه‌مند به یادگیری برنامه‌نویسی و طراحی رابط کاربری. هدفم توسعه مهارت‌های خود در حوزه تکنالوژی است.",
+  birthDate: "",
+  gender: "",
+  country: "",
+  city: "",
+  bio: "",
   notifications: {
-    course: true,
-    assignments: true,
-    payments: true,
+    course: false,
+    assignments: false,
+    payments: false,
     news: false,
-    important: true,
+    important: false,
   },
   security: {
-    twoFactor: true,
-    activeDevices: ["Chrome on Linux", "Android Phone"],
+    twoFactor: false,
+    activeDevices: [],
   },
   appearance: {
     theme: "light",
     language: "fa",
   },
-  socialLinks: [
-    { id: 1, platform: "LinkedIn", url: "linkedin.com/in/omid-aztiyar" },
-    { id: 2, platform: "Twitter", url: "twitter.com/omid_aztiyar" },
-    { id: 3, platform: "GitHub", url: "github.com/omid-aztiyar" },
-  ],
+  socialLinks: [],
 };
 
 export default function Settings({ language = "fa" }) {

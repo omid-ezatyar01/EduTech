@@ -9,7 +9,7 @@ import {
   fetchMockPublicTeachers,
 } from "./mockTeacherService.js";
 
-const USE_FRONTEND_TEACHER_MOCKS = true;
+const USE_FRONTEND_TEACHER_MOCKS = false;
 
 const PUBLIC_TEACHER_DETAIL_CACHE_TTL_MS = 10 * 60 * 1000;
 const PUBLIC_TEACHER_LIST_CACHE_TTL_MS = 5 * 60 * 1000;

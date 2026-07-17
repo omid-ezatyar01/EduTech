@@ -13,7 +13,7 @@ import {
   fetchMockPublishedCourses,
 } from "./mockCourseService.js";
 
-const USE_FRONTEND_COURSE_MOCKS = true;
+const USE_FRONTEND_COURSE_MOCKS = false;
 
 const PUBLIC_DETAIL_CACHE_TTL_MS = 10 * 60 * 1000;
 const PUBLIC_LIST_CACHE_TTL_MS = 5 * 60 * 1000;

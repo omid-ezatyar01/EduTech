@@ -19,11 +19,11 @@ import { getAuthUser } from "../../services/portal";
 
 const mockStudent = {
   id: "",
-  name: "Student",
-  nameFa: "Student",
+  name: "",
+  nameFa: "",
   email: "",
   avatar: "",
-  role: "student",
+  role: "",
   language: "fa",
 };
 
