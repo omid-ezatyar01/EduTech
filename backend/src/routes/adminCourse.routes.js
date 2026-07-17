@@ -56,7 +56,12 @@ router
   )
   .delete(validateRequest(idParamSchema, "params"), deleteAdminCourse);
 
-router.patch("/courses/:id/approve", validateRequest(idParamSchema, "params"), approveCourse);
+router.patch(
+  "/courses/:id/approve",
+  validateRequest(idParamSchema, "params"),
+  validateRequest(adminCoursePublishSchema),
+  approveCourse,
+);
 router.patch(
   "/courses/:id/reject",
   validateRequest(idParamSchema, "params"),

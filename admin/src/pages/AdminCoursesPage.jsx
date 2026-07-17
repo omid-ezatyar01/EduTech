@@ -246,6 +246,15 @@ const getPaginationItems = (currentPage, totalPages) => {
   return [1, "...", currentPage, "...", totalPages];
 };
 
+const DEFAULT_NOTIFICATION_PAYLOAD = {
+  notificationAudience: "all",
+  notificationChannels: {
+    push: false,
+    telegram: false,
+  },
+  confirmationChecked: false,
+};
+
 const DAY_OPTIONS = [
   { key: "monday", enumKey: "MONDAY", label: "Monday" },
   { key: "tuesday", enumKey: "TUESDAY", label: "Tuesday" },
@@ -595,6 +604,16 @@ export default function AdminCoursesPage() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [reviewCourse, setReviewCourse] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [courseApprovalModal, setCourseApprovalModal] = useState({
+    open: false,
+    course: null,
+    payload: DEFAULT_NOTIFICATION_PAYLOAD,
+  });
+  const [coursePublishModal, setCoursePublishModal] = useState({
+    open: false,
+    course: null,
+    payload: DEFAULT_NOTIFICATION_PAYLOAD,
+  });
   const [pricingSettings, setPricingSettings] = useState(DEFAULT_PRICING_SETTINGS);
   const [createForm, setCreateForm] = useState({
     title: "",
@@ -997,31 +1016,47 @@ export default function AdminCoursesPage() {
     }
   };
 
-  const collectPublishNotificationOptions = () => {
-    const shouldNotify = window.confirm("Send course notification now?");
-    if (!shouldNotify) {
-      return {
-        notificationAudience: "all",
-        notificationChannels: { push: false, telegram: false },
-      };
-    }
-
-    const audienceInput = window.prompt(
-      "Notification audience: all, students, or teachers",
-      "all",
-    );
-    if (audienceInput === null) return null;
-    const normalizedAudience = String(audienceInput || "all").trim().toLowerCase();
-    return {
-      notificationAudience: ["all", "students", "teachers"].includes(normalizedAudience)
-        ? normalizedAudience
-        : "all",
-      notificationChannels: {
-        push: window.confirm("Send web push notification?"),
-        telegram: window.confirm("Send Telegram announcement?"),
-      },
-    };
+  const openCourseApprovalModal = (course) => {
+    if (!course?._id) return;
+    setCourseApprovalModal({
+      open: true,
+      course,
+      payload: DEFAULT_NOTIFICATION_PAYLOAD,
+    });
   };
+
+  const openCoursePublishModal = (course) => {
+    if (!course?._id) return;
+    setCoursePublishModal({
+      open: true,
+      course,
+      payload: DEFAULT_NOTIFICATION_PAYLOAD,
+    });
+  };
+
+  const closeCourseApprovalModal = () => {
+    setCourseApprovalModal({
+      open: false,
+      course: null,
+      payload: DEFAULT_NOTIFICATION_PAYLOAD,
+    });
+  };
+
+  const closeCoursePublishModal = () => {
+    setCoursePublishModal({
+      open: false,
+      course: null,
+      payload: DEFAULT_NOTIFICATION_PAYLOAD,
+    });
+  };
+
+  const buildNotificationRequestPayload = (payload = {}) => ({
+    notificationAudience: payload.notificationAudience || "all",
+    notificationChannels: {
+      push: Boolean(payload.notificationChannels?.push),
+      telegram: Boolean(payload.notificationChannels?.telegram),
+    },
+  });
 
   const toggleCreateDay = (dayKey) => {
     setCreateForm((prev) => {
@@ -1098,8 +1133,8 @@ export default function AdminCoursesPage() {
 
     try {
       if (decision === "approved") {
-        await approveAdminCourse(reviewCourse._id);
-        setToast("Course approved");
+        openCourseApprovalModal(reviewCourse);
+        return;
       } else {
         const reason = window.prompt("Rejection reason:", "Needs improvement");
         if (!reason) return;
@@ -1111,6 +1146,47 @@ export default function AdminCoursesPage() {
       await loadCourses();
     } catch (err) {
       setToast(err.message || "Review action failed");
+    }
+  };
+
+  const handleApproveCourseWithModal = async () => {
+    if (!courseApprovalModal.course?._id) return;
+    if (!courseApprovalModal.payload.confirmationChecked) {
+      setToast("Please confirm that everything was checked before approval.");
+      return;
+    }
+
+    try {
+      await approveAdminCourse(
+        courseApprovalModal.course._id,
+        buildNotificationRequestPayload(courseApprovalModal.payload),
+      );
+      closeCourseApprovalModal();
+      setReviewCourse(null);
+      setToast("Course approved");
+      await loadCourses();
+    } catch (err) {
+      setToast(err.message || "Review action failed");
+    }
+  };
+
+  const handlePublishCourseWithModal = async () => {
+    if (!coursePublishModal.course?._id) return;
+    if (!coursePublishModal.payload.confirmationChecked) {
+      setToast("Please confirm that everything was checked before publishing.");
+      return;
+    }
+
+    try {
+      await publishAdminCourse(
+        coursePublishModal.course._id,
+        buildNotificationRequestPayload(coursePublishModal.payload),
+      );
+      closeCoursePublishModal();
+      setToast("Course published");
+      await loadCourses();
+    } catch (err) {
+      setToast(err.message || "Publish action failed");
     }
   };
 
@@ -1852,7 +1928,7 @@ export default function AdminCoursesPage() {
                       {course.status === "pending" ? (
                         <>
                           <button
-                            onClick={() => handleAction(() => approveAdminCourse(course._id), "Course approved")}
+                            onClick={() => openCourseApprovalModal(course)}
                             className="rounded-xl p-2 text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-600"
                             title={pageTr("Approve")}
                           >
@@ -1874,14 +1950,7 @@ export default function AdminCoursesPage() {
 
                       {course.status === "approved" || course.status === "draft" ? (
                         <button
-                          onClick={() => {
-                            const notificationPayload = collectPublishNotificationOptions();
-                            if (notificationPayload === null) return;
-                            handleAction(
-                              () => publishAdminCourse(course._id, notificationPayload),
-                              "Course published",
-                            );
-                          }}
+                          onClick={() => openCoursePublishModal(course)}
                           className="rounded-xl p-2 text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-600"
                           title={pageTr("Publish")}
                         >
@@ -2443,9 +2512,9 @@ export default function AdminCoursesPage() {
                   </button>
                 </>
               ) : null}
-              <button
-                type="button"
-                onClick={() => handleReviewDecision("approved")}
+                <button
+                  type="button"
+                  onClick={() => handleReviewDecision("approved")}
                 className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
               >
                 {pageTr("Approve Course")}
@@ -3356,6 +3425,154 @@ export default function AdminCoursesPage() {
           </div>
         </div>
       ) : null}
+      <AdminNotificationModal
+        open={courseApprovalModal.open}
+        title="Approve course"
+        description="Confirm you checked everything needed, then choose whether to send notifications now."
+        payload={courseApprovalModal.payload}
+        onChange={(updater) =>
+          setCourseApprovalModal((prev) => ({
+            ...prev,
+            payload: typeof updater === "function" ? updater(prev.payload) : updater,
+          }))
+        }
+        onClose={closeCourseApprovalModal}
+        onConfirm={handleApproveCourseWithModal}
+        confirmLabel="Approve course"
+      />
+      <AdminNotificationModal
+        open={coursePublishModal.open}
+        title="Publish course"
+        description="Confirm this course is ready to go live, then choose which notifications to send."
+        payload={coursePublishModal.payload}
+        onChange={(updater) =>
+          setCoursePublishModal((prev) => ({
+            ...prev,
+            payload: typeof updater === "function" ? updater(prev.payload) : updater,
+          }))
+        }
+        onClose={closeCoursePublishModal}
+        onConfirm={handlePublishCourseWithModal}
+        confirmLabel="Publish course"
+      />
+    </div>
+  );
+}
+
+function AdminNotificationModal({
+  open,
+  title,
+  description,
+  payload,
+  onChange,
+  onClose,
+  onConfirm,
+  confirmLabel,
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 px-4 py-6">
+      <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-black text-slate-950">{title}</h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">{description}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-4">
+          <label className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <input
+              type="checkbox"
+              checked={Boolean(payload.confirmationChecked)}
+              onChange={(event) =>
+                onChange((prev) => ({ ...prev, confirmationChecked: event.target.checked }))
+              }
+              className="mt-1 h-4 w-4"
+            />
+            <span className="text-sm font-bold text-emerald-900">
+              I checked everything needed before continuing.
+            </span>
+          </label>
+
+          <div>
+            <FieldLabel>Notification audience</FieldLabel>
+            <select
+              value={payload.notificationAudience}
+              onChange={(event) =>
+                onChange((prev) => ({ ...prev, notificationAudience: event.target.value }))
+              }
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none"
+            >
+              <option value="all">All</option>
+              <option value="students">Students</option>
+              <option value="teachers">Teachers</option>
+            </select>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800">
+              <input
+                type="checkbox"
+                checked={Boolean(payload.notificationChannels?.push)}
+                onChange={(event) =>
+                  onChange((prev) => ({
+                    ...prev,
+                    notificationChannels: {
+                      ...prev.notificationChannels,
+                      push: event.target.checked,
+                    },
+                  }))
+                }
+                className="h-4 w-4"
+              />
+              Send web push
+            </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800">
+              <input
+                type="checkbox"
+                checked={Boolean(payload.notificationChannels?.telegram)}
+                onChange={(event) =>
+                  onChange((prev) => ({
+                    ...prev,
+                    notificationChannels: {
+                      ...prev.notificationChannels,
+                      telegram: event.target.checked,
+                    },
+                  }))
+                }
+                className="h-4 w-4"
+              />
+              Send Telegram announcement
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-primary-700"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

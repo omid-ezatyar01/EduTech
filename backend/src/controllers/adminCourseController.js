@@ -353,6 +353,11 @@ export const deleteAdminCourse = asyncHandler(async (req, res) => {
 });
 
 export const approveCourse = asyncHandler(async (req, res) => {
+  const existingCourse = await Course.findById(req.params.id).select("status isPublished");
+  if (!existingCourse) {
+    throw new ApiError(404, "Course not found");
+  }
+
   const course = await Course.findByIdAndUpdate(
     req.params.id,
     {
@@ -365,6 +370,14 @@ export const approveCourse = asyncHandler(async (req, res) => {
 
   if (!course) {
     throw new ApiError(404, "Course not found");
+  }
+
+  if (!(existingCourse.status === "approved" && existingCourse.isPublished === false)) {
+    await notifyPublishedCourseByAdminChoice({
+      course,
+      notificationAudience: req.body?.notificationAudience || "all",
+      notificationChannels: req.body?.notificationChannels || {},
+    });
   }
 
   return res.json(

@@ -363,6 +363,16 @@ const getPaginationItems = (currentPage, totalPages) => {
   return [1, "...", currentPage, "...", totalPages];
 };
 
+const DEFAULT_APPROVAL_NOTIFICATION_PAYLOAD = {
+  note: "",
+  notificationAudience: "all",
+  notificationChannels: {
+    push: false,
+    telegram: false,
+  },
+  confirmationChecked: false,
+};
+
 export default function AdminTeachersPage() {
   const { t, language, isRTL } = useAdminI18n();
   const pageTr = useCallback((text) => translateText(t(text), language), [t, language]);
@@ -402,6 +412,11 @@ export default function AdminTeachersPage() {
   });
   const [selectedTeacher, setSelectedTeacher] = useState(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [teacherApprovalModal, setTeacherApprovalModal] = useState({
+    open: false,
+    teacherId: "",
+    payload: DEFAULT_APPROVAL_NOTIFICATION_PAYLOAD,
+  });
   const [actionLoadingId, setActionLoadingId] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [page, setPage] = useState(1);
@@ -759,36 +774,38 @@ export default function AdminTeachersPage() {
     }
   };
 
-  const handleReviewTeacherApplication = async (teacherId, decision) => {
-    const note =
-      decision === "rejected"
-        ? window.prompt("Rejection reason:", "Please complete required profile fields.") || ""
-        : window.prompt("Approval note (optional):", "") || "";
+  const openTeacherApprovalModal = (teacherId) => {
+    if (!teacherId) return;
+    setTeacherApprovalModal({
+      open: true,
+      teacherId,
+      payload: DEFAULT_APPROVAL_NOTIFICATION_PAYLOAD,
+    });
+  };
 
-    let notificationPayload = {
-      notificationAudience: "all",
-      notificationChannels: { push: false, telegram: false },
+  const closeTeacherApprovalModal = () => {
+    setTeacherApprovalModal({
+      open: false,
+      teacherId: "",
+      payload: DEFAULT_APPROVAL_NOTIFICATION_PAYLOAD,
+    });
+  };
+
+  const handleReviewTeacherApplication = async (teacherId, decision, options = {}) => {
+    const note =
+      Object.prototype.hasOwnProperty.call(options, "note")
+        ? options.note
+        : (decision === "rejected"
+          ? window.prompt("Rejection reason:", "Please complete required profile fields.") || ""
+          : "");
+
+    const notificationPayload = {
+      notificationAudience: options.notificationAudience || "all",
+      notificationChannels: {
+        push: Boolean(options.notificationChannels?.push),
+        telegram: Boolean(options.notificationChannels?.telegram),
+      },
     };
-    if (decision === "approved") {
-      const shouldNotify = window.confirm("Send approval notification now?");
-      if (shouldNotify) {
-        const audienceInput = window.prompt(
-          "Notification audience: all, students, or teachers",
-          "all",
-        );
-        if (audienceInput === null) return;
-        const normalizedAudience = String(audienceInput || "all").trim().toLowerCase();
-        notificationPayload = {
-          notificationAudience: ["all", "students", "teachers"].includes(normalizedAudience)
-            ? normalizedAudience
-            : "all",
-          notificationChannels: {
-            push: window.confirm("Send web push notification?"),
-            telegram: window.confirm("Send Telegram announcement?"),
-          },
-        };
-      }
-    }
 
     try {
       setActionLoadingId(teacherId);
@@ -815,11 +832,26 @@ export default function AdminTeachersPage() {
       setRefreshKey((prev) => prev + 1);
       const teacher = await loadTeacherDetails(teacherId);
       setSelectedTeacher(teacher);
+      closeTeacherApprovalModal();
     } catch (error) {
       alert(error.message || pageTr("Unable to review teacher application"));
     } finally {
       setActionLoadingId("");
     }
+  };
+
+  const handleApproveTeacherWithModal = async () => {
+    if (!teacherApprovalModal.teacherId) return;
+    if (!teacherApprovalModal.payload.confirmationChecked) {
+      alert("Please confirm that everything was checked before approval.");
+      return;
+    }
+
+    await handleReviewTeacherApplication(teacherApprovalModal.teacherId, "approved", {
+      note: teacherApprovalModal.payload.note,
+      notificationAudience: teacherApprovalModal.payload.notificationAudience,
+      notificationChannels: teacherApprovalModal.payload.notificationChannels,
+    });
   };
 
   const openEditTeacherModal = (teacher) => {
@@ -1926,7 +1958,7 @@ export default function AdminTeachersPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleReviewTeacherApplication(selectedTeacher._id, "approved")}
+                        onClick={() => openTeacherApprovalModal(selectedTeacher._id)}
                         disabled={actionLoadingId === selectedTeacher._id}
                         className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
@@ -1942,6 +1974,139 @@ export default function AdminTeachersPage() {
             );
           })()
         : null}
+      <TeacherApprovalModal
+        open={teacherApprovalModal.open}
+        payload={teacherApprovalModal.payload}
+        onChange={(updater) =>
+          setTeacherApprovalModal((prev) => ({
+            ...prev,
+            payload: typeof updater === "function" ? updater(prev.payload) : updater,
+          }))
+        }
+        onClose={closeTeacherApprovalModal}
+        onConfirm={handleApproveTeacherWithModal}
+      />
+    </div>
+  );
+}
+
+function TeacherApprovalModal({ open, payload, onChange, onClose, onConfirm }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 px-4 py-6">
+      <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-black text-slate-950">Approve teacher profile</h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+              Confirm the profile has been checked, then choose any notifications you want to send.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-4">
+          <label className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <input
+              type="checkbox"
+              checked={Boolean(payload.confirmationChecked)}
+              onChange={(event) =>
+                onChange((prev) => ({ ...prev, confirmationChecked: event.target.checked }))
+              }
+              className="mt-1 h-4 w-4"
+            />
+            <span className="text-sm font-bold text-emerald-900">
+              I checked everything needed before approving this teacher.
+            </span>
+          </label>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-slate-600">Approval note</label>
+            <textarea
+              value={payload.note}
+              onChange={(event) => onChange((prev) => ({ ...prev, note: event.target.value }))}
+              className="min-h-[96px] w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold outline-none"
+              placeholder="Optional note for this approval"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-slate-600">Notification audience</label>
+            <select
+              value={payload.notificationAudience}
+              onChange={(event) =>
+                onChange((prev) => ({ ...prev, notificationAudience: event.target.value }))
+              }
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none"
+            >
+              <option value="all">All</option>
+              <option value="students">Students</option>
+              <option value="teachers">Teachers</option>
+            </select>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800">
+              <input
+                type="checkbox"
+                checked={Boolean(payload.notificationChannels?.push)}
+                onChange={(event) =>
+                  onChange((prev) => ({
+                    ...prev,
+                    notificationChannels: {
+                      ...prev.notificationChannels,
+                      push: event.target.checked,
+                    },
+                  }))
+                }
+                className="h-4 w-4"
+              />
+              Send web push
+            </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800">
+              <input
+                type="checkbox"
+                checked={Boolean(payload.notificationChannels?.telegram)}
+                onChange={(event) =>
+                  onChange((prev) => ({
+                    ...prev,
+                    notificationChannels: {
+                      ...prev.notificationChannels,
+                      telegram: event.target.checked,
+                    },
+                  }))
+                }
+                className="h-4 w-4"
+              />
+              Send Telegram announcement
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700"
+          >
+            Approve profile
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

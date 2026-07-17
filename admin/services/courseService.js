@@ -136,10 +136,11 @@ export const unpublishAdminCourse = async (courseId) => {
   return data?.data;
 };
 
-export const approveAdminCourse = async (courseId) => {
+export const approveAdminCourse = async (courseId, payload = {}) => {
   const response = await fetch(`${getApiBase()}/admin/courses/${courseId}/approve`, {
     method: "PATCH",
     headers: buildAuthHeaders(),
+    body: JSON.stringify(payload),
   });
   const data = await parseJsonResponse(response);
   return data?.data;

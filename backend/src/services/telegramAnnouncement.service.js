@@ -94,10 +94,21 @@ const resolvePublicAssetUrl = (value = "") => {
 
 const resolveLocalAssetPath = (value = "") => {
   const asset = String(value || "").trim();
-  if (!asset.startsWith("/")) return "";
-  if (!(asset.startsWith("/uploads/") || asset.startsWith("/public/"))) return "";
+  if (!asset) return "";
 
-  return path.resolve(backendRootDir, `.${asset}`);
+  let normalizedAsset = asset;
+  if (/^https?:\/\//i.test(asset)) {
+    try {
+      normalizedAsset = new URL(asset).pathname || "";
+    } catch {
+      normalizedAsset = "";
+    }
+  }
+
+  if (!normalizedAsset.startsWith("/")) return "";
+  if (!(normalizedAsset.startsWith("/uploads/") || normalizedAsset.startsWith("/public/"))) return "";
+
+  return path.resolve(backendRootDir, `.${normalizedAsset}`);
 };
 
 const fileExists = async (targetPath = "") => {
