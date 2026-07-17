@@ -10,6 +10,10 @@ export const teacherConversationParamSchema = Joi.object({
   studentId: objectId.required(),
 });
 
+export const adminTeacherConversationParamSchema = Joi.object({
+  teacherId: objectId.required(),
+});
+
 export const teacherCourseParamSchema = Joi.object({
   courseId: objectId.required(),
 });

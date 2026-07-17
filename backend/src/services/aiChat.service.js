@@ -103,9 +103,7 @@ const FRONTEND_PAGE_DEFINITIONS = [
   { path: "/payments", title: "Admin Payments", audience: "admin", app: "admin", file: "pages/AdminPaymentsPage.jsx", purpose: "shows payment records, statuses, and payment management tools." },
   { path: "/teacher-income", title: "Admin Teacher Income", audience: "admin", app: "admin", file: "pages/AdminTeacherIncomePage.jsx", purpose: "shows teacher income data and income-related management tools." },
   { path: "/coupons", title: "Admin Coupons", audience: "admin", app: "admin", file: "pages/AdminCouponsPage.jsx", purpose: "lets admins manage coupon and discount settings." },
-  { path: "/reviews", title: "Admin Reviews", audience: "admin", app: "admin", file: "pages/AdminReviewsPage.jsx", purpose: "lets admins review course feedback and review-related items." },
   { path: "/messages", title: "Admin Messages", audience: "admin", app: "admin", file: "pages/AdminMessagesPage.jsx", purpose: "shows platform messages and admin communication tools." },
-  { path: "/otp-email-status", title: "Admin OTP Email Status", audience: "admin", app: "admin", file: "pages/AdminOtpEmailStatusPage.jsx", purpose: "shows OTP and email delivery status information." },
   { path: "/reports", title: "Admin Reports", audience: "admin", app: "admin", file: "pages/AdminReportsPage.jsx", purpose: "shows platform reports and reporting tools." },
   { path: "/telegram", title: "Admin Telegram Settings", audience: "admin", app: "admin", file: "pages/AdminTelegramSettingsPage.jsx", purpose: "lets admins manage Telegram-related platform settings." },
   { path: "/settings", title: "Admin Settings", audience: "admin", app: "admin", file: "pages/AdminSettingsPage.jsx", purpose: "lets admins manage platform settings and configuration." },
@@ -303,7 +301,7 @@ const CURATED_PLATFORM_KNOWLEDGE = {
     "When helping teachers, prefer practical answers that point to the relevant teacher panel section instead of generic explanations.",
   ],
   admin: [
-    "EduTech admin pages include Dashboard, Students, Teachers, Courses, Categories, Orders, Payments, Teacher Income, Coupons, Reviews, Messages, OTP Email Status, Reports, Telegram Settings, and Settings.",
+    "EduTech admin pages include Dashboard, Students, Teachers, Courses, Categories, Orders, Payments, Teacher Income, Coupons, Messages, Reports, Telegram Settings, and Settings.",
     "EduTech admin guidance should focus on users, teachers, courses, categories, orders, payments, reports, Telegram settings, and overall platform settings.",
     "When helping admins, answers should stay operational and clearly reference the matching admin panel section.",
   ],

@@ -155,3 +155,35 @@ export const updateTeacherMessageSettings = async (payload = {}) => {
   const data = await parseJsonResponse(response);
   return data?.data || { allowStudentDirectMessages: true };
 };
+
+export const fetchTeacherAdminConversation = async () => {
+  const response = await fetch(`${getApiBase()}/teacher/messages/admin-conversation`, {
+    headers: buildAuthHeaders(),
+    cache: "no-store",
+  });
+  const data = await parseJsonResponse(response);
+  return {
+    admin: data?.data?.admin || { name: "EduTech Admin", email: "support@edutech.study" },
+    conversation: data?.data?.conversation || null,
+    messages: Array.isArray(data?.data?.messages) ? data.data.messages : [],
+  };
+};
+
+export const sendTeacherAdminMessage = async (payload = {}) => {
+  const response = await fetch(`${getApiBase()}/teacher/messages/admin-conversation/messages`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const data = await parseJsonResponse(response);
+  return data?.data || null;
+};
+
+export const markTeacherAdminConversationRead = async () => {
+  const response = await fetch(`${getApiBase()}/teacher/messages/admin-conversation/read`, {
+    method: "PATCH",
+    headers: buildAuthHeaders(),
+  });
+  const data = await parseJsonResponse(response);
+  return data?.data || {};
+};

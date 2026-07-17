@@ -8,12 +8,9 @@ import {
   CreditCard,
   Wallet,
   Ticket,
-  MessageSquare,
   Mail,
-  MailCheck,
   BarChart3,
   Settings,
-  Send,
   LogOut,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -29,11 +26,8 @@ const menuItems = [
   { key: "payments", icon: CreditCard, path: "/payments" },
   { key: "teacherIncome", icon: Wallet, path: "/teacher-income" },
   { key: "coupons", icon: Ticket, path: "/coupons" },
-  { key: "reviews", icon: MessageSquare, path: "/reviews" },
   { key: "messages", icon: Mail, path: "/messages" },
-  { key: "otpEmailStatus", icon: MailCheck, path: "/otp-email-status" },
   { key: "reports", icon: BarChart3, path: "/reports" },
-  { key: "telegram", icon: Send, path: "/telegram" },
   { key: "settings", icon: Settings, path: "/settings" },
 ];
 

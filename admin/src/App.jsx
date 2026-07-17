@@ -22,11 +22,8 @@ const loadAdminCategoriesPage = () => import("./pages/AdminCategoriesPage");
 const loadAdminPaymentsPage = () => import("./pages/AdminPaymentsPage");
 const loadAdminTeacherIncomePage = () => import("./pages/AdminTeacherIncomePage");
 const loadAdminCouponsPage = () => import("./pages/AdminCouponsPage");
-const loadAdminReviewsPage = () => import("./pages/AdminReviewsPage");
 const loadAdminMessagesPage = () => import("./pages/AdminMessagesPage");
-const loadAdminOtpEmailStatusPage = () => import("./pages/AdminOtpEmailStatusPage");
 const loadAdminReportsPage = () => import("./pages/AdminReportsPage");
-const loadAdminTelegramSettingsPage = () => import("./pages/AdminTelegramSettingsPage");
 const loadAdminSettingsPage = () => import("./pages/AdminSettingsPage");
 
 const AdminLoginPage = lazy(loadAdminLoginPage);
@@ -39,11 +36,8 @@ const AdminCategoriesPage = lazy(loadAdminCategoriesPage);
 const AdminPaymentsPage = lazy(loadAdminPaymentsPage);
 const AdminTeacherIncomePage = lazy(loadAdminTeacherIncomePage);
 const AdminCouponsPage = lazy(loadAdminCouponsPage);
-const AdminReviewsPage = lazy(loadAdminReviewsPage);
 const AdminMessagesPage = lazy(loadAdminMessagesPage);
-const AdminOtpEmailStatusPage = lazy(loadAdminOtpEmailStatusPage);
 const AdminReportsPage = lazy(loadAdminReportsPage);
-const AdminTelegramSettingsPage = lazy(loadAdminTelegramSettingsPage);
 const AdminSettingsPage = lazy(loadAdminSettingsPage);
 
 const preloadRoutes = [
@@ -58,12 +52,10 @@ const preloadRoutes = [
   { key: "payments", test: (path) => path === "/payments", load: loadAdminPaymentsPage },
   { key: "teacher-income", test: (path) => path === "/teacher-income", load: loadAdminTeacherIncomePage },
   { key: "coupons", test: (path) => path === "/coupons", load: loadAdminCouponsPage },
-  { key: "reviews", test: (path) => path === "/reviews", load: loadAdminReviewsPage },
   { key: "messages", test: (path) => path === "/messages", load: loadAdminMessagesPage },
-  { key: "otp-email-status", test: (path) => path === "/otp-email-status", load: loadAdminOtpEmailStatusPage },
   { key: "reports", test: (path) => path === "/reports", load: loadAdminReportsPage },
-  { key: "telegram", test: (path) => path === "/telegram", load: loadAdminTelegramSettingsPage },
   { key: "settings", test: (path) => path === "/settings", load: loadAdminSettingsPage },
+  { key: "telegram-redirect", test: (path) => path === "/telegram", load: loadAdminSettingsPage },
 ];
 
 import {
@@ -82,9 +74,7 @@ const KNOWN_ADMIN_ROUTE_SUFFIXES = [
   "/payments",
   "/teacher-income",
   "/coupons",
-  "/reviews",
   "/messages",
-  "/otp-email-status",
   "/reports",
   "/telegram",
   "/settings",
@@ -255,11 +245,9 @@ function AppContent() {
             <Route path="/payments" element={<AdminPaymentsPage />} />
             <Route path="/teacher-income" element={<AdminTeacherIncomePage />} />
             <Route path="/coupons" element={<AdminCouponsPage />} />
-            <Route path="/reviews" element={<AdminReviewsPage />} />
             <Route path="/messages" element={<AdminMessagesPage />} />
-            <Route path="/otp-email-status" element={<AdminOtpEmailStatusPage />} />
             <Route path="/reports" element={<AdminReportsPage />} />
-            <Route path="/telegram" element={<AdminTelegramSettingsPage />} />
+            <Route path="/telegram" element={<Navigate to="/settings" replace />} />
             <Route path="/settings" element={<AdminSettingsPage />} />
           </Route>
 

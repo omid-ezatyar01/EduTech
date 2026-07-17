@@ -12,9 +12,12 @@ import {
 } from "../utils/teacherPageCache";
 import {
   deleteTeacherCourseBroadcastMessages,
+  fetchTeacherAdminConversation,
   fetchTeacherCourseBroadcastConversations,
   fetchTeacherCourseBroadcastMessages,
   fetchTeacherMessageSettings,
+  markTeacherAdminConversationRead,
+  sendTeacherAdminMessage,
   sendTeacherCourseBroadcastMessage,
   updateTeacherCourseGroupMessageSettings,
   updateTeacherMessageSettings,
@@ -51,6 +54,11 @@ export default function TeacherMessages() {
   const [groupChatSelecting, setGroupChatSelecting] = useState(false);
   const [selectedGroupMessageIds, setSelectedGroupMessageIds] = useState([]);
   const [groupDeleting, setGroupDeleting] = useState(false);
+  const [adminConversation, setAdminConversation] = useState(initialMessagesCache?.adminConversation || null);
+  const [adminMessages, setAdminMessages] = useState(initialMessagesCache?.adminMessages || []);
+  const [adminDraft, setAdminDraft] = useState("");
+  const [adminConversationLoading, setAdminConversationLoading] = useState(false);
+  const [adminSending, setAdminSending] = useState(false);
   const [groupCourseId, setGroupCourseId] = useState("");
   const [groupBody, setGroupBody] = useState("");
   const [groupSending, setGroupSending] = useState(false);
@@ -108,6 +116,34 @@ export default function TeacherMessages() {
       0,
     ),
   }), [groupConversations]);
+
+  const adminUnreadCount = Number(adminConversation?.unreadCount || 0);
+
+  const loadAdminConversation = useCallback(async (options = {}) => {
+    const silent = Boolean(options?.silent);
+    try {
+      if (!silent) {
+        setAdminConversationLoading(true);
+      }
+      const data = await fetchTeacherAdminConversation();
+      setAdminConversation(data?.conversation || null);
+      setAdminMessages(Array.isArray(data?.messages) ? data.messages : []);
+      if (Number(data?.conversation?.unreadCount || 0) > 0) {
+        await markTeacherAdminConversationRead().catch(() => null);
+        setAdminConversation((prev) => (prev ? { ...prev, unreadCount: 0 } : prev));
+      }
+    } catch (err) {
+      if (!silent) {
+        setError(err?.message || (isFa ? "بارگذاری پیام‌های ادمین ناموفق بود." : "Failed to load admin messages."));
+      }
+      setAdminConversation(null);
+      setAdminMessages([]);
+    } finally {
+      if (!silent) {
+        setAdminConversationLoading(false);
+      }
+    }
+  }, [isFa]);
 
   const loadGroupConversations = useCallback(async (preferCourseId = "") => {
     try {
@@ -210,15 +246,18 @@ export default function TeacherMessages() {
       selectedCourseChatId,
       selectedCourseChat,
       groupChatMessages,
+      adminConversation,
+      adminMessages,
     });
-  }, [courses, groupConversations, groupChatMessages, selectedCourseChat, selectedCourseChatId]);
+  }, [adminConversation, adminMessages, courses, groupConversations, groupChatMessages, selectedCourseChat, selectedCourseChatId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadGroupConversations();
+      loadAdminConversation();
     }, 0);
     return () => clearTimeout(timer);
-  }, [loadGroupConversations]);
+  }, [loadAdminConversation, loadGroupConversations]);
 
   useEffect(() => {
     if (!selectedCourseChatId) return;
@@ -230,6 +269,7 @@ export default function TeacherMessages() {
 
   useEffect(() => {
     const refreshData = async () => {
+      await loadAdminConversation({ silent: true });
       await loadGroupConversations(selectedCourseChatId);
       if (selectedCourseChatId) {
         await loadGroupMessages(selectedCourseChatId, { silent: true });
@@ -247,7 +287,7 @@ export default function TeacherMessages() {
       window.removeEventListener("teacher_auth_change", triggerRefresh);
       window.removeEventListener("edutech_data_changed", triggerRefresh);
     };
-  }, [loadGroupConversations, loadGroupMessages, selectedCourseChatId]);
+  }, [loadAdminConversation, loadGroupConversations, loadGroupMessages, selectedCourseChatId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -289,6 +329,32 @@ export default function TeacherMessages() {
       setError(err?.message || (isFa ? "ارسال پیام گروهی ناموفق بود." : "Failed to send group message."));
     } finally {
       setGroupSending(false);
+    }
+  };
+
+  const handleSendAdminMessage = async () => {
+    const body = String(adminDraft || "").trim();
+    if (!body) return;
+
+    try {
+      setAdminSending(true);
+      setError("");
+      const nextMessage = await sendTeacherAdminMessage({ body });
+      setAdminDraft("");
+      setAdminMessages((prev) => [...prev, nextMessage].filter(Boolean));
+      setAdminConversation((prev) => ({
+        ...(prev || {}),
+        unreadCount: 0,
+        lastMessage: body,
+        lastMessageAt: nextMessage?.createdAt || new Date().toISOString(),
+        lastSenderRole: "teacher",
+      }));
+      window.dispatchEvent(new Event("edutech_data_changed"));
+      setToast(isFa ? "پیام به ادمین ارسال شد." : "Message sent to admin.");
+    } catch (err) {
+      setError(err?.message || (isFa ? "ارسال پیام به ادمین ناموفق بود." : "Failed to send message to admin."));
+    } finally {
+      setAdminSending(false);
     }
   };
 
@@ -534,6 +600,98 @@ export default function TeacherMessages() {
             {toast}
           </div>
         ) : null}
+
+        <section className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h3 className="text-sm font-black text-slate-900">
+                {isFa ? "گفتگوی مستقیم با ادمین" : "Direct Admin Conversation"}
+              </h3>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                {isFa
+                  ? "برای هماهنگی، پشتیبانی یا پیگیری موضوعات آموزشی مستقیما به ادمین پیام بدهید."
+                  : "Message the admin directly for coordination, support, or teaching-related follow-up."}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[#EFF6FF] px-3 py-1.5 text-xs font-bold text-[#1D4ED8]">
+                {isFa ? "ادمین EduTech" : "EduTech Admin"}
+              </span>
+              <span className="rounded-full bg-[#FEF3C7] px-3 py-1.5 text-xs font-bold text-[#B45309]">
+                {isFa ? `خوانده‌نشده: ${adminUnreadCount}` : `Unread: ${adminUnreadCount}`}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+            {adminConversationLoading ? (
+              <TeacherPageLoader
+                label={isFa ? "در حال بارگذاری گفتگوی ادمین" : "Loading admin conversation"}
+                minHeight="min-h-[160px]"
+                className="border-0 bg-transparent p-0"
+              />
+            ) : (
+              <>
+                <div className="max-h-[280px] space-y-3 overflow-y-auto pr-1">
+                  {adminMessages.length ? (
+                    adminMessages.map((message) => {
+                      const isMine = message?.senderRole === "teacher";
+                      return (
+                        <div
+                          key={message.id}
+                          className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+                        >
+                          <div
+                            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                              isMine
+                                ? "bg-[#0B4FD8] text-white"
+                                : "border border-[#E2E8F0] bg-white text-slate-700"
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap leading-6">{message.body}</p>
+                            <p className={`mt-2 text-[11px] font-semibold ${isMine ? "text-white/80" : "text-slate-400"}`}>
+                              {formatDateTime(message.createdAt, language)}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="grid min-h-[140px] place-items-center text-center">
+                      <div>
+                        <MessageCircle size={28} className="mx-auto text-slate-300" />
+                        <p className="mt-3 text-sm font-bold text-slate-700">
+                          {isFa ? "هنوز گفتگویی با ادمین شروع نشده است." : "No admin conversation yet."}
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-slate-500">
+                          {isFa ? "اولین پیام را برای شروع گفتگو ارسال کنید." : "Send the first message to start the conversation."}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 flex flex-col gap-2 md:flex-row">
+                  <input
+                    value={adminDraft}
+                    onChange={(event) => setAdminDraft(event.target.value)}
+                    placeholder={isFa ? "پیام خود به ادمین را بنویسید..." : "Write your message to admin..."}
+                    className="h-11 flex-1 rounded-xl border border-[#E2E8F0] bg-white px-3 text-sm outline-none focus:border-[#0B4FD8]"
+                  />
+                  <button
+                    type="button"
+                    disabled={adminSending || !String(adminDraft || "").trim()}
+                    onClick={handleSendAdminMessage}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#0B4FD8] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Send size={15} />
+                    {adminSending ? (isFa ? "درحال ارسال" : "Sending") : isFa ? "ارسال به ادمین" : "Send to Admin"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
 
         <section className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
           <h3 className="text-sm font-black text-slate-900">{isFa ? "ارسال پیام گروهی کورس" : "Course Group Message"}</h3>

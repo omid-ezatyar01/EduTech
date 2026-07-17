@@ -37,9 +37,7 @@ export const adminTranslations = {
         payments: "پرداخت‌ها",
         teacherIncome: "درآمد مدرسان",
         coupons: "کوپن‌ها",
-        reviews: "نظرات",
         messages: "پیام‌ها",
-        otpEmailStatus: "وضعیت ایمیل OTP",
         reports: "گزارش‌ها",
         telegram: "تلگرام",
         settings: "تنظیمات",
@@ -87,19 +85,10 @@ export const adminTranslations = {
         subtitle: "مدیریت کدهای تخفیف و کمپین‌ها",
         addButton: "افزودن کوپن جدید",
       },
-      reviews: {
-        title: "نظرات",
-        subtitle: "مدیریت بازخورد و نظرات کاربران",
-        addButton: "افزودن نظر دستی",
-      },
       messages: {
         title: "پیام‌ها",
         subtitle: "مدیریت و مشاهده پیام‌های کاربران",
         addButton: "ارسال پیام جدید",
-      },
-      otpEmailStatus: {
-        title: "وضعیت ایمیل OTP",
-        subtitle: "پیگیری وضعیت ارسال OTP ثبت‌نام",
       },
       reports: {
         title: "گزارش‌ها",
@@ -111,7 +100,7 @@ export const adminTranslations = {
       },
       settings: {
         title: "تنظیمات",
-        subtitle: "مدیریت تنظیمات پلتفرم و سیستم",
+        subtitle: "مدیریت تنظیمات پلتفرم، قیمت‌گذاری و اعلان‌های تلگرام",
       },
     },
   },
@@ -153,9 +142,7 @@ export const adminTranslations = {
         payments: "Payments",
         teacherIncome: "Teacher Income",
         coupons: "Coupons",
-        reviews: "Reviews",
         messages: "Messages",
-        otpEmailStatus: "OTP Email Status",
         reports: "Reports",
         telegram: "Telegram",
         settings: "Settings",
@@ -203,19 +190,10 @@ export const adminTranslations = {
         subtitle: "Manage discount codes and campaigns",
         addButton: "Add New Coupon",
       },
-      reviews: {
-        title: "Reviews",
-        subtitle: "Manage user reviews and feedback",
-        addButton: "Add Manual Review",
-      },
       messages: {
         title: "Messages",
         subtitle: "Manage and view user messages",
         addButton: "Send New Message",
-      },
-      otpEmailStatus: {
-        title: "OTP Email Status",
-        subtitle: "Track OTP email sending status for registration emails",
       },
       reports: {
         title: "Reports",
@@ -227,7 +205,7 @@ export const adminTranslations = {
       },
       settings: {
         title: "Settings",
-        subtitle: "Manage platform and system settings",
+        subtitle: "Manage platform settings, pricing rules, and Telegram announcements",
       },
     },
   },

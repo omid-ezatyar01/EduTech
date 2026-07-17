@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
   FolderTree,
   Layers,
   Plus,
@@ -26,7 +27,6 @@ import {
 } from "../utils/adminPageCache.js";
 import {
   formatCategoryPathLabel,
-  getCategoryParentOptions,
 } from "../utils/categoryTree.js";
 
 const ADMIN_CATEGORIES_CACHE_KEY = getAdminPageCacheKey("categories");
@@ -59,6 +59,8 @@ const PAGE_TEXT = {
   "Category directory": "فهرست دسته‌بندی‌ها",
   "Search by category path and manage every category from one table.":
     "با مسیر دسته‌بندی جستجو کنید و همه دسته‌بندی‌ها را از یک جدول مدیریت نمایید.",
+  "Choose parent step by step. Start from a main category, then continue deeper only if needed.":
+    "دسته‌بندی والد را مرحله‌به‌مرحله انتخاب کنید. از دسته‌بندی اصلی شروع کنید و فقط در صورت نیاز به لایه‌های پایین‌تر بروید.",
   "Search category path": "جستجو در مسیر دسته‌بندی",
   Refresh: "تازه‌سازی",
   "Failed to load categories": "بارگذاری دسته‌بندی‌ها ناموفق بود",
@@ -78,6 +80,20 @@ const PAGE_TEXT = {
   Actions: "اقدام‌ها",
   Main: "اصلی",
   Subcategory: "زیردسته",
+  "Main category": "دسته‌بندی اصلی",
+  "Subcategory level": "سطح زیردسته",
+  "No parent": "بدون والد",
+  "Select main category": "دسته‌بندی اصلی را انتخاب کنید",
+  "Select subcategory": "زیردسته را انتخاب کنید",
+  "Use this level": "همین سطح",
+  "Continue deeper": "ادامه به سطح پایین‌تر",
+  "Selected parent": "والد انتخاب‌شده",
+  "This category will be created at the top level.": "این دسته‌بندی در سطح اصلی ایجاد می‌شود.",
+  "This category will be nested under the selected parent.":
+    "این دسته‌بندی زیر دسته‌بندی والد انتخاب‌شده ساخته می‌شود.",
+  Level: "سطح",
+  "Top level": "سطح اصلی",
+  "Nested category": "دسته‌بندی تو در تو",
   "Edit category action": "ویرایش دسته‌بندی",
   "Delete category action": "حذف دسته‌بندی",
   "subcategories count": "زیر‌دسته",
@@ -92,6 +108,77 @@ const getStatusStyle = (isActive) =>
   isActive
     ? "border-emerald-200 bg-emerald-50 text-emerald-700"
     : "border-amber-200 bg-amber-50 text-amber-700";
+
+const normalizeCategoryId = (value) => String(value || "").trim();
+
+const buildCategoryMaps = (rows = []) => {
+  const items = Array.isArray(rows) ? rows : [];
+  const byId = new Map(items.map((item) => [normalizeCategoryId(item?._id), item]));
+  const childrenByParent = new Map();
+
+  items.forEach((item) => {
+    const parentId = normalizeCategoryId(item?.parent?._id || item?.parent);
+    if (!childrenByParent.has(parentId)) {
+      childrenByParent.set(parentId, []);
+    }
+    childrenByParent.get(parentId).push(item);
+  });
+
+  childrenByParent.forEach((group) => {
+    group.sort((left, right) => String(left?.name || "").localeCompare(String(right?.name || "")));
+  });
+
+  return { byId, childrenByParent };
+};
+
+const collectDescendantIds = (childrenByParent, parentId) => {
+  const blocked = new Set();
+  const queue = [...(childrenByParent.get(normalizeCategoryId(parentId)) || [])];
+
+  while (queue.length) {
+    const current = queue.shift();
+    const currentId = normalizeCategoryId(current?._id);
+    if (!currentId || blocked.has(currentId)) continue;
+    blocked.add(currentId);
+    queue.push(...(childrenByParent.get(currentId) || []));
+  }
+
+  return blocked;
+};
+
+const buildAncestorChain = (categoryId, byId) => {
+  const chain = [];
+  let current = byId.get(normalizeCategoryId(categoryId));
+  let depth = 0;
+
+  while (current && depth < 20) {
+    chain.unshift(current);
+    const parentId = normalizeCategoryId(current?.parent?._id || current?.parent);
+    current = parentId ? byId.get(parentId) || null : null;
+    depth += 1;
+  }
+
+  return chain;
+};
+
+const buildDisplayRows = (rows = []) => {
+  const { childrenByParent } = buildCategoryMaps(rows);
+  const ordered = [];
+
+  const walk = (parentId = "", depth = 0) => {
+    const branch = childrenByParent.get(normalizeCategoryId(parentId)) || [];
+    branch.forEach((item) => {
+      ordered.push({
+        ...item,
+        treeDepth: depth,
+      });
+      walk(item._id, depth + 1);
+    });
+  };
+
+  walk("", 0);
+  return ordered;
+};
 
 export default function AdminCategoriesPage() {
   const { t, language, isRTL } = useAdminI18n();
@@ -110,6 +197,7 @@ export default function AdminCategoriesPage() {
     parent: "",
     isActive: true,
   });
+  const [parentSelectionPath, setParentSelectionPath] = useState([]);
   const categoriesRequest = useLatestRequest();
 
   const loadCategories = useCallback(async () => {
@@ -168,15 +256,54 @@ export default function AdminCategoriesPage() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  const orderedCategories = useMemo(() => buildDisplayRows(categories), [categories]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return categories.filter((item) => !q || formatCategoryPathLabel(item).toLowerCase().includes(q));
-  }, [categories, search]);
+    return orderedCategories.filter((item) => !q || formatCategoryPathLabel(item).toLowerCase().includes(q));
+  }, [orderedCategories, search]);
 
-  const parentCategories = useMemo(
-    () => getCategoryParentOptions(categories, editingId),
-    [categories, editingId],
-  );
+  const selectableTree = useMemo(() => {
+    const maps = buildCategoryMaps(categories);
+    const blockedIds = new Set();
+    const currentEditingId = normalizeCategoryId(editingId);
+    if (currentEditingId) {
+      blockedIds.add(currentEditingId);
+      collectDescendantIds(maps.childrenByParent, currentEditingId).forEach((id) => blockedIds.add(id));
+    }
+
+    const allowedRows = categories.filter((item) => !blockedIds.has(normalizeCategoryId(item?._id)));
+    return buildCategoryMaps(allowedRows);
+  }, [categories, editingId]);
+
+  const parentSelectorLevels = useMemo(() => {
+    const levels = [];
+    let parentId = "";
+    let level = 0;
+
+    while (level < 10) {
+      const options = selectableTree.childrenByParent.get(parentId) || [];
+      if (!options.length) break;
+      levels.push({
+        level,
+        parentId,
+        options,
+        selectedId: parentSelectionPath[level] || "",
+      });
+      const nextSelectedId = normalizeCategoryId(parentSelectionPath[level]);
+      if (!nextSelectedId) break;
+      parentId = nextSelectedId;
+      level += 1;
+    }
+
+    return levels;
+  }, [parentSelectionPath, selectableTree.childrenByParent]);
+
+  const selectedParentCategory = useMemo(() => {
+    const selectedId = normalizeCategoryId(form.parent);
+    if (!selectedId) return null;
+    return selectableTree.byId.get(selectedId) || null;
+  }, [form.parent, selectableTree.byId]);
 
   const statsCards = useMemo(
     () => [
@@ -205,6 +332,7 @@ export default function AdminCategoriesPage() {
   const resetForm = () => {
     setEditingId("");
     setIsFormOpen(false);
+    setParentSelectionPath([]);
     setForm({
       name: "",
       description: "",
@@ -248,14 +376,42 @@ export default function AdminCategoriesPage() {
   };
 
   const handleEdit = (category) => {
+    const parentId = normalizeCategoryId(category.parent?._id || category.parent);
+    const lineage = parentId ? buildAncestorChain(parentId, selectableTree.byId) : [];
     setIsFormOpen(true);
     setEditingId(String(category._id || ""));
+    setParentSelectionPath(lineage.map((item) => normalizeCategoryId(item?._id)));
     setForm({
       name: category.name || "",
       description: category.description || "",
-      parent: category.parent?._id || "",
+      parent: parentId,
       isActive: Boolean(category.isActive),
     });
+  };
+
+  const handleOpenCreateModal = () => {
+    setEditingId("");
+    setParentSelectionPath([]);
+    setForm({
+      name: "",
+      description: "",
+      parent: "",
+      isActive: true,
+    });
+    setIsFormOpen(true);
+  };
+
+  const handleParentLevelChange = (levelIndex, nextValue) => {
+    const normalizedValue = normalizeCategoryId(nextValue);
+    const nextPath = parentSelectionPath.slice(0, levelIndex);
+    if (normalizedValue) {
+      nextPath[levelIndex] = normalizedValue;
+    }
+    setParentSelectionPath(nextPath);
+    setForm((prev) => ({
+      ...prev,
+      parent: normalizedValue || normalizeCategoryId(nextPath[nextPath.length - 1]),
+    }));
   };
 
   const handleDelete = async (categoryId) => {
@@ -288,16 +444,7 @@ export default function AdminCategoriesPage() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => {
-                setIsFormOpen(true);
-                setEditingId("");
-                setForm({
-                  name: "",
-                  description: "",
-                  parent: "",
-                  isActive: true,
-                });
-              }}
+              onClick={handleOpenCreateModal}
               className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-blue-50"
             >
               <Plus size={16} />
@@ -401,26 +548,50 @@ export default function AdminCategoriesPage() {
                 filtered.map((category) => (
                   <tr key={category._id} className="align-middle transition hover:bg-slate-50/70">
                     <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-start gap-3">
+                        <div
+                          className="mt-2 flex shrink-0 items-center gap-2"
+                          style={{ [isRTL ? "marginRight" : "marginLeft"]: `${category.treeDepth * 16}px` }}
+                        >
+                          {category.treeDepth > 0 ? (
+                            <span className="h-6 w-1 rounded-full bg-slate-200" />
+                          ) : null}
+                        </div>
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
                           <Layers size={18} />
                         </div>
                         <div className="min-w-0">
-                          <p className="truncate font-bold text-slate-800">{category.name}</p>
-                          <p className="mt-1 text-xs font-semibold text-slate-500">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate font-bold text-slate-800">{category.name}</p>
+                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600">
+                              {category.treeDepth === 0
+                                ? pageTr("Top level")
+                                : `${pageTr("Level")} ${category.treeDepth + 1}`}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs font-semibold leading-6 text-slate-500">
                             {category.childrenCount || 0} {pageTr("subcategories count")}
                           </p>
                         </div>
                       </div>
                     </td>
                     <td className="px-5 py-4 font-semibold text-slate-700">
-                      {category.parent ? pageTr("Subcategory") : pageTr("Main")}
+                      <div className="space-y-1">
+                        <span className="block">{category.parent ? pageTr("Subcategory") : pageTr("Main")}</span>
+                        <span className="block text-xs font-bold text-slate-400">
+                          {category.parent
+                            ? `${pageTr("Subcategory level")} ${category.treeDepth + 1}`
+                            : pageTr("Main category")}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-5 py-4 font-semibold text-slate-700">
-                      <span className="block truncate">{category.parent?.name || "-"}</span>
+                      <span className="inline-flex max-w-full rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                        {category.parent?.name || pageTr("No parent")}
+                      </span>
                     </td>
                     <td className="px-5 py-4 text-slate-700">
-                      <p className="line-clamp-2 font-medium">{formatCategoryPathLabel(category) || "-"}</p>
+                      <p className="line-clamp-2 font-medium leading-6">{formatCategoryPathLabel(category) || "-"}</p>
                     </td>
                     <td className="px-5 py-4">
                       <span className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-black ${getStatusStyle(category.isActive)}`}>
@@ -497,23 +668,71 @@ export default function AdminCategoriesPage() {
               </label>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block">
+                <div className="block sm:col-span-2">
                   <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Parent category")}</span>
-                  <select
-                    value={form.parent}
-                    onChange={(e) => setForm((prev) => ({ ...prev, parent: e.target.value }))}
-                    className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500 focus:bg-white"
-                  >
-                    <option value="">{pageTr("Main category (no parent)")}</option>
-                    {parentCategories.map((item) => (
-                      <option key={item._id} value={item._id}>
-                        {formatCategoryPathLabel(item)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold leading-6 text-slate-500">
+                      {pageTr("Choose parent step by step. Start from a main category, then continue deeper only if needed.")}
+                    </p>
 
-                <label className="block">
+                    <div className="mt-4 space-y-3">
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-bold text-slate-700">
+                          {pageTr("Main category")}
+                        </span>
+                        <select
+                          value={parentSelectionPath[0] || ""}
+                          onChange={(e) => handleParentLevelChange(0, e.target.value)}
+                          className="block h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500"
+                        >
+                          <option value="">{pageTr("Main category (no parent)")}</option>
+                          {(parentSelectorLevels[0]?.options || []).map((item) => (
+                            <option key={item._id} value={item._id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      {parentSelectorLevels.slice(1).map((levelItem, index) => (
+                        <label key={`${levelItem.parentId}-${levelItem.level}`} className="block">
+                          <span className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+                            <ChevronDown size={14} className="text-slate-400" />
+                            {pageTr("Select subcategory")} {index + 1}
+                          </span>
+                          <select
+                            value={levelItem.selectedId}
+                            onChange={(e) => handleParentLevelChange(levelItem.level, e.target.value)}
+                            className="block h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500"
+                          >
+                            <option value="">{pageTr("Use this level")}</option>
+                            {levelItem.options.map((item) => (
+                              <option key={item._id} value={item._id}>
+                                {item.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3">
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+                        {pageTr("Selected parent")}
+                      </p>
+                      <p className="mt-2 text-sm font-black text-slate-800">
+                        {selectedParentCategory ? formatCategoryPathLabel(selectedParentCategory) : pageTr("No parent")}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold leading-6 text-slate-500">
+                        {selectedParentCategory
+                          ? pageTr("This category will be nested under the selected parent.")
+                          : pageTr("This category will be created at the top level.")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <label className="block sm:col-span-1">
                   <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Status")}</span>
                   <select
                     value={form.isActive ? "active" : "inactive"}

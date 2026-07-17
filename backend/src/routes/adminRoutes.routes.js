@@ -2,7 +2,6 @@ import express from "express";
 import {
   getAdminDashboard,
   getAllUsers,
-  getOtpEmailStatuses,
   createUserByAdmin,
   createTeacherByAdmin,
   getAllTeachers,
@@ -22,6 +21,12 @@ import {
   replyAdminMessage,
   sendAdminEmailToUser,
 } from "../controllers/contactMessageController.js";
+import {
+  getAdminTeacherConversationMessages,
+  getAdminTeacherConversations,
+  markAdminTeacherConversationRead,
+  sendAdminTeacherMessage,
+} from "../controllers/adminTeacherMessageController.js";
 import {
   getAdminNotifications,
   markAdminNotificationRead,
@@ -51,6 +56,10 @@ import {
   replyContactMessageSchema,
   sendAdminEmailSchema,
 } from "../validators/contactMessage.validators.js";
+import {
+  adminTeacherConversationParamSchema,
+  sendMessageSchema,
+} from "../validators/message.validators.js";
 
 const router = express.Router();
 
@@ -80,7 +89,6 @@ router.get(
   validateRequest(adminTelegramPostsQuerySchema, "query"),
   getAdminTelegramPosts,
 );
-router.get("/otp-email-statuses", getOtpEmailStatuses);
 router.get(
   "/certificates",
   validateRequest(adminCertificatesQuerySchema, "query"),
@@ -97,6 +105,27 @@ router.post(
   "/messages/email",
   validateRequest(sendAdminEmailSchema),
   sendAdminEmailToUser,
+);
+
+router.get("/messages/teacher-conversations", getAdminTeacherConversations);
+
+router.get(
+  "/messages/teacher-conversations/:teacherId/messages",
+  validateRequest(adminTeacherConversationParamSchema, "params"),
+  getAdminTeacherConversationMessages,
+);
+
+router.post(
+  "/messages/teacher-conversations/:teacherId/messages",
+  validateRequest(adminTeacherConversationParamSchema, "params"),
+  validateRequest(sendMessageSchema),
+  sendAdminTeacherMessage,
+);
+
+router.patch(
+  "/messages/teacher-conversations/:teacherId/read",
+  validateRequest(adminTeacherConversationParamSchema, "params"),
+  markAdminTeacherConversationRead,
 );
 
 router.post(

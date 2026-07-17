@@ -8,7 +8,6 @@ import Payment from "../models/Payment.js";
 import Enrollment from "../models/Enrollment.js";
 import User from "../models/User.js";
 import AppSetting from "../models/AppSetting.js";
-import OtpVerification from "../models/OtpVerification.js";
 import {
   normalizeGlobalCourseDiscountPercentage,
   getTeacherDeductionPercentage,
@@ -601,68 +600,6 @@ export const getAllUsers = async (req, res) => {
     return res.status(500).json({
       message: error.message,
     });
-  }
-};
-
-// @desc    Get OTP email delivery status rows
-// @route   GET /api/v1/admin/otp-email-statuses
-// @access  Admin
-export const getOtpEmailStatuses = async (req, res) => {
-  try {
-    const page = Number(req.query.page) || 1;
-    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
-    const { status, search } = req.query;
-    const filter = {};
-
-    if (status && status !== "all") {
-      filter.emailStatus = status;
-    }
-
-    if (search) {
-      filter.$or = [
-        { email: { $regex: search, $options: "i" } },
-        { recipientEmail: { $regex: search, $options: "i" } },
-        { resendEmailId: { $regex: search, $options: "i" } },
-      ];
-    }
-
-    const skip = (page - 1) * limit;
-    const [rows, total] = await Promise.all([
-      OtpVerification.find(filter)
-        .select("-otpHash -rawWebhookEvent")
-        .populate("userId", "name email emailBlocked emailBlockReason")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      OtpVerification.countDocuments(filter),
-    ]);
-
-    return res.json({
-      message: "OTP email statuses fetched successfully",
-      data: rows.map((row) => ({
-        id: row._id,
-        email: row.recipientEmail || row.email,
-        userName: row.userId?.name || "",
-        lastOtpRequestAt: row.lastRequestedAt || row.createdAt,
-        messageId: row.resendEmailId || "",
-        resendEmailId: row.resendEmailId || "",
-        status: row.emailStatus || "pending",
-        reason: row.emailStatusReason || "",
-        otpExpiresAt: row.otpExpiresAt || null,
-        emailStatusUpdatedAt: row.emailStatusUpdatedAt || null,
-        emailBlocked: Boolean(row.userId?.emailBlocked),
-        emailBlockReason: row.userId?.emailBlockReason || "",
-      })),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
   }
 };
 
