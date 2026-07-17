@@ -690,7 +690,7 @@ export default function AdminCategoriesPage() {
       {isFormOpen ? (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 p-4">
           <div className="flex min-h-full items-center justify-center py-4">
-            <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+            <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
               <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-6">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary-600">
@@ -713,19 +713,47 @@ export default function AdminCategoriesPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6">
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Category name")}</span>
-                    <input
-                      value={form.name}
-                      onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                      placeholder={pageTr("Enter category name")}
-                      className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10"
-                    />
-                  </label>
+                <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+                  <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                    <div className="space-y-4">
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Category name")}</span>
+                        <input
+                          value={form.name}
+                          onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                          placeholder={pageTr("Enter category name")}
+                          className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10"
+                        />
+                      </label>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="block sm:col-span-2">
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Status")}</span>
+                        <select
+                          value={form.isActive ? "active" : "inactive"}
+                          onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.value === "active" }))}
+                          className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500 focus:bg-white"
+                        >
+                          <option value="active">{pageTr("Active")}</option>
+                          <option value="inactive">{pageTr("Inactive")}</option>
+                        </select>
+                      </label>
+
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+                          {pageTr("Selected parent")}
+                        </p>
+                        <p className="mt-2 text-sm font-black text-slate-800">
+                          {selectedParentCategory ? formatCategoryPathLabel(selectedParentCategory) : pageTr("No parent")}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold leading-6 text-slate-500">
+                          {selectedParentCategory
+                            ? pageTr("This category will be nested under the selected parent.")
+                            : pageTr("This category will be created at the top level.")}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="block">
                       <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Parent category")}</span>
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <p className="text-xs font-semibold leading-6 text-slate-500">
@@ -772,34 +800,8 @@ export default function AdminCategoriesPage() {
                             </label>
                           ))}
                         </div>
-
-                        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3">
-                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                            {pageTr("Selected parent")}
-                          </p>
-                          <p className="mt-2 text-sm font-black text-slate-800">
-                            {selectedParentCategory ? formatCategoryPathLabel(selectedParentCategory) : pageTr("No parent")}
-                          </p>
-                          <p className="mt-1 text-xs font-semibold leading-6 text-slate-500">
-                            {selectedParentCategory
-                              ? pageTr("This category will be nested under the selected parent.")
-                              : pageTr("This category will be created at the top level.")}
-                          </p>
-                        </div>
                       </div>
                     </div>
-
-                    <label className="block sm:col-span-1">
-                      <span className="mb-2 block text-sm font-bold text-slate-700">{pageTr("Status")}</span>
-                      <select
-                        value={form.isActive ? "active" : "inactive"}
-                        onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.value === "active" }))}
-                        className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-primary-500 focus:bg-white"
-                      >
-                        <option value="active">{pageTr("Active")}</option>
-                        <option value="inactive">{pageTr("Inactive")}</option>
-                      </select>
-                    </label>
                   </div>
                 </div>
 
