@@ -1,4 +1,5 @@
 import Category from "../models/Category.js";
+import Course from "../models/Course.js";
 import ApiError from "./ApiError.js";
 
 const normalizeObjectIdText = (value) => String(value || "").trim();
@@ -95,4 +96,54 @@ export const buildCourseCategoryFilter = async (categoryId) => {
     return { category: normalizedCategoryId };
   }
   return { subcategory: { $in: descendantIds } };
+};
+
+export const realignCourseCategoryAssignments = async (categoryId) => {
+  const normalizedCategoryId = normalizeObjectIdText(categoryId);
+  if (!normalizedCategoryId) return 0;
+
+  const courses = await Course.find({
+    $or: [{ category: normalizedCategoryId }, { subcategory: normalizedCategoryId }],
+  })
+    .select("_id category subcategory")
+    .lean();
+
+  if (!courses.length) return 0;
+
+  const updates = [];
+
+  for (const course of courses) {
+    const selectedCategoryId = normalizeObjectIdText(course?.subcategory || course?.category);
+    if (!selectedCategoryId) continue;
+
+    const assignment = await resolveCourseCategoryAssignment(selectedCategoryId, null);
+    const nextCategoryId = normalizeObjectIdText(assignment.categoryId);
+    const nextSubcategoryId = normalizeObjectIdText(assignment.subcategoryId);
+    const currentCategoryId = normalizeObjectIdText(course?.category);
+    const currentSubcategoryId = normalizeObjectIdText(course?.subcategory);
+
+    if (
+      currentCategoryId === nextCategoryId &&
+      currentSubcategoryId === nextSubcategoryId
+    ) {
+      continue;
+    }
+
+    updates.push({
+      updateOne: {
+        filter: { _id: course._id },
+        update: {
+          $set: {
+            category: assignment.categoryId,
+            subcategory: assignment.subcategoryId || null,
+          },
+        },
+      },
+    });
+  }
+
+  if (!updates.length) return 0;
+
+  await Course.bulkWrite(updates);
+  return updates.length;
 };

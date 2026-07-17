@@ -22,7 +22,6 @@ const resolvePageTitle = (pathname, language) => {
   if (pathname.startsWith("/teachers")) return isFa ? "مدرسان" : "Teachers";
   if (pathname.startsWith("/courses")) return isFa ? "کورس‌ها" : "Courses";
   if (pathname.startsWith("/categories")) return isFa ? "دسته‌بندی‌ها" : "Categories";
-  if (pathname.startsWith("/orders")) return isFa ? "سفارش‌ها" : "Orders";
   if (pathname.startsWith("/payments")) return isFa ? "پرداخت‌ها" : "Payments";
   if (pathname.startsWith("/messages")) return isFa ? "پیام‌ها" : "Messages";
   if (pathname.startsWith("/reports")) return isFa ? "گزارش‌ها" : "Reports";

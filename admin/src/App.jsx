@@ -19,7 +19,6 @@ const loadAdminTeachersPage = () => import("./pages/AdminTeachersPage");
 const loadAdminCertificatesPage = () => import("./pages/AdminCertificatesPage");
 const loadAdminCoursesPage = () => import("./pages/AdminCoursesPage");
 const loadAdminCategoriesPage = () => import("./pages/AdminCategoriesPage");
-const loadAdminOrdersPage = () => import("./pages/AdminOrdersPage");
 const loadAdminPaymentsPage = () => import("./pages/AdminPaymentsPage");
 const loadAdminTeacherIncomePage = () => import("./pages/AdminTeacherIncomePage");
 const loadAdminCouponsPage = () => import("./pages/AdminCouponsPage");
@@ -37,7 +36,6 @@ const AdminTeachersPage = lazy(loadAdminTeachersPage);
 const AdminCertificatesPage = lazy(loadAdminCertificatesPage);
 const AdminCoursesPage = lazy(loadAdminCoursesPage);
 const AdminCategoriesPage = lazy(loadAdminCategoriesPage);
-const AdminOrdersPage = lazy(loadAdminOrdersPage);
 const AdminPaymentsPage = lazy(loadAdminPaymentsPage);
 const AdminTeacherIncomePage = lazy(loadAdminTeacherIncomePage);
 const AdminCouponsPage = lazy(loadAdminCouponsPage);
@@ -57,7 +55,6 @@ const preloadRoutes = [
   { key: "certificates", test: (path) => path === "/certificates", load: loadAdminCertificatesPage },
   { key: "courses", test: (path) => path === "/courses", load: loadAdminCoursesPage },
   { key: "categories", test: (path) => path === "/categories", load: loadAdminCategoriesPage },
-  { key: "orders", test: (path) => path === "/orders", load: loadAdminOrdersPage },
   { key: "payments", test: (path) => path === "/payments", load: loadAdminPaymentsPage },
   { key: "teacher-income", test: (path) => path === "/teacher-income", load: loadAdminTeacherIncomePage },
   { key: "coupons", test: (path) => path === "/coupons", load: loadAdminCouponsPage },
@@ -82,7 +79,6 @@ const KNOWN_ADMIN_ROUTE_SUFFIXES = [
   "/certificates",
   "/courses",
   "/categories",
-  "/orders",
   "/payments",
   "/teacher-income",
   "/coupons",
@@ -256,7 +252,6 @@ function AppContent() {
             <Route path="/certificates" element={<AdminCertificatesPage />} />
             <Route path="/courses" element={<AdminCoursesPage />} />
             <Route path="/categories" element={<AdminCategoriesPage />} />
-            <Route path="/orders" element={<AdminOrdersPage />} />
             <Route path="/payments" element={<AdminPaymentsPage />} />
             <Route path="/teacher-income" element={<AdminTeacherIncomePage />} />
             <Route path="/coupons" element={<AdminCouponsPage />} />

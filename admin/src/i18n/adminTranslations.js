@@ -34,7 +34,6 @@ export const adminTranslations = {
         certificates: "سرتیفیکیت‌ها",
         courses: "کورس‌ها",
         categories: "دسته‌بندی‌ها",
-        orders: "سفارش‌ها",
         payments: "پرداخت‌ها",
         teacherIncome: "درآمد مدرسان",
         coupons: "کوپن‌ها",
@@ -74,11 +73,6 @@ export const adminTranslations = {
         title: "دسته‌بندی‌ها",
         subtitle: "مدیریت و مشاهده دسته‌بندی کورس‌ها",
         addButton: "افزودن دسته‌بندی جدید",
-      },
-      orders: {
-        title: "سفارش‌ها",
-        subtitle: "مدیریت و مشاهده سفارش‌های سیستم",
-        addButton: "افزودن سفارش دستی",
       },
       payments: {
         title: "پرداخت‌ها",
@@ -156,7 +150,6 @@ export const adminTranslations = {
         certificates: "Certificates",
         courses: "Courses",
         categories: "Categories",
-        orders: "Orders",
         payments: "Payments",
         teacherIncome: "Teacher Income",
         coupons: "Coupons",
@@ -196,11 +189,6 @@ export const adminTranslations = {
         title: "Categories",
         subtitle: "Manage and view course categories",
         addButton: "Add New Category",
-      },
-      orders: {
-        title: "Orders",
-        subtitle: "Manage and view system orders",
-        addButton: "Add Manual Order",
       },
       payments: {
         title: "Payments",

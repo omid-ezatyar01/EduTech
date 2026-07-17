@@ -191,12 +191,12 @@ export default function AdminCertificatesPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[28px] bg-gradient-to-br from-slate-900 via-[#0B4FD8] to-[#00B8A9] px-6 py-7 text-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] sm:px-8">
-        <p className="text-xs font-black uppercase tracking-[0.24em] text-blue-100">
+      <section className="rounded-[28px] border border-slate-200 bg-white px-6 py-7 text-slate-900 shadow-sm sm:px-8">
+        <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-600">
           {isFa ? "مدیریت سرتیفیکیت‌ها" : "Certificate operations"}
         </p>
-        <h1 className="mt-3 text-3xl font-extrabold">{text.title}</h1>
-        <p className="mt-2 max-w-3xl text-sm font-medium text-blue-50/90">
+        <h1 className="mt-3 text-3xl font-extrabold text-slate-800">{text.title}</h1>
+        <p className="mt-2 max-w-3xl text-sm font-normal leading-7 text-slate-600">
           {text.subtitle}
         </p>
       </section>

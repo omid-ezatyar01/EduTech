@@ -3,6 +3,7 @@ import Course from "../models/Course.js";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
+import { realignCourseCategoryAssignments } from "../utils/courseCategory.js";
 
 const normalizeParentId = (value) => {
   const normalized = String(value || "").trim();
@@ -123,6 +124,11 @@ export const getAdminCategories = asyncHandler(async (_req, res) => {
 });
 
 export const updateCategory = asyncHandler(async (req, res) => {
+  const existingCategory = await Category.findById(req.params.id).select("parent");
+  if (!existingCategory) {
+    throw new ApiError(404, "Category not found");
+  }
+
   const payload = {
     ...req.body,
     parent: Object.prototype.hasOwnProperty.call(req.body, "parent")
@@ -147,8 +153,10 @@ export const updateCategory = asyncHandler(async (req, res) => {
     runValidators: true,
   }).populate("parent", "name slug");
 
-  if (!category) {
-    throw new ApiError(404, "Category not found");
+  const previousParentId = String(existingCategory.parent || "").trim();
+  const nextParentId = String(category.parent?._id || category.parent || "").trim();
+  if (previousParentId !== nextParentId) {
+    await realignCourseCategoryAssignments(req.params.id);
   }
 
   const categories = shapeCategoryRows([category.toObject()]);
@@ -166,6 +174,8 @@ export const deleteCategory = asyncHandler(async (req, res) => {
   if (childCount > 0) {
     throw new ApiError(400, "Delete or move subcategories first");
   }
+
+  await realignCourseCategoryAssignments(req.params.id);
 
   const linkedCourses = await Course.countDocuments({
     $or: [{ category: req.params.id }, { subcategory: req.params.id }],
