@@ -757,6 +757,17 @@ export default function StudentDashboardPage({ language = "fa" }) {
                 {language === "fa" ? "منابع کورس" : "Course Resources"}
               </p>
             </Link>
+            <Link
+              to="/student/payments"
+              className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-primary-100 hover:bg-primary-50"
+            >
+              <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-primary-600 shadow-sm">
+                <CreditCard size={18} />
+              </div>
+              <p className="text-sm font-black text-slate-900">
+                {language === "fa" ? "پرداخت‌ها" : "Payments"}
+              </p>
+            </Link>
           </div>
         </div>
       </section>

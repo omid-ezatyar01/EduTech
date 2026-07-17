@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   Info,
   MessageCircle,
@@ -18,7 +20,10 @@ import ReviewCard from "../components/ReviewCard.jsx";
 import TeacherScheduleTable from "../components/TeacherScheduleTable.jsx";
 import FAQAccordion from "../components/FAQAccordion.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
-import { fetchPublicTeacherById } from "../../services/teacherService.js";
+import {
+  fetchPublicTeacherById,
+  getCachedPublicTeacherById,
+} from "../../services/teacherService.js";
 import { fetchStudentEnrollments } from "../../services/courseService.js";
 import { buildTeacherPath, extractRouteIdentifier } from "../utils/routePaths.js";
 import {
@@ -27,7 +32,6 @@ import {
 } from "../../services/http.js";
 
 const PANEL_COLLAPSED_HEIGHT = 580;
-const FEATURED_COURSES_PER_PAGE = 6;
 
 function resolveCourseId(value) {
   if (!value) return "";
@@ -102,7 +106,6 @@ const pageData = {
     ],
     tabs: [
       "درباره استاد",
-      "نظریات شاگردان درباره استاد",
       "مهارت‌ها",
       "تقسیم اوقات",
       "سوالات",
@@ -294,7 +297,7 @@ const pageData = {
       { label: "Active Courses", value: "4" },
       { label: "Years Experience", value: "5" },
     ],
-    tabs: ["About Teacher", "Student Reviews About Teacher", "Skills", "Schedule", "FAQ"],
+    tabs: ["About Teacher", "Skills", "Schedule", "FAQ"],
     sections: {
       aboutTitle: "About Teacher",
       aboutText:
@@ -483,15 +486,17 @@ export default function TeacherDetails({ language = "fa" }) {
   const isFa = language === "fa";
   const dir = isFa ? "rtl" : "ltr";
   const baseData = pageData[language] || pageData["fa"];
+  const cachedTeacher = getCachedPublicTeacherById(teacherIdParam);
   const [activeTab, setActiveTab] = useState(0);
   const [expandedPanels, setExpandedPanels] = useState({});
   const [panelOverflow, setPanelOverflow] = useState({});
-  const [teacher, setTeacher] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [teacher, setTeacher] = useState(() => cachedTeacher);
+  const [loading, setLoading] = useState(() => !cachedTeacher);
   const [error, setError] = useState("");
   const [enrolledCourseIds, setEnrolledCourseIds] = useState(() => new Set());
-  const [currentFeaturedCoursesPage, setCurrentFeaturedCoursesPage] = useState(1);
+  const [sectionRowNav, setSectionRowNav] = useState({});
   const panelRefs = useRef({});
+  const sectionRowRefs = useRef({});
   const courseCardLabels = useMemo(
     () => ({ details: isFa ? "جزئیات بیشتر" : "More details" }),
     [isFa],
@@ -510,9 +515,15 @@ export default function TeacherDetails({ language = "fa" }) {
 
     const loadTeacher = async () => {
       try {
-        setLoading(true);
+        const initialTeacher = getCachedPublicTeacherById(teacherIdParam);
+        if (initialTeacher) {
+          setTeacher(initialTeacher);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
         setError("");
-        const row = await fetchPublicTeacherById(teacherIdParam);
+        const row = initialTeacher || await fetchPublicTeacherById(teacherIdParam);
         if (!mounted) return;
         if (!row) {
           setError(isFa ? "استاد یافت نشد." : "Teacher not found.");
@@ -969,22 +980,62 @@ export default function TeacherDetails({ language = "fa" }) {
     return () => observer.disconnect();
   }, [activeTab, data, expandedPanels]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setCurrentFeaturedCoursesPage(1), 0);
-    return () => window.clearTimeout(timer);
-  }, [id, language]);
-
-  const totalFeaturedCoursePages = Math.max(
-    1,
-    Math.ceil((data.sections.courses?.length || 0) / FEATURED_COURSES_PER_PAGE),
-  );
-  const activeFeaturedCoursesPage = Math.min(currentFeaturedCoursesPage, totalFeaturedCoursePages);
-  const paginatedFeaturedCourses = (data.sections.courses || []).slice(
-    (activeFeaturedCoursesPage - 1) * FEATURED_COURSES_PER_PAGE,
-    activeFeaturedCoursesPage * FEATURED_COURSES_PER_PAGE,
-  );
   const introVideoUrl = String(data?.hero?.introVideoUrl || "").trim();
   const introVideoEmbedUrl = getYouTubeEmbedUrl(introVideoUrl);
+  const getRowNavState = (rowElement) => {
+    if (!rowElement) return { canPrev: false, canNext: false };
+    const maxScroll = Math.max(0, rowElement.scrollWidth - rowElement.clientWidth);
+    if (dir === "rtl") {
+      const progress = Math.min(maxScroll, Math.abs(rowElement.scrollLeft || 0));
+      return {
+        canPrev: progress > 8,
+        canNext: progress < maxScroll - 8,
+      };
+    }
+
+    const progress = rowElement.scrollLeft || 0;
+    return {
+      canPrev: progress > 8,
+      canNext: progress < maxScroll - 8,
+    };
+  };
+  const updateSectionRowNav = (key, rowElement) => {
+    const nextState = getRowNavState(rowElement);
+    setSectionRowNav((previous) => {
+      const current = previous[key];
+      if (current?.canPrev === nextState.canPrev && current?.canNext === nextState.canNext) {
+        return previous;
+      }
+      return { ...previous, [key]: nextState };
+    });
+  };
+  const scrollRowForward = (key) => {
+    const rowElement = sectionRowRefs.current[key];
+    if (!rowElement) return;
+    const scrollAmount = Math.max(320, Math.round(rowElement.clientWidth * 0.82));
+    rowElement.scrollBy({
+      left: dir === "rtl" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+  };
+  const scrollRowBackward = (key) => {
+    const rowElement = sectionRowRefs.current[key];
+    if (!rowElement) return;
+    const scrollAmount = Math.max(320, Math.round(rowElement.clientWidth * 0.82));
+    rowElement.scrollBy({
+      left: dir === "rtl" ? scrollAmount : -scrollAmount,
+      behavior: "smooth",
+    });
+  };
+
+  useEffect(() => {
+    ["featured-courses", "ended-courses"].forEach((key) => {
+      const element = sectionRowRefs.current[key];
+      if (element) {
+        updateSectionRowNav(key, element);
+      }
+    });
+  }, [data.sections.courses, data.sections.endedCourses, dir]);
 
   const renderPanel = (panelKey, content) => {
     const isExpanded = Boolean(expandedPanels[panelKey]);
@@ -1183,34 +1234,6 @@ export default function TeacherDetails({ language = "fa" }) {
             )}
 
             {activeTab === 1 && (
-              renderPanel(1, (
-                <>
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-2xl font-black text-slate-950">
-                    {data.sections.reviewsTitle}
-                  </h2>
-                  <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
-                    {pageNumberFormatter.format(Array.isArray(data.sections.reviews) ? data.sections.reviews.length : 0)}
-                  </span>
-                </div>
-                {data.sections.reviews?.length ? (
-                  <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                    {data.sections.reviews.map((review, index) => (
-                      <ReviewCard key={review._id || `${review.name}-${index}`} review={review} />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">
-                    {isFa
-                      ? "هنوز نظری از شاگردان ثبت نشده است."
-                      : "No student reviews have been added yet."}
-                  </p>
-                )}
-                </>
-              ))
-            )}
-
-            {activeTab === 2 && (
               renderPanel(2, (
                 <>
                 <h2 className="text-2xl font-black text-slate-950">
@@ -1239,7 +1262,7 @@ export default function TeacherDetails({ language = "fa" }) {
               ))
             )}
 
-            {activeTab === 3 && data.sections.schedule.length > 0 && (
+            {activeTab === 2 && data.sections.schedule.length > 0 && (
               renderPanel(3, (
                 <>
                 <h2 className="text-2xl font-black text-slate-950">
@@ -1259,7 +1282,7 @@ export default function TeacherDetails({ language = "fa" }) {
               ))
             )}
 
-            {activeTab === 4 && (
+            {activeTab === 3 && (
               renderPanel(4, (
                 <>
                 <h2 className="mb-6 text-2xl font-black text-slate-950">
@@ -1289,62 +1312,52 @@ export default function TeacherDetails({ language = "fa" }) {
                 : "This teacher has no published courses yet."}
             </p>
           ) : (
-            <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {paginatedFeaturedCourses.map((course, index) => (
-                <div key={course._id || course.id || course.slug || `${course.title}-${index}`}>
-                  <CourseCard
-                    course={course}
-                    dir={dir}
-                    isEnrolled={enrolledCourseIds.has(resolveCourseId(course))}
-                    language={isFa ? "fa" : "en"}
-                    labels={courseCardLabels}
-                  />
-                </div>
-              ))}
+            <div className="relative mt-6">
+              <div
+                ref={(element) => {
+                  sectionRowRefs.current["featured-courses"] = element;
+                }}
+                onScroll={(event) => updateSectionRowNav("featured-courses", event.currentTarget)}
+                className="edutech-scrollbar flex gap-4 overflow-x-auto px-2 pb-2 sm:gap-5"
+                dir={dir}
+              >
+                {data.sections.courses.map((course, index) => (
+                  <div
+                    key={course._id || course.id || course.slug || `${course.title}-${index}`}
+                    className="w-[calc(100vw-5.5rem)] min-w-[calc(100vw-5.5rem)] shrink-0 sm:w-[min(84vw,360px)] sm:min-w-[min(84vw,360px)]"
+                  >
+                    <CourseCard
+                      course={course}
+                      dir={dir}
+                      isEnrolled={enrolledCourseIds.has(resolveCourseId(course))}
+                      language={isFa ? "fa" : "en"}
+                      labels={courseCardLabels}
+                    />
+                  </div>
+                ))}
+              </div>
+              {sectionRowNav["featured-courses"]?.canPrev ? (
+                <button
+                  type="button"
+                  onClick={() => scrollRowBackward("featured-courses")}
+                  className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                  aria-label={isFa ? "نمایش موارد قبلی" : "Show previous items"}
+                >
+                  <ChevronLeft size={18} className={dir === "rtl" ? "rotate-180" : ""} />
+                </button>
+              ) : null}
+              {sectionRowNav["featured-courses"]?.canNext ? (
+                <button
+                  type="button"
+                  onClick={() => scrollRowForward("featured-courses")}
+                  className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                  aria-label={isFa ? "نمایش موارد بعدی" : "Show next items"}
+                >
+                  <ChevronRight size={18} className={dir === "rtl" ? "rotate-180" : ""} />
+                </button>
+              ) : null}
             </div>
           )}
-          {data.sections.courses?.length > FEATURED_COURSES_PER_PAGE ? (
-            <div className="mt-5 rounded-[20px] border border-slate-200 bg-white p-3 shadow-sm">
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCurrentFeaturedCoursesPage(Math.max(1, activeFeaturedCoursesPage - 1))
-                  }
-                  disabled={activeFeaturedCoursesPage === 1}
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isFa ? "قبلی" : "Previous"}
-                </button>
-                {Array.from({ length: totalFeaturedCoursePages }, (_, idx) => idx + 1).map((page) => (
-                  <button
-                    key={page}
-                    type="button"
-                    onClick={() => setCurrentFeaturedCoursesPage(page)}
-                    className={`h-9 min-w-9 rounded-lg px-3 text-xs font-black transition ${
-                      activeFeaturedCoursesPage === page
-                        ? "bg-primary-600 text-white"
-                        : "border border-slate-200 text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    {pageNumberFormatter.format(page)}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCurrentFeaturedCoursesPage(
-                      Math.min(totalFeaturedCoursePages, activeFeaturedCoursesPage + 1),
-                    )
-                  }
-                  disabled={activeFeaturedCoursesPage === totalFeaturedCoursePages}
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isFa ? "بعدی" : "Next"}
-                </button>
-              </div>
-            </div>
-          ) : null}
         </section>
 
         <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
@@ -1362,11 +1375,19 @@ export default function TeacherDetails({ language = "fa" }) {
               {data.sections.endedCoursesEmpty}
             </p>
           ) : (
-            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="relative mt-6">
+              <div
+                ref={(element) => {
+                  sectionRowRefs.current["ended-courses"] = element;
+                }}
+                onScroll={(event) => updateSectionRowNav("ended-courses", event.currentTarget)}
+                className="edutech-scrollbar flex gap-4 overflow-x-auto px-1 pb-2"
+                dir={dir}
+              >
               {data.sections.endedCourses.map((course, index) => (
                 <article
                   key={course._id || course.id || course.slug || `${course.title}-${index}`}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
+                  className="w-[min(84vw,360px)] min-w-[min(84vw,360px)] shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
                 >
                   <div className="aspect-[16/9] overflow-hidden bg-white">
                     <img
@@ -1444,6 +1465,27 @@ export default function TeacherDetails({ language = "fa" }) {
                   </div>
                 </article>
               ))}
+              </div>
+              {sectionRowNav["ended-courses"]?.canPrev ? (
+                <button
+                  type="button"
+                  onClick={() => scrollRowBackward("ended-courses")}
+                  className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                  aria-label={isFa ? "نمایش موارد قبلی" : "Show previous items"}
+                >
+                  <ChevronLeft size={18} className={dir === "rtl" ? "rotate-180" : ""} />
+                </button>
+              ) : null}
+              {sectionRowNav["ended-courses"]?.canNext ? (
+                <button
+                  type="button"
+                  onClick={() => scrollRowForward("ended-courses")}
+                  className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                  aria-label={isFa ? "نمایش موارد بعدی" : "Show next items"}
+                >
+                  <ChevronRight size={18} className={dir === "rtl" ? "rotate-180" : ""} />
+                </button>
+              ) : null}
             </div>
           )}
         </section>

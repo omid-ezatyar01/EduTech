@@ -20,6 +20,7 @@ import FrontendPageLoader from "./components/common/FrontendPageLoader.jsx";
 // Pages
 const loadHomePage = () => import("./pages/HomePage.jsx");
 const loadLiveCoursesPage = () => import("./pages/LiveCoursesPage.jsx");
+const loadMobileCourseCategoryPage = () => import("./pages/MobileCourseCategoryPage.jsx");
 const loadCourseDetailsPage = () => import("./pages/CourseDetailsPage.jsx");
 const loadTeachersPage = () => import("./pages/TeachersPage.jsx");
 const loadTeacherDetails = () => import("./pages/TeacherDetails.jsx");
@@ -37,6 +38,7 @@ const loadTermsPage = () => import("./pages/TermsPage.jsx");
 
 const HomePage = lazy(loadHomePage);
 const LiveCoursesPage = lazy(loadLiveCoursesPage);
+const MobileCourseCategoryPage = lazy(loadMobileCourseCategoryPage);
 const CourseDetailsPage = lazy(loadCourseDetailsPage);
 const TeachersPage = lazy(loadTeachersPage);
 const TeacherDetails = lazy(loadTeacherDetails);
@@ -64,6 +66,7 @@ const loadAssignments = () => import("./components/Assignments.jsx");
 const loadResources = () => import("./components/Resources.jsx");
 const loadProfile = () => import("./components/Profile.jsx");
 const loadSettings = () => import("./components/Settings.jsx");
+const loadStudentCourseWorkspace = () => import("./components/StudentCourseWorkspace.jsx");
 
 const MyCourses = lazy(loadMyCourses);
 const LiveClass = lazy(loadLiveClass);
@@ -76,10 +79,16 @@ const Assignments = lazy(loadAssignments);
 const Resources = lazy(loadResources);
 const Profile = lazy(loadProfile);
 const Settings = lazy(loadSettings);
+const StudentCourseWorkspace = lazy(loadStudentCourseWorkspace);
 
 const preloadRoutes = [
   { key: "home", test: (path) => path === "/", load: loadHomePage },
   { key: "live-courses", test: (path) => path === "/live-courses", load: loadLiveCoursesPage },
+  {
+    key: "live-courses-category",
+    test: (path) => path.startsWith("/live-courses/category/"),
+    load: loadMobileCourseCategoryPage,
+  },
   { key: "course-details", test: (path) => path.startsWith("/course/"), load: loadCourseDetailsPage },
   { key: "teachers", test: (path) => path === "/teachers", load: loadTeachersPage },
   { key: "teacher-details", test: (path) => path.startsWith("/teacher/"), load: loadTeacherDetails },
@@ -96,6 +105,11 @@ const preloadRoutes = [
     load: loadStudentDashboardPage,
   },
   { key: "student-courses", test: (path) => path === "/student/courses", load: loadMyCourses },
+  {
+    key: "student-course-workspace",
+    test: (path) => path.startsWith("/student/course/"),
+    load: loadStudentCourseWorkspace,
+  },
   { key: "student-live", test: (path) => path === "/student/live", load: loadLiveClass },
   { key: "student-attendance", test: (path) => path === "/student/attendance", load: loadAttendance },
   { key: "student-schedule", test: (path) => path === "/student/schedule", load: loadSchedule },
@@ -348,6 +362,10 @@ export default function App() {
             <Route path="/" element={<HomePage language={language} t={t} />} />
             <Route path="/live-courses" element={<LiveCoursesPage t={t} />} />
             <Route
+              path="/live-courses/category/:categoryId"
+              element={<MobileCourseCategoryPage t={t} />}
+            />
+            <Route
               path="/course/:id"
               element={<CourseDetailsPage courseIndex={0} t={t} />}
             />
@@ -414,6 +432,17 @@ export default function App() {
                   language={language}
                 >
                   <MyCourses language={language} />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/student/course/:id"
+              element={
+                <ProtectedRoute
+                  isAuthenticated={isAuthenticated}
+                  language={language}
+                >
+                  <StudentCourseWorkspace language={language} />
                 </ProtectedRoute>
               }
             />

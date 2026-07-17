@@ -17,7 +17,7 @@ import {
   UsersRound,
   Video,
 } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   createCheckout,
   createHesabPaySession,
@@ -27,6 +27,7 @@ import {
 import {
   enrollCourse,
   fetchPublishedCourseBySlug,
+  getCachedPublishedCourseBySlug,
   fetchStudentEnrollments,
 } from "../../services/courseService.js";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
@@ -328,15 +329,22 @@ function hasActiveEnrollmentAccess(row = {}) {
 export default function CourseDetailsPage({ t }) {
   const { id: slugParam } = useParams();
   const courseIdentifier = extractRouteIdentifier(slugParam);
+  const location = useLocation();
   const navigate = useNavigate();
   const dir = t.meta.dir;
   const language = t.meta.lang === "fa" ? "fa" : "en";
   const { countryCode, rates } = useRegionalPricing();
   const detail = t.courseDetail;
   const ArrowIcon = dir === "rtl" ? ArrowLeft : ArrowRight;
+  const locationSearch = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const backPathCandidate = String(locationSearch.get("from") || "").trim();
+  const backLabelCandidate = String(locationSearch.get("fromLabel") || "").trim();
+  const breadcrumbBackPath = backPathCandidate.startsWith("/") ? backPathCandidate : "/live-courses";
+  const breadcrumbBackLabel = backLabelCandidate || detail.breadcrumbs[1];
+  const cachedCourse = getCachedPublishedCourseBySlug(courseIdentifier);
 
-  const [course, setCourse] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [course, setCourse] = useState(() => cachedCourse);
+  const [loading, setLoading] = useState(() => !cachedCourse);
   const [error, setError] = useState("");
   const [isStartingPayment, setIsStartingPayment] = useState(false);
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
@@ -409,10 +417,16 @@ export default function CourseDetailsPage({ t }) {
 
     const loadData = async () => {
       try {
-        setLoading(true);
+        const initialCourse = getCachedPublishedCourseBySlug(courseIdentifier);
+        if (initialCourse) {
+          setCourse(initialCourse);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
         setError("");
 
-        const loadedCourse = await fetchPublishedCourseBySlug(courseIdentifier);
+        const loadedCourse = initialCourse || await fetchPublishedCourseBySlug(courseIdentifier);
         if (!loadedCourse) {
           throw new Error("Course not found");
         }
@@ -908,10 +922,10 @@ export default function CourseDetailsPage({ t }) {
         <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 text-center">
           <p className="text-lg font-black text-rose-600">{error || "Course not found"}</p>
           <Link
-            to="/live-courses"
+            to={breadcrumbBackPath}
             className="mt-4 inline-flex rounded-lg bg-primary-600 px-5 py-3 text-sm font-black text-white"
           >
-            Back to courses
+            {language === "fa" ? "برگشت به کورس‌ها" : "Back to courses"}
           </Link>
         </div>
       </section>
@@ -934,8 +948,8 @@ export default function CourseDetailsPage({ t }) {
             {detail.breadcrumbs[0]}
           </Link>
           <span>/</span>
-          <Link className="hover:text-primary-700" to="/live-courses">
-            {detail.breadcrumbs[1]}
+          <Link className="hover:text-primary-700" to={breadcrumbBackPath}>
+            {breadcrumbBackLabel}
           </Link>
           <span>/</span>
           <span className="break-words [overflow-wrap:anywhere] text-slate-900">{course.title}</span>

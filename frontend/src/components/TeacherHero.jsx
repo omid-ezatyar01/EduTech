@@ -1,8 +1,11 @@
 import { useState } from "react";
 import {
+  AtSign,
   BriefcaseBusiness,
   Camera,
+  Code2,
   MessageCircle,
+  Send,
   Share2,
   Users,
   Video,
@@ -24,6 +27,9 @@ function getInitials(name) {
 const resolveSocialHref = (platform, rawValue) => {
   const value = String(rawValue || "").trim();
   if (!value) return "";
+  if (platform === "email") {
+    return value.includes("@") ? `mailto:${value}` : "";
+  }
   if (platform === "whatsapp" && /^\+?[\d\s()-]{8,20}$/.test(value)) {
     return `https://wa.me/${value.replace(/\D/g, "")}`;
   }
@@ -42,16 +48,32 @@ export default function TeacherHero({ data, dir }) {
   const teacherAvatar = resolveAvatarUrl(data?.avatar || "");
   const avatarKey = `${data?.name || ""}:${teacherAvatar}`;
   const hasAvatar = Boolean(teacherAvatar) && failedAvatarKey !== avatarKey;
+  const socialStyles = {
+    youtube: "hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700",
+    instagram: "hover:border-pink-300 hover:bg-pink-50 hover:text-pink-700",
+    facebook: "hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700",
+    linkedin: "hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700",
+    whatsapp: "hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700",
+    twitter: "hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700",
+    github: "hover:border-slate-400 hover:bg-slate-100 hover:text-slate-900",
+    email: "hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700",
+  };
   const socialItems = [
     { key: "youtube", label: "YouTube", icon: Video },
     { key: "instagram", label: "Instagram", icon: Camera },
     { key: "facebook", label: "Facebook", icon: Users },
     { key: "linkedin", label: "LinkedIn", icon: BriefcaseBusiness },
     { key: "whatsapp", label: "WhatsApp", icon: MessageCircle },
+    { key: "twitter", label: "Twitter", icon: Send },
+    { key: "github", label: "GitHub", icon: Code2 },
+    { key: "email", label: "Email", icon: AtSign },
   ]
     .map((item) => ({
       ...item,
-      href: resolveSocialHref(item.key, data?.socialLinks?.[item.key]),
+      href: resolveSocialHref(
+        item.key,
+        item.key === "email" ? data?.email || data?.socialLinks?.email : data?.socialLinks?.[item.key],
+      ),
     }))
     .filter((item) => item.href);
 
@@ -82,7 +104,9 @@ export default function TeacherHero({ data, dir }) {
                       rel="noreferrer"
                       aria-label={item.label}
                       title={item.label}
-                      className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:-translate-y-0.5 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      className={`grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                        socialStyles[item.key] || "hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700"
+                      }`}
                     >
                       <Icon size={18} />
                     </a>

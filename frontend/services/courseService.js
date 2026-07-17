@@ -7,8 +7,57 @@ import {
   parseJsonResponse,
 } from "./http";
 import { resolveAvatarUrl } from "../src/utils/avatar";
+import {
+  fetchMockPublicCategories,
+  fetchMockPublishedCourseBySlug,
+  fetchMockPublishedCourses,
+} from "./mockCourseService.js";
+
+const USE_FRONTEND_COURSE_MOCKS = true;
 
 const PUBLIC_DETAIL_CACHE_TTL_MS = 10 * 60 * 1000;
+const PUBLIC_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
+const PUBLIC_CATEGORY_CACHE_TTL_MS = 30 * 60 * 1000;
+const publicCourseListCache = new Map();
+const publicCourseDetailCache = new Map();
+const publicCategoryCache = new Map();
+
+const cloneValue = (value) => {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+};
+
+const buildPublicCacheKey = (prefix, value = {}) => {
+  if (typeof value === "string") {
+    return `${prefix}:${value.trim()}`;
+  }
+
+  const queryEntries = Object.entries(value)
+    .filter(([, entryValue]) => entryValue !== undefined && entryValue !== null && String(entryValue).trim() !== "")
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+
+  return `${prefix}:${JSON.stringify(queryEntries)}`;
+};
+
+const readPublicCache = (cacheMap, cacheKey) => {
+  const cached = cacheMap.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    cacheMap.delete(cacheKey);
+    return null;
+  }
+  return cloneValue(cached.data);
+};
+
+const writePublicCache = (cacheMap, cacheKey, data, ttlMs) => {
+  cacheMap.set(cacheKey, {
+    data: cloneValue(data),
+    expiresAt: Date.now() + ttlMs,
+  });
+  return cloneValue(data);
+};
 
 const normalizeReviews = (rows = []) =>
   (Array.isArray(rows) ? rows : [])
@@ -109,6 +158,15 @@ const hasExistingCourse = (enrollment = {}) => {
 };
 
 export const fetchPublishedCourses = async (query = {}) => {
+  const cacheKey = buildPublicCacheKey("published-courses", query);
+  const cached = readPublicCache(publicCourseListCache, cacheKey);
+  if (cached) return cached;
+
+  if (USE_FRONTEND_COURSE_MOCKS) {
+    const result = await fetchMockPublishedCourses(query);
+    return writePublicCache(publicCourseListCache, cacheKey, result, PUBLIC_LIST_CACHE_TTL_MS);
+  }
+
   const params = new URLSearchParams();
 
   Object.entries(query).forEach(([key, value]) => {
@@ -118,40 +176,76 @@ export const fetchPublishedCourses = async (query = {}) => {
   });
 
   const suffix = params.toString() ? `?${params.toString()}` : "";
-  const response = await fetch(`${getApiBase()}/courses${suffix}`, {
-    cache: "no-store",
-  });
-  const data = await parseJsonResponse(response);
+  const data = await fetchJsonWithCache(
+    `${getApiBase()}/courses${suffix}`,
+    {},
+    { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_LIST_CACHE_TTL_MS }) },
+  );
 
   const rows = Array.isArray(data?.data)
     ? data.data.filter((course) => !course?.classEndedAt)
     : [];
   const meta = data?.meta || {};
 
-  return {
+  return writePublicCache(publicCourseListCache, cacheKey, {
     courses: rows.map(mapCourse),
     meta,
-  };
+  }, getApiCacheTtl({ publicTtl: PUBLIC_LIST_CACHE_TTL_MS }));
 };
 
 export const fetchPublishedCourseBySlug = async (slug) => {
-  const response = await fetch(`${getApiBase()}/courses/${encodeURIComponent(slug)}`, {
-    cache: "no-store",
-  });
-  const data = await parseJsonResponse(response);
+  const cacheKey = buildPublicCacheKey("published-course-detail", slug);
+  const cached = readPublicCache(publicCourseDetailCache, cacheKey);
+  if (cached) return cached;
+
+  if (USE_FRONTEND_COURSE_MOCKS) {
+    const result = await fetchMockPublishedCourseBySlug(slug);
+    return writePublicCache(publicCourseDetailCache, cacheKey, result, PUBLIC_DETAIL_CACHE_TTL_MS);
+  }
+
+  const data = await fetchJsonWithCache(
+    `${getApiBase()}/courses/${encodeURIComponent(slug)}`,
+    {},
+    { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_DETAIL_CACHE_TTL_MS }) },
+  );
   const row = data?.data || null;
   if (!row) return null;
-  return mapCourse(row);
+  return writePublicCache(publicCourseDetailCache, cacheKey, mapCourse(row), getApiCacheTtl({
+    publicTtl: PUBLIC_DETAIL_CACHE_TTL_MS,
+  }));
 };
 
 export const fetchPublicCategories = async () => {
+  const cacheKey = buildPublicCacheKey("public-categories");
+  const cached = readPublicCache(publicCategoryCache, cacheKey);
+  if (cached) return cached;
+
+  if (USE_FRONTEND_COURSE_MOCKS) {
+    const result = await fetchMockPublicCategories();
+    return writePublicCache(publicCategoryCache, cacheKey, result, PUBLIC_CATEGORY_CACHE_TTL_MS);
+  }
+
   const data = await fetchJsonWithCache(
     `${getApiBase()}/categories`,
     {},
-    { ttlMs: getApiCacheTtl({ publicTtl: 30 * 60 * 1000 }) },
+    { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }) },
   );
-  return Array.isArray(data?.data) ? data.data : [];
+  return writePublicCache(
+    publicCategoryCache,
+    cacheKey,
+    Array.isArray(data?.data) ? data.data : [],
+    getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }),
+  );
 };
+
+export const getCachedPublishedCourses = (query = {}) =>
+  readPublicCache(publicCourseListCache, buildPublicCacheKey("published-courses", query));
+
+export const getCachedPublishedCourseBySlug = (slug) =>
+  readPublicCache(publicCourseDetailCache, buildPublicCacheKey("published-course-detail", slug));
+
+export const getCachedPublicCategories = () =>
+  readPublicCache(publicCategoryCache, buildPublicCacheKey("public-categories"));
 
 export const enrollCourse = async (courseId) => {
   const response = await fetch(`${getApiBase()}/courses/${courseId}/enroll`, {

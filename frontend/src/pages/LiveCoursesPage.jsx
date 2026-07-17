@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
   GraduationCap,
   Headphones,
   PlusCircle,
@@ -16,13 +19,19 @@ import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import {
   fetchPublicCategories,
   fetchPublishedCourses,
+  getCachedPublicCategories,
   fetchStudentEnrollments,
 } from "../../services/courseService.js";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
+import { buildCourseCategoryPath } from "../utils/routePaths.js";
+import { buildEnrolledCourseIdSet } from "../utils/courseEnrollmentAccess.js";
 
 const benefitIcons = [UsersRound, GraduationCap, Video, Headphones];
 const MOBILE_BATCH_SIZE = 20;
-const EXCLUDED_ENROLLMENT_STATUSES = new Set(["cancelled", "canceled", "failed", "rejected", "refunded"]);
+const MOBILE_SECTION_LIMIT = 20;
+const COURSE_PAGE_SIZE = 20;
+const INITIAL_LIST_PAGE_COUNT = 3;
+const LOAD_MORE_PAGE_STEP = 2;
 
 const chunkRows = (items = [], size = MOBILE_BATCH_SIZE) => {
   const rows = [];
@@ -32,32 +41,6 @@ const chunkRows = (items = [], size = MOBILE_BATCH_SIZE) => {
   return rows;
 };
 
-const hasActiveEnrollmentAccess = (row = {}) => {
-  const status = String(row?.enrollmentStatus || "").toLowerCase();
-  if (EXCLUDED_ENROLLMENT_STATUSES.has(status)) return false;
-  if (!["active", "completed"].includes(status)) return false;
-  if (String(row?.accessStatus || "").toLowerCase() !== "allowed") return false;
-  if (!row?.accessExpiresAt) return true;
-  const expiresAt = new Date(row.accessExpiresAt);
-  return Number.isNaN(expiresAt.getTime()) || expiresAt > new Date();
-};
-
-const buildEnrolledCourseIdSet = (rows = []) => {
-  const ids = new Set();
-  rows.forEach((row) => {
-    if (!hasActiveEnrollmentAccess(row)) return;
-
-    const course = row?.courseId;
-    const courseId =
-      typeof course === "object"
-        ? course?._id || course?.id
-        : course;
-
-    if (courseId) ids.add(String(courseId));
-  });
-  return ids;
-};
-
 function FilterSelect({ label, value, onChange, options, setCurrentPage }) {
   return (
     <label>
@@ -65,7 +48,7 @@ function FilterSelect({ label, value, onChange, options, setCurrentPage }) {
       <select
         value={value}
         onChange={(event) => {
-          setCurrentPage(1);
+          setCurrentPage(INITIAL_LIST_PAGE_COUNT);
           onChange(event.target.value);
         }}
         className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-teal-400 focus:bg-white"
@@ -89,8 +72,9 @@ export default function LiveCoursesPage({ t }) {
       ? "در حال حاضر هیچ کورس موجود نیست."
       : "There are no available courses right now.";
 
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(INITIAL_LIST_PAGE_COUNT);
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [categoryPath, setCategoryPath] = useState([]);
   const [level, setLevel] = useState("all");
   const [courseLanguage, setCourseLanguage] = useState("all");
@@ -102,16 +86,50 @@ export default function LiveCoursesPage({ t }) {
   const [sortMode, setSortMode] = useState("popular");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [courses, setCourses] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const [categories, setCategories] = useState(() => getCachedPublicCategories() || []);
   const [meta, setMeta] = useState({ totalPages: 1 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [enrolledCourseIds, setEnrolledCourseIds] = useState(() => new Set());
+  const [mobileSections, setMobileSections] = useState([]);
+  const [mobileSectionsLoading, setMobileSectionsLoading] = useState(false);
+  const [mobileSectionsError, setMobileSectionsError] = useState("");
+  const [sectionRowNav, setSectionRowNav] = useState({});
+  const [listRowNav, setListRowNav] = useState({});
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const coursesTopRef = useRef(null);
+  const sectionRowRefs = useRef([]);
+  const listRowRefs = useRef([]);
   const category = categoryPath.at(-1) || "all";
+  const filtersAtDefault =
+    categoryPath.length === 0 &&
+    level === "all" &&
+    courseLanguage === "all" &&
+    pricing === "all" &&
+    courseType === "all" &&
+    paymentPlan === "all" &&
+    minPrice === "" &&
+    maxPrice === "" &&
+    sortMode === "popular";
+  const isRootSectionMode = filtersAtDefault && searchTerm.trim() === "";
+
+  const applySearch = useCallback(() => {
+    setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+    setSearchTerm(searchInput.trim());
+  }, [searchInput]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 520);
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
@@ -133,13 +151,13 @@ export default function LiveCoursesPage({ t }) {
 
     const timer = setTimeout(async () => {
       try {
-        if (cancelled) return;
-        setLoading(true);
-        setError("");
-
-        const { courses: rows, meta: pageMeta } = await fetchPublishedCourses({
-          page: currentPage,
-          limit: MOBILE_BATCH_SIZE,
+        if (isRootSectionMode) {
+          setCourses([]);
+          setMeta({ totalPages: 1, total: 0 });
+          return;
+        }
+        const sharedQuery = {
+          limit: COURSE_PAGE_SIZE,
           search: searchTerm,
           category: category === "all" ? undefined : category,
           level: level === "all" ? undefined : level,
@@ -156,23 +174,37 @@ export default function LiveCoursesPage({ t }) {
                 ? "startDate"
                 : sortMode === "newest"
                   ? "newest"
-              : "popular",
+                  : "popular",
           sortOrder:
             sortMode === "price_low" || sortMode === "startDate" ? "asc" : "desc",
-        });
+        };
+
+        if (cancelled) return;
+        setLoading(true);
+        setError("");
+
+        const results = await Promise.all(
+          Array.from({ length: currentPage }, (_, index) =>
+            fetchPublishedCourses({
+              ...sharedQuery,
+              page: index + 1,
+            }),
+          ),
+        );
         if (cancelled) return;
 
-        setCourses((previous) => {
-          if (currentPage === 1) return rows;
-          const byId = new Map(
-            [...previous, ...rows].map((course) => [
-              String(course?._id || course?.id || ""),
-              course,
-            ]),
-          );
-          return [...byId.values()];
-        });
-        setMeta(pageMeta || { totalPages: 1 });
+        const mergedCourses = results.flatMap((result) =>
+          Array.isArray(result?.courses) ? result.courses : [],
+        );
+        const byId = new Map(
+          mergedCourses.map((course) => [
+            String(course?._id || course?.id || ""),
+            course,
+          ]),
+        );
+
+        setCourses([...byId.values()]);
+        setMeta(results.at(-1)?.meta || { totalPages: 1 });
       } catch (err) {
         if (cancelled) return;
         setError(
@@ -193,6 +225,7 @@ export default function LiveCoursesPage({ t }) {
       clearTimeout(timer);
     };
   }, [
+    isRootSectionMode,
     currentPage,
     searchTerm,
     category,
@@ -209,6 +242,12 @@ export default function LiveCoursesPage({ t }) {
 
   useEffect(() => {
     const loadCategories = async () => {
+      const cachedCategories = getCachedPublicCategories();
+      if (cachedCategories?.length) {
+        setCategories(cachedCategories);
+        return;
+      }
+
       try {
         const rows = await fetchPublicCategories();
         setCategories(rows);
@@ -346,9 +385,73 @@ export default function LiveCoursesPage({ t }) {
   const activeFilterCount = advancedFilterCount +
     (searchTerm.trim() ? 1 : 0) +
     (sortMode !== "popular" ? 1 : 0);
+  const rootCategories = useMemo(
+    () => categories.filter((item) => !item?.parent),
+    [categories],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMobileSections = async () => {
+      if (!isRootSectionMode || !rootCategories.length) {
+        if (!isRootSectionMode) {
+          setMobileSections([]);
+          setMobileSectionsError("");
+        }
+        return;
+      }
+
+      try {
+        setMobileSectionsLoading(true);
+        setMobileSectionsError("");
+
+        const sections = await Promise.all(
+          rootCategories.map(async (rootCategory) => {
+            const result = await fetchPublishedCourses({
+              page: 1,
+              limit: MOBILE_SECTION_LIMIT,
+              category: rootCategory._id,
+              sortBy: "popular",
+              sortOrder: "desc",
+            });
+
+            return {
+              category: rootCategory,
+              courses: Array.isArray(result?.courses) ? result.courses : [],
+              total: Number(result?.meta?.total || 0),
+            };
+          }),
+        );
+
+        if (cancelled) return;
+        setMobileSections(sections.filter((section) => section.courses.length > 0));
+      } catch (err) {
+        if (cancelled) return;
+        setMobileSectionsError(
+          getLocalizedRequestErrorMessage(
+            err,
+            language,
+            "بارگذاری بخش‌های کورس انجام نشد.",
+            "Failed to load course sections.",
+          ),
+        );
+      } finally {
+        if (!cancelled) setMobileSectionsLoading(false);
+      }
+    };
+
+    loadMobileSections();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isRootSectionMode, language, rootCategories]);
+
   const resetFilters = () => {
-    setCurrentPage(1);
+    setCurrentPage(INITIAL_LIST_PAGE_COUNT);
     setSearchTerm("");
+    setSearchInput("");
     setCategoryPath([]);
     setLevel("all");
     setCourseLanguage("all");
@@ -364,6 +467,80 @@ export default function LiveCoursesPage({ t }) {
     () => chunkRows(courses, MOBILE_BATCH_SIZE),
     [courses],
   );
+  const getRowNavState = useCallback((rowElement) => {
+    if (!rowElement) return { canPrev: false, canNext: false };
+    const maxScroll = Math.max(0, rowElement.scrollWidth - rowElement.clientWidth);
+    if (dir === "rtl") {
+      const progress = Math.min(maxScroll, Math.abs(rowElement.scrollLeft || 0));
+      return {
+        canPrev: progress > 8,
+        canNext: progress < maxScroll - 8,
+      };
+    }
+
+    const progress = rowElement.scrollLeft || 0;
+    return {
+      canPrev: progress > 8,
+      canNext: progress < maxScroll - 8,
+    };
+  }, [dir]);
+  const scrollRowForward = useCallback((rowElement) => {
+    if (!rowElement) return;
+    const scrollAmount = Math.max(280, Math.round(rowElement.clientWidth * 0.82));
+    rowElement.scrollBy({
+      left: dir === "rtl" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+  }, [dir]);
+  const scrollRowBackward = useCallback((rowElement) => {
+    if (!rowElement) return;
+    const scrollAmount = Math.max(280, Math.round(rowElement.clientWidth * 0.82));
+    rowElement.scrollBy({
+      left: dir === "rtl" ? scrollAmount : -scrollAmount,
+      behavior: "smooth",
+    });
+  }, [dir]);
+  const updateSectionRowNav = useCallback((key, rowElement) => {
+    const nextState = getRowNavState(rowElement);
+    setSectionRowNav((previous) => {
+      const current = previous[key];
+      if (current?.canPrev === nextState.canPrev && current?.canNext === nextState.canNext) {
+        return previous;
+      }
+      return { ...previous, [key]: nextState };
+    });
+  }, [getRowNavState]);
+  const updateListRowNav = useCallback((key, rowElement) => {
+    const nextState = getRowNavState(rowElement);
+    setListRowNav((previous) => {
+      const current = previous[key];
+      if (current?.canPrev === nextState.canPrev && current?.canNext === nextState.canNext) {
+        return previous;
+      }
+      return { ...previous, [key]: nextState };
+    });
+  }, [getRowNavState]);
+  const scrollPageToTop = useCallback(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    mobileSections.forEach((section) => {
+      const element = sectionRowRefs.current[section.category._id];
+      if (element) {
+        updateSectionRowNav(section.category._id, element);
+      }
+    });
+  }, [mobileSections, updateSectionRowNav]);
+
+  useEffect(() => {
+    courseRows.forEach((_, rowIndex) => {
+      const element = listRowRefs.current[rowIndex];
+      if (element) {
+        updateListRowNav(rowIndex, element);
+      }
+    });
+  }, [courseRows, updateListRowNav]);
 
   return (
     <section id="live-courses" className="bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] pb-20">
@@ -412,19 +589,31 @@ export default function LiveCoursesPage({ t }) {
                   <span className="mb-1.5 block text-xs font-black text-slate-600">
                     {language === "fa" ? "جستجو" : "Search"}
                   </span>
-                  <span className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-500 transition focus-within:border-teal-400 focus-within:bg-white">
-                    <Search size={19} className="text-slate-400" />
-                    <input
-                      value={searchTerm}
-                      onChange={(event) => {
-                        setCurrentPage(1);
-                        setSearchTerm(event.target.value);
-                      }}
-                      className="min-w-0 flex-1 bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
-                      placeholder={page.searchPlaceholder}
-                      type="search"
-                    />
-                  </span>
+                  <div className="flex gap-2">
+                    <span className="flex h-12 min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-500 transition focus-within:border-teal-400 focus-within:bg-white">
+                      <Search size={19} className="text-slate-400" />
+                      <input
+                        value={searchInput}
+                        onChange={(event) => setSearchInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            applySearch();
+                          }
+                        }}
+                        className="min-w-0 flex-1 bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
+                        placeholder={page.searchPlaceholder}
+                        type="search"
+                      />
+                    </span>
+                    <button
+                      type="button"
+                      onClick={applySearch}
+                      className="inline-flex h-12 shrink-0 items-center justify-center rounded-xl bg-teal-600 px-4 text-sm font-black text-white transition hover:bg-teal-700"
+                    >
+                      {language === "fa" ? "جستجو" : "Search"}
+                    </button>
+                  </div>
                 </label>
 
                 <FilterSelect
@@ -585,7 +774,7 @@ export default function LiveCoursesPage({ t }) {
                           max={meta?.facets?.priceRange?.max || 10000}
                           value={minPrice}
                           onChange={(event) => {
-                            setCurrentPage(1);
+                            setCurrentPage(INITIAL_LIST_PAGE_COUNT);
                             setMinPrice(event.target.value);
                           }}
                           placeholder={String(meta?.facets?.priceRange?.min ?? 0)}
@@ -602,7 +791,7 @@ export default function LiveCoursesPage({ t }) {
                           max="10000"
                           value={maxPrice}
                           onChange={(event) => {
-                            setCurrentPage(1);
+                            setCurrentPage(INITIAL_LIST_PAGE_COUNT);
                             setMaxPrice(event.target.value);
                           }}
                           placeholder={String(meta?.facets?.priceRange?.max ?? 0)}
@@ -636,35 +825,139 @@ export default function LiveCoursesPage({ t }) {
             ) : null}
 
             {error ? <p className="mt-4 text-sm font-bold text-rose-600">{error}</p> : null}
+            {mobileSectionsError ? <p className="mt-4 text-sm font-bold text-rose-600">{mobileSectionsError}</p> : null}
 
             <div className="mt-5 space-y-4 sm:space-y-0">
-              <div className="space-y-4 sm:hidden">
-                {courseRows.map((row, rowIndex) => (
-                  <div
-                    key={`course-row-${rowIndex + 1}`}
-                    className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2"
-                    dir={language === "fa" ? "rtl" : "ltr"}
-                  >
-                    {row.map((course, itemIndex) => (
-                      <div
-                        key={course._id || course.id || `${course.title}-${rowIndex}-${itemIndex}`}
-                        className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
-                      >
-                        <CourseCatalogCard
-                          course={course}
-                          dir={dir}
-                          index={(rowIndex * MOBILE_BATCH_SIZE) + itemIndex}
-                          labels={t.courseLabels}
-                          language={language}
-                          isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))}
-                        />
+              {isRootSectionMode ? (
+                <div className="space-y-5">
+                  {mobileSections.map((section) => (
+                    <div
+                      key={section.category._id}
+                      className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.05)] sm:p-4"
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-base font-black text-slate-950">{section.category.name}</p>
+                          <p className="mt-1 text-xs font-bold text-slate-500">
+                            {language === "fa"
+                              ? `${section.total} کورس در این بخش`
+                              : `${section.total} courses in this subject`}
+                          </p>
+                        </div>
                       </div>
-                    ))}
+
+                      <div className="relative">
+                        <div
+                          ref={(element) => {
+                            sectionRowRefs.current[section.category._id] = element;
+                          }}
+                          onScroll={(event) => updateSectionRowNav(section.category._id, event.currentTarget)}
+                          className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2"
+                          dir={language === "fa" ? "rtl" : "ltr"}
+                        >
+                        {section.courses.map((course, itemIndex) => (
+                          <div
+                            key={course._id || course.id || `${course.title}-${itemIndex}`}
+                            className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
+                          >
+                            <CourseCatalogCard
+                              course={course}
+                              dir={dir}
+                              index={itemIndex}
+                              labels={t.courseLabels}
+                              language={language}
+                              isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))}
+                            />
+                          </div>
+                        ))}
+                        </div>
+                        {sectionRowNav[section.category._id]?.canPrev ? (
+                          <button
+                            type="button"
+                            onClick={() => scrollRowBackward(sectionRowRefs.current[section.category._id])}
+                            className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                            aria-label={language === "fa" ? "نمایش موارد قبلی" : "Show previous items"}
+                          >
+                            <ChevronLeft size={18} className={dir === "rtl" ? "rotate-180" : ""} />
+                          </button>
+                        ) : null}
+                        {sectionRowNav[section.category._id]?.canNext ? (
+                          <button
+                            type="button"
+                            onClick={() => scrollRowForward(sectionRowRefs.current[section.category._id])}
+                            className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                            aria-label={language === "fa" ? "نمایش موارد بعدی" : "Show next items"}
+                          >
+                            <ChevronRight size={18} className={dir === "rtl" ? "rotate-180" : ""} />
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-4 flex justify-center">
+                        <Link
+                          to={buildCourseCategoryPath(section.category)}
+                          className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-violet-500 bg-white px-7 py-3 text-sm font-black text-violet-700 transition hover:bg-violet-50"
+                        >
+                          {language === "fa" ? "نمایش بیشتر" : "Show more"}
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-4 sm:hidden">
+                {courseRows.map((row, rowIndex) => (
+                  <div key={`course-row-${rowIndex + 1}`} className="relative">
+                    <div
+                      ref={(element) => {
+                        listRowRefs.current[rowIndex] = element;
+                      }}
+                      onScroll={(event) => updateListRowNav(rowIndex, event.currentTarget)}
+                      className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2"
+                      dir={language === "fa" ? "rtl" : "ltr"}
+                    >
+                      {row.map((course, itemIndex) => (
+                        <div
+                          key={course._id || course.id || `${course.title}-${rowIndex}-${itemIndex}`}
+                          className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
+                        >
+                          <CourseCatalogCard
+                            course={course}
+                            dir={dir}
+                            index={(rowIndex * MOBILE_BATCH_SIZE) + itemIndex}
+                            labels={t.courseLabels}
+                            language={language}
+                            isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    {listRowNav[rowIndex]?.canPrev ? (
+                      <button
+                        type="button"
+                        onClick={() => scrollRowBackward(listRowRefs.current[rowIndex])}
+                        className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                        aria-label={language === "fa" ? "نمایش موارد قبلی" : "Show previous items"}
+                      >
+                        <ChevronLeft size={18} className={dir === "rtl" ? "rotate-180" : ""} />
+                      </button>
+                    ) : null}
+                    {listRowNav[rowIndex]?.canNext ? (
+                      <button
+                        type="button"
+                        onClick={() => scrollRowForward(listRowRefs.current[rowIndex])}
+                        className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                        aria-label={language === "fa" ? "نمایش موارد بعدی" : "Show next items"}
+                      >
+                        <ChevronRight size={18} className={dir === "rtl" ? "rotate-180" : ""} />
+                      </button>
+                    ) : null}
                   </div>
                 ))}
-              </div>
+                </div>
+              )}
 
-              <div className="hidden grid-cols-2 gap-4 sm:grid xl:grid-cols-3">
+              <div className={`${isRootSectionMode ? "hidden" : "hidden"} grid-cols-2 gap-4 sm:grid xl:grid-cols-3`}>
                 {courses.map((course, index) => (
                   <div
                     key={course._id || course.id || `${course.title}-${index}`}
@@ -690,31 +983,43 @@ export default function LiveCoursesPage({ t }) {
                 className="mt-4"
               />
             ) : null}
+            {mobileSectionsLoading ? (
+              <FrontendPageLoader
+                label={language === "fa" ? "در حال بارگذاری بخش‌های کورس" : "Loading course sections"}
+                minHeight="min-h-[180px]"
+                className="mt-4"
+              />
+            ) : null}
 
-            {!loading && courses.length === 0 ? (
+            {!loading && !mobileSectionsLoading && !isRootSectionMode && courses.length === 0 ? (
+              <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 text-center text-sm font-semibold text-slate-600">
+                {noCoursesText}
+              </div>
+            ) : null}
+            {!loading && !mobileSectionsLoading && isRootSectionMode && mobileSections.length === 0 ? (
               <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 text-center text-sm font-semibold text-slate-600">
                 {noCoursesText}
               </div>
             ) : null}
 
-            {currentPage < totalPages ? (
-              <div className="mt-7 text-center">
+            {!isRootSectionMode && currentPage < totalPages ? (
+              <div className="mt-6 flex justify-center">
                 <button
                   type="button"
                   disabled={loading}
                   onClick={() => {
                     setLoading(true);
-                    setCurrentPage((previous) => previous + 1);
+                    setCurrentPage((previous) => previous + LOAD_MORE_PAGE_STEP);
                   }}
-                  className="inline-flex h-12 min-w-48 items-center justify-center rounded-xl border border-primary-500 bg-white px-6 text-sm font-black text-primary-700 transition hover:bg-primary-50 disabled:cursor-wait disabled:opacity-60"
+                  className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-violet-500 bg-white px-7 py-3 text-sm font-black text-violet-700 transition hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"
                 >
                   {loading
                     ? language === "fa"
                       ? "در حال بارگذاری"
                       : "Loading"
                     : language === "fa"
-                      ? `نمایش ${MOBILE_BATCH_SIZE} کورس دیگر`
-                      : `Show ${MOBILE_BATCH_SIZE} more`}
+                      ? "نمایش بیشتر"
+                      : "Show more"}
                 </button>
               </div>
             ) : null}
@@ -757,6 +1062,18 @@ export default function LiveCoursesPage({ t }) {
           </div>
         </div>
       </div>
+      <button
+        type="button"
+        onClick={scrollPageToTop}
+        className={`fixed bottom-5 right-5 z-[90] grid h-12 w-12 place-items-center rounded-full border border-violet-500 bg-white text-violet-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-violet-50 ${
+          showScrollTop
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-4 opacity-0"
+        }`}
+        aria-label={language === "fa" ? "رفتن به بالای صفحه" : "Scroll to top"}
+      >
+        <ArrowUp size={20} />
+      </button>
     </section>
   );
 }

@@ -11,6 +11,14 @@ function normalizeSegment(value = "") {
     .replace(/-{2,}/g, "-");
 }
 
+export function buildCourseCategoryPath(category = {}) {
+  const id = String(category?._id || category?.id || "").trim();
+  if (!id) return "/live-courses";
+
+  const name = normalizeSegment(category?.name || "category");
+  return `/live-courses/category/${name ? `${name}-${id}` : id}`;
+}
+
 export function extractRouteIdentifier(value = "") {
   const normalizedValue = String(value || "").trim();
   if (!normalizedValue) return "";

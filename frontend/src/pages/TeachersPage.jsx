@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowUp,
   BriefcaseBusiness,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
   Headphones,
   MessageCircle,
@@ -15,7 +18,10 @@ import { Link } from "react-router-dom";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import TeacherCard from "../components/TeacherCard.jsx";
 import { fetchPublicPlatformStats } from "../../services/courseService.js";
-import { fetchPublicTeachers } from "../../services/teacherService.js";
+import {
+  fetchPublicTeachers,
+  getCachedPublicTeachers,
+} from "../../services/teacherService.js";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 
 const benefitIcons = [BriefcaseBusiness, MessageCircle, Headphones, Rocket];
@@ -148,14 +154,27 @@ export default function TeachersPage({ t }) {
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [rowNav, setRowNav] = useState({});
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [platformStats, setPlatformStats] = useState({
     activeCourses: 0,
     expertTeachers: 0,
     happyStudents: 0,
   });
+  const rowRefs = useRef([]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 520);
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
@@ -177,10 +196,7 @@ export default function TeachersPage({ t }) {
 
     const timer = setTimeout(async () => {
       try {
-        if (cancelled) return;
-        setLoading(true);
-        setError("");
-        const { teachers: rows, meta } = await fetchPublicTeachers({
+        const teacherQuery = {
           page: teacherPage,
           limit: MOBILE_BATCH_SIZE,
           search,
@@ -195,7 +211,34 @@ export default function TeachersPage({ t }) {
               ? "experience"
               : "newest",
           sortOrder: "desc",
-        });
+        };
+        const cachedResult = getCachedPublicTeachers(teacherQuery);
+        if (cachedResult) {
+          if (cancelled) return;
+          setError("");
+          setTeacherMeta(cachedResult.meta || { total: cachedResult.teachers?.length || 0, facets: {} });
+
+          const mappedTeachers = (cachedResult.teachers || []).map((item) =>
+            mapTeacherForCard(item, t.meta.lang),
+          );
+          setTeachers((previous) => {
+            if (teacherPage === 1) return mappedTeachers;
+            const byId = new Map(
+              [...previous, ...mappedTeachers].map((teacher) => [
+                String(teacher._id),
+                teacher,
+              ]),
+            );
+            return [...byId.values()];
+          });
+          setLoading(false);
+          return;
+        }
+
+        if (cancelled) return;
+        setLoading(true);
+        setError("");
+        const { teachers: rows, meta } = await fetchPublicTeachers(teacherQuery);
         if (cancelled) return;
         setTeacherMeta(meta || { total: rows.length, facets: {} });
 
@@ -357,6 +400,61 @@ export default function TeachersPage({ t }) {
     () => chunkRows(filteredTeachers, MOBILE_BATCH_SIZE),
     [filteredTeachers],
   );
+  const getRowNavState = (rowElement) => {
+    if (!rowElement) return { canPrev: false, canNext: false };
+    const maxScroll = Math.max(0, rowElement.scrollWidth - rowElement.clientWidth);
+    if (isFa) {
+      const progress = Math.min(maxScroll, Math.abs(rowElement.scrollLeft || 0));
+      return {
+        canPrev: progress > 8,
+        canNext: progress < maxScroll - 8,
+      };
+    }
+
+    const progress = rowElement.scrollLeft || 0;
+    return {
+      canPrev: progress > 8,
+      canNext: progress < maxScroll - 8,
+    };
+  };
+  const updateRowNav = (key, rowElement) => {
+    const nextState = getRowNavState(rowElement);
+    setRowNav((previous) => {
+      const current = previous[key];
+      if (current?.canPrev === nextState.canPrev && current?.canNext === nextState.canNext) {
+        return previous;
+      }
+      return { ...previous, [key]: nextState };
+    });
+  };
+  const scrollRowForward = (rowElement) => {
+    if (!rowElement) return;
+    const scrollAmount = Math.max(280, Math.round(rowElement.clientWidth * 0.82));
+    rowElement.scrollBy({
+      left: isFa ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+  };
+  const scrollRowBackward = (rowElement) => {
+    if (!rowElement) return;
+    const scrollAmount = Math.max(280, Math.round(rowElement.clientWidth * 0.82));
+    rowElement.scrollBy({
+      left: isFa ? scrollAmount : -scrollAmount,
+      behavior: "smooth",
+    });
+  };
+  const scrollPageToTop = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    teacherRows.forEach((_, rowIndex) => {
+      const element = rowRefs.current[rowIndex];
+      if (element) {
+        updateRowNav(rowIndex, element);
+      }
+    });
+  }, [teacherRows, isFa]);
   const teacherTotalPages = Math.max(1, Number(teacherMeta?.totalPages || 1));
 
   const numberFormatter = useMemo(
@@ -597,18 +695,21 @@ export default function TeachersPage({ t }) {
               </div>
             ) : null}
 
-            <div id="teacher-results" className="mt-5 space-y-4 sm:space-y-0">
-              <div className="space-y-4 sm:hidden">
-                {teacherRows.map((row, rowIndex) => (
+            <div id="teacher-results" className="mt-5 space-y-4">
+              {teacherRows.map((row, rowIndex) => (
+                <div key={`teacher-row-${rowIndex + 1}`} className="relative">
                   <div
-                    key={`teacher-row-${rowIndex + 1}`}
-                    className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2"
+                    ref={(element) => {
+                      rowRefs.current[rowIndex] = element;
+                    }}
+                    onScroll={(event) => updateRowNav(rowIndex, event.currentTarget)}
+                    className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 sm:gap-4"
                     dir={isFa ? "rtl" : "ltr"}
                   >
                     {row.map((teacher, itemIndex) => (
                       <div
                         key={teacher._id || teacher.name}
-                        className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
+                        className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start sm:w-[calc(50%-0.5rem)] sm:min-w-[calc(50%-0.5rem)] lg:w-[calc((100%-2rem)/3)] lg:min-w-[calc((100%-2rem)/3)] xl:w-[calc((100%-3rem)/4)] xl:min-w-[calc((100%-3rem)/4)]"
                       >
                         <TeacherCard
                           labels={page}
@@ -618,19 +719,28 @@ export default function TeachersPage({ t }) {
                       </div>
                     ))}
                   </div>
-                ))}
-              </div>
-
-              <div className="hidden grid-cols-2 gap-4 sm:grid xl:grid-cols-3">
-                {filteredTeachers.map((teacher, index) => (
-                  <div
-                    key={teacher._id || teacher.name}
-                    className="w-full"
-                  >
-                    <TeacherCard labels={page} teacher={teacher} index={index} />
-                  </div>
-                ))}
-              </div>
+                  {rowNav[rowIndex]?.canPrev ? (
+                    <button
+                      type="button"
+                      onClick={() => scrollRowBackward(rowRefs.current[rowIndex])}
+                      className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                      aria-label={isFa ? "نمایش موارد قبلی" : "Show previous items"}
+                    >
+                      <ChevronLeft size={18} className={isFa ? "rotate-180" : ""} />
+                    </button>
+                  ) : null}
+                  {rowNav[rowIndex]?.canNext ? (
+                    <button
+                      type="button"
+                      onClick={() => scrollRowForward(rowRefs.current[rowIndex])}
+                      className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                      aria-label={isFa ? "نمایش موارد بعدی" : "Show next items"}
+                    >
+                      <ChevronRight size={18} className={isFa ? "rotate-180" : ""} />
+                    </button>
+                  ) : null}
+                </div>
+              ))}
             </div>
 
             {loading ? (
@@ -768,7 +878,19 @@ export default function TeachersPage({ t }) {
             </Link>
           </section>
           </div>
-        </div>
+      </div>
+      <button
+        type="button"
+        onClick={scrollPageToTop}
+        className={`fixed bottom-5 right-5 z-[90] grid h-12 w-12 place-items-center rounded-full border border-violet-500 bg-white text-violet-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-violet-50 ${
+          showScrollTop
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-4 opacity-0"
+        }`}
+        aria-label={isFa ? "رفتن به بالای صفحه" : "Scroll to top"}
+      >
+        <ArrowUp size={20} />
+      </button>
     </section>
   );
 }

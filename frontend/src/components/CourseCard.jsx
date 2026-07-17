@@ -100,6 +100,7 @@ export default function CourseCard({
   dir = "rtl",
   language = "fa",
   isEnrolled = false,
+  coursePathOverride = "",
 }) {
   const { countryCode, rates } = useRegionalPricing();
   const uiText = {
@@ -191,7 +192,7 @@ export default function CourseCard({
   const courseStartAt = resolveCourseStartAt(course);
   const countdownText = formatCountdown(courseStartAt, nowMs, language);
   const isSpecialCourse = course?.courseType === "special";
-  const coursePath = buildCoursePath(course);
+  const coursePath = coursePathOverride || buildCoursePath(course);
   const handleShareCourse = async () => {
     const shared = await shareContent({
       title: course?.title || "EduTech Course",

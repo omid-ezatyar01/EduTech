@@ -222,6 +222,7 @@ function mapEnrollmentToCourse(enrollment = {}, language = "fa") {
 
   return {
     id: enrollment._id,
+    courseId: String(course._id || course.id || ""),
     title: course.title || "Course",
     titleEn: course.title || "Course",
     description: course.shortDescription || course.description || "",
@@ -233,6 +234,7 @@ function mapEnrollmentToCourse(enrollment = {}, language = "fa") {
     ),
     courseSlug: course.slug || "",
     courseLink: course.slug || course._id ? buildCoursePath(course) : "/live-courses",
+    studentCoursePath: `/student/course/${encodeURIComponent(course.slug || course._id || course.id || enrollment._id)}`,
     status,
     statusLabel:
       status === "active"

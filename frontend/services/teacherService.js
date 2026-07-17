@@ -4,8 +4,54 @@ import {
   getApiCacheTtl,
 } from "./http";
 import { resolveAvatarUrl } from "../src/utils/avatar";
+import {
+  fetchMockPublicTeacherById,
+  fetchMockPublicTeachers,
+} from "./mockTeacherService.js";
+
+const USE_FRONTEND_TEACHER_MOCKS = true;
 
 const PUBLIC_TEACHER_DETAIL_CACHE_TTL_MS = 10 * 60 * 1000;
+const PUBLIC_TEACHER_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
+const publicTeacherListCache = new Map();
+const publicTeacherDetailCache = new Map();
+
+const cloneValue = (value) => {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+};
+
+const buildPublicCacheKey = (prefix, value = {}) => {
+  if (typeof value === "string") {
+    return `${prefix}:${value.trim()}`;
+  }
+
+  const queryEntries = Object.entries(value)
+    .filter(([, entryValue]) => entryValue !== undefined && entryValue !== null && String(entryValue).trim() !== "")
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+
+  return `${prefix}:${JSON.stringify(queryEntries)}`;
+};
+
+const readPublicCache = (cacheMap, cacheKey) => {
+  const cached = cacheMap.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    cacheMap.delete(cacheKey);
+    return null;
+  }
+  return cloneValue(cached.data);
+};
+
+const writePublicCache = (cacheMap, cacheKey, data, ttlMs) => {
+  cacheMap.set(cacheKey, {
+    data: cloneValue(data),
+    expiresAt: Date.now() + ttlMs,
+  });
+  return cloneValue(data);
+};
 
 const normalizeText = (value) =>
   typeof value === "string" ? value.trim() : "";
@@ -126,6 +172,15 @@ const mapTeacher = (teacher = {}) => ({
 });
 
 export const fetchPublicTeachers = async (query = {}) => {
+  const cacheKey = buildPublicCacheKey("public-teachers", query);
+  const cached = readPublicCache(publicTeacherListCache, cacheKey);
+  if (cached) return cached;
+
+  if (USE_FRONTEND_TEACHER_MOCKS) {
+    const result = await fetchMockPublicTeachers(query);
+    return writePublicCache(publicTeacherListCache, cacheKey, result, PUBLIC_TEACHER_LIST_CACHE_TTL_MS);
+  }
+
   const params = new URLSearchParams();
 
   Object.entries(query).forEach(([key, value]) => {
@@ -141,13 +196,22 @@ export const fetchPublicTeachers = async (query = {}) => {
     { ttlMs: getApiCacheTtl() },
   );
 
-  return {
+  return writePublicCache(publicTeacherListCache, cacheKey, {
     teachers: Array.isArray(data?.data) ? data.data.map(mapTeacher) : [],
     meta: data?.meta || {},
-  };
+  }, getApiCacheTtl({ publicTtl: PUBLIC_TEACHER_LIST_CACHE_TTL_MS }));
 };
 
 export const fetchPublicTeacherById = async (id) => {
+  const cacheKey = buildPublicCacheKey("public-teacher-detail", id);
+  const cached = readPublicCache(publicTeacherDetailCache, cacheKey);
+  if (cached) return cached;
+
+  if (USE_FRONTEND_TEACHER_MOCKS) {
+    const result = await fetchMockPublicTeacherById(id);
+    return writePublicCache(publicTeacherDetailCache, cacheKey, result, PUBLIC_TEACHER_DETAIL_CACHE_TTL_MS);
+  }
+
   const data = await fetchJsonWithCache(
     `${getApiBase()}/teachers/${encodeURIComponent(id)}`,
     {},
@@ -155,5 +219,13 @@ export const fetchPublicTeacherById = async (id) => {
   );
   const row = data?.data || null;
   if (!row) return null;
-  return mapTeacher(row);
+  return writePublicCache(publicTeacherDetailCache, cacheKey, mapTeacher(row), getApiCacheTtl({
+    publicTtl: PUBLIC_TEACHER_DETAIL_CACHE_TTL_MS,
+  }));
 };
+
+export const getCachedPublicTeachers = (query = {}) =>
+  readPublicCache(publicTeacherListCache, buildPublicCacheKey("public-teachers", query));
+
+export const getCachedPublicTeacherById = (id) =>
+  readPublicCache(publicTeacherDetailCache, buildPublicCacheKey("public-teacher-detail", id));

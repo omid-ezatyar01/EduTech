@@ -1,6 +1,7 @@
 import {
   Video,
   FileText,
+  FolderOpen,
   Headphones,
   Clock,
   CheckCircle2,
@@ -38,16 +39,18 @@ export default function StudentCourseCard({
   return (
     <div className="flex flex-col md:flex-row gap-4 sm:gap-6 rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5 shadow-sm transition hover:border-primary-100 hover:shadow-md">
       {/* Banner / Image */}
-      <div className="w-full shrink-0 overflow-hidden rounded-2xl md:w-[280px] md:h-[180px] h-[120px] sm:h-[160px]">
+      <div className="flex w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-50 p-3 md:w-[280px]">
         <img
           src={course.thumbnail || COURSE_IMAGE_FALLBACK}
           alt={course.title}
-          className={`h-full w-full bg-white ${course.thumbnail ? "object-contain" : "object-contain p-6"}`}
+          className={course.thumbnail
+            ? "block h-auto max-h-[180px] w-auto max-w-full bg-white object-contain"
+            : "block h-auto max-h-[180px] w-auto max-w-full bg-white object-contain p-6"}
           loading="lazy"
           onError={(event) => {
             event.currentTarget.onerror = null;
             event.currentTarget.src = COURSE_IMAGE_FALLBACK;
-            event.currentTarget.className = "h-full w-full bg-white object-contain p-6";
+            event.currentTarget.className = "block h-auto max-h-[180px] w-auto max-w-full bg-white object-contain p-6";
           }}
         />
       </div>
@@ -70,7 +73,7 @@ export default function StudentCourseCard({
         <h3 className="text-lg sm:text-xl font-black text-slate-950">
           {course.title}
         </h3>
-        <p className="mt-2 text-sm font-medium leading-6 text-slate-600 line-clamp-2">
+        <p className="mt-2 break-words text-sm font-medium leading-6 text-slate-600 line-clamp-2">
           {course.description}
         </p>
 
@@ -127,7 +130,24 @@ export default function StudentCourseCard({
 
         <div className="flex flex-col gap-2 mt-1">
           {isActive || isCompleted ? (
-            null
+            <>
+              <Link
+                to={course.studentCoursePath || course.courseLink || "/live-courses"}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+              >
+                <FileText size={18} />
+                {isFa ? "صفحه کورس" : "Course Page"}
+              </Link>
+              {isActive ? (
+                <Link
+                  to="/student/live"
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700"
+                >
+                  <Video size={18} />
+                  {isFa ? "ورود به صنف آنلاین" : "Open Live Class"}
+                </Link>
+              ) : null}
+            </>
           ) : (
             <>
               <button
