@@ -17,6 +17,7 @@ import {
   fetchAdminCategories,
   updateAdminCategory,
 } from "../../services/categoryService.js";
+import { isNetworkError } from "../../services/http.js";
 import AdminPageLoader from "../components/common/AdminPageLoader.jsx";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 import useLatestRequest from "../hooks/useLatestRequest.js";
@@ -199,6 +200,7 @@ export default function AdminCategoriesPage() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
   const [editingId, setEditingId] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [form, setForm] = useState({
@@ -448,12 +450,44 @@ export default function AdminCategoriesPage() {
     if (!window.confirm(pageTr("Delete this category?"))) return;
 
     try {
+      setDeletingId(normalizeCategoryId(categoryId));
       await deleteAdminCategory(categoryId);
+      setCategories((current) =>
+        current.filter(
+          (item) => normalizeCategoryId(item?._id) !== normalizeCategoryId(categoryId),
+        ),
+      );
+      setExpandedCategoryIds((current) => {
+        const next = new Set(current);
+        next.delete(normalizeCategoryId(categoryId));
+        return next;
+      });
       setToast(pageTr("Category deleted"));
       clearAdminPageCache("admin:categories");
-      await loadCategories();
+      refreshCategories().catch(() => {});
     } catch (err) {
+      if (isNetworkError(err)) {
+        try {
+          const rows = await fetchAdminCategories();
+          const categoryStillExists = rows.some(
+            (item) => normalizeCategoryId(item?._id) === normalizeCategoryId(categoryId),
+          );
+
+          if (!categoryStillExists) {
+            setCategories(rows);
+            setExpandedCategoryIds(getInitiallyExpandedIds(rows));
+            writeAdminPageCache(ADMIN_CATEGORIES_CACHE_KEY, rows);
+            setToast(pageTr("Category deleted"));
+            clearAdminPageCache("admin:categories");
+            return;
+          }
+        } catch {
+          // Keep the original error toast when final-state verification fails.
+        }
+      }
       setToast(err.message || pageTr("Delete failed"));
+    } finally {
+      setDeletingId("");
     }
   };
 
@@ -666,7 +700,8 @@ export default function AdminCategoriesPage() {
                         <button
                           type="button"
                           onClick={() => handleDelete(category._id)}
-                          className="rounded-xl p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                          disabled={deletingId === normalizeCategoryId(category._id)}
+                          className="rounded-xl p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
                           title={pageTr("Delete category action")}
                         >
                           <Trash2 size={18} />

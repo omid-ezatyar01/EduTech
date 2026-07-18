@@ -59,6 +59,81 @@ const writePublicCache = (cacheMap, cacheKey, data, ttlMs) => {
   return cloneValue(data);
 };
 
+const normalizeCategoryId = (value) => String(value || "").trim();
+
+const collectUsedCategoryIds = (courses = []) => {
+  const usedIds = new Set();
+
+  (Array.isArray(courses) ? courses : []).forEach((course) => {
+    const categoryId = normalizeCategoryId(course?.category?._id || course?.categoryId || course?.category);
+    const subcategoryId = normalizeCategoryId(
+      course?.subcategory?._id || course?.subcategoryId || course?.subcategory,
+    );
+
+    if (categoryId) usedIds.add(categoryId);
+    if (subcategoryId) usedIds.add(subcategoryId);
+  });
+
+  return usedIds;
+};
+
+const filterCategoriesWithCourses = (categories = [], courses = []) => {
+  const rows = Array.isArray(categories) ? categories : [];
+  const usedIds = collectUsedCategoryIds(courses);
+  if (!rows.length || !usedIds.size) return [];
+
+  const byId = new Map(
+    rows.map((item) => [normalizeCategoryId(item?._id), item]),
+  );
+  const visibleIds = new Set();
+
+  usedIds.forEach((id) => {
+    let currentId = id;
+    let depth = 0;
+
+    while (currentId && depth < 20) {
+      if (visibleIds.has(currentId)) break;
+      visibleIds.add(currentId);
+      const current = byId.get(currentId);
+      currentId = normalizeCategoryId(current?.parent?._id || current?.parent);
+      depth += 1;
+    }
+  });
+
+  return rows.filter((item) => visibleIds.has(normalizeCategoryId(item?._id)));
+};
+
+const fetchPublishedCoursesForCategoryFiltering = async () => {
+  const limit = 100;
+  const firstPage = await fetchJsonWithCache(
+    `${getApiBase()}/courses?page=1&limit=${limit}`,
+    {},
+    { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }) },
+  );
+
+  const firstRows = Array.isArray(firstPage?.data) ? firstPage.data : [];
+  const totalPages = Math.max(1, Number(firstPage?.meta?.totalPages || 1));
+
+  if (totalPages === 1) {
+    return firstRows;
+  }
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) =>
+      fetchJsonWithCache(
+        `${getApiBase()}/courses?page=${index + 2}&limit=${limit}`,
+        {},
+        { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }) },
+      ),
+    ),
+  );
+
+  return [
+    ...firstRows,
+    ...remainingPages.flatMap((page) => (Array.isArray(page?.data) ? page.data : [])),
+  ];
+};
+
 const normalizeReviews = (rows = []) =>
   (Array.isArray(rows) ? rows : [])
     .map((item) => ({
@@ -221,19 +296,35 @@ export const fetchPublicCategories = async () => {
   if (cached) return cached;
 
   if (USE_FRONTEND_COURSE_MOCKS) {
-    const result = await fetchMockPublicCategories();
-    return writePublicCache(publicCategoryCache, cacheKey, result, PUBLIC_CATEGORY_CACHE_TTL_MS);
+    const [categories, coursesResult] = await Promise.all([
+      fetchMockPublicCategories(),
+      fetchMockPublishedCourses({ page: 1, limit: 1000 }),
+    ]);
+    const filtered = filterCategoriesWithCourses(
+      categories,
+      Array.isArray(coursesResult?.courses) ? coursesResult.courses : [],
+    );
+    return writePublicCache(publicCategoryCache, cacheKey, filtered, PUBLIC_CATEGORY_CACHE_TTL_MS);
   }
 
-  const data = await fetchJsonWithCache(
-    `${getApiBase()}/categories`,
-    {},
-    { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }) },
+  const [categoryData, publishedCourses] = await Promise.all([
+    fetchJsonWithCache(
+      `${getApiBase()}/categories`,
+      {},
+      { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }) },
+    ),
+    fetchPublishedCoursesForCategoryFiltering(),
+  ]);
+
+  const filteredCategories = filterCategoriesWithCourses(
+    Array.isArray(categoryData?.data) ? categoryData.data : [],
+    publishedCourses,
   );
+
   return writePublicCache(
     publicCategoryCache,
     cacheKey,
-    Array.isArray(data?.data) ? data.data : [],
+    filteredCategories,
     getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }),
   );
 };

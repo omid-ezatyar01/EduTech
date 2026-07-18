@@ -175,3 +175,17 @@ export const parseJsonResponse = async (response) => {
 
   return data;
 };
+
+export const isNetworkError = (error) => {
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("network error") ||
+    message.includes("connection refused") ||
+    message.includes("failed to reach") ||
+    message.includes("load failed") ||
+    message.includes("err_network") ||
+    message.includes("offline")
+  );
+};

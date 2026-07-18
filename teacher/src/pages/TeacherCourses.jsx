@@ -32,6 +32,7 @@ import {
   startTeacherCourseClass,
   updateTeacherCourse,
 } from "../../services/courseService";
+import { isNetworkError } from "../../services/http";
 import {
   fetchGoogleAccountStatus,
   fetchGoogleAuthUrl,
@@ -114,6 +115,31 @@ const TEACHER_UI_SPECIAL_STATUSES = new Set([
   "cancellation_pending",
 ]);
 const isEndedCourse = (course = {}) => Boolean(course?.classEndedAt);
+const normalizeCourseIdentityText = (value = "") =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+const hasMatchingCreatedCourse = (course, payload) => {
+  const existingTitle = normalizeCourseIdentityText(course?.title);
+  const nextTitle = normalizeCourseIdentityText(payload?.title);
+  if (!existingTitle || !nextTitle || existingTitle !== nextTitle) return false;
+
+  const existingCategory = String(course?.category?._id || course?.category || "");
+  const nextCategory = String(payload?.category || "");
+  if (existingCategory && nextCategory && existingCategory !== nextCategory) return false;
+
+  const existingLanguage = normalizeCourseIdentityText(course?.language);
+  const nextLanguage = normalizeCourseIdentityText(payload?.language);
+  if (existingLanguage && nextLanguage && existingLanguage !== nextLanguage) return false;
+
+  const existingCourseType = normalizeCourseIdentityText(course?.courseType);
+  const nextCourseType = normalizeCourseIdentityText(payload?.courseType);
+  if (existingCourseType && nextCourseType && existingCourseType !== nextCourseType) return false;
+
+  return true;
+};
 
 const getCoursesCacheKey = ({ search, category, status, page, language }) =>
   getTeacherPageCacheKey("courses", {
@@ -394,6 +420,7 @@ export default function TeacherCourses() {
   const [googleStatus, setGoogleStatus] = useState({ connected: false, googleEmail: "" });
   const [pricingSettings, setPricingSettings] = useState(DEFAULT_PRICING_SETTINGS);
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const createCourseRequestRef = useRef(false);
   const pricingSettingsRef = useRef(
     normalizePricingSettings(initialCoursesCache?.pricingSettings, DEFAULT_PRICING_SETTINGS),
   );
@@ -627,7 +654,10 @@ export default function TeacherCourses() {
   }, [courses, language]);
 
   const handleCreateCourse = async (form) => {
+    if (createCourseRequestRef.current) return;
+
     try {
+      createCourseRequestRef.current = true;
       setCreateSubmitting(true);
       await createTeacherCourse(form);
       clearTeacherPageCache("teacher:courses");
@@ -638,8 +668,33 @@ export default function TeacherCourses() {
       setToast(language === "fa" ? "کورس ایجاد شد" : "Course created");
       window.dispatchEvent(new Event("edutech_data_changed"));
     } catch (err) {
+      if (isNetworkError(err)) {
+        try {
+          const { courses: recentCourses } = await fetchTeacherCourses({
+            search: form?.title || "",
+            page: 1,
+            limit: 25,
+          });
+          const matchingCourse = recentCourses.find((course) =>
+            hasMatchingCreatedCourse(course, form),
+          );
+
+          if (matchingCourse) {
+            clearTeacherPageCache("teacher:courses");
+            setRefreshSeed((prev) => prev + 1);
+            setCreateFormSession((previous) => previous + 1);
+            setCreateOpen(false);
+            setToast(language === "fa" ? "کورس ایجاد شد" : "Course created");
+            window.dispatchEvent(new Event("edutech_data_changed"));
+            return;
+          }
+        } catch {
+          // If verification also fails, keep the original error handling below.
+        }
+      }
       setToast(err.message || "Create failed");
     } finally {
+      createCourseRequestRef.current = false;
       setCreateSubmitting(false);
     }
   };
