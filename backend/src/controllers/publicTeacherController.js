@@ -223,7 +223,7 @@ const normalizeFacetValues = (values = []) => {
 
 export const getPublicTeachers = asyncHandler(async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
+  const limit = Math.min(60, Math.max(1, Number(req.query.limit) || 12));
   const search = String(req.query.search || "").trim();
   const skip = (page - 1) * limit;
 

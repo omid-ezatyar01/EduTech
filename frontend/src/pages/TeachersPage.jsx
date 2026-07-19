@@ -25,9 +25,10 @@ import {
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 
 const benefitIcons = [BriefcaseBusiness, MessageCircle, Headphones, Rocket];
-const MOBILE_BATCH_SIZE = 20;
+const TEACHERS_PAGE_SIZE = 60;
+const TEACHERS_PER_ROW = 20;
 
-const chunkRows = (items = [], size = MOBILE_BATCH_SIZE) => {
+const chunkRows = (items = [], size = TEACHERS_PER_ROW) => {
   const rows = [];
   for (let index = 0; index < items.length; index += size) {
     rows.push(items.slice(index, index + size));
@@ -198,7 +199,7 @@ export default function TeachersPage({ t }) {
       try {
         const teacherQuery = {
           page: teacherPage,
-          limit: MOBILE_BATCH_SIZE,
+          limit: TEACHERS_PAGE_SIZE,
           search,
           language: teacherLanguage === "all" ? undefined : teacherLanguage,
           expertise: expertise === "all" ? undefined : expertise,
@@ -397,7 +398,7 @@ export default function TeachersPage({ t }) {
     return rows;
   }, [teachers, experienceFilter]);
   const teacherRows = useMemo(
-    () => chunkRows(filteredTeachers, MOBILE_BATCH_SIZE),
+    () => chunkRows(filteredTeachers, TEACHERS_PER_ROW),
     [filteredTeachers],
   );
   const getRowNavState = (rowElement) => {
@@ -714,7 +715,7 @@ export default function TeachersPage({ t }) {
                         <TeacherCard
                           labels={page}
                           teacher={teacher}
-                          index={(rowIndex * MOBILE_BATCH_SIZE) + itemIndex}
+                          index={(rowIndex * TEACHERS_PER_ROW) + itemIndex}
                         />
                       </div>
                     ))}
@@ -781,8 +782,8 @@ export default function TeachersPage({ t }) {
                       ? "در حال بارگذاری"
                       : "Loading"
                     : isFa
-                      ? `نمایش ${MOBILE_BATCH_SIZE} مورد بیشتر`
-                      : `Show ${MOBILE_BATCH_SIZE} more`}
+                      ? `نمایش ${TEACHERS_PAGE_SIZE} مورد بیشتر`
+                      : `Show ${TEACHERS_PAGE_SIZE} more`}
                 </button>
               </div>
             ) : null}
