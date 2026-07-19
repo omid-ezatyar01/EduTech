@@ -309,17 +309,18 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
 
   const pricingSettings = await getPlatformPricingSettings();
   const globalDiscountPercentage = Number(pricingSettings?.globalCourseDiscountPercentage || 0);
-  const row = typeof course?.toObject === "function" ? course.toObject() : course;
-  const pricing = resolveCourseDisplayPricing(row, globalDiscountPercentage);
+  const courseId = course._id;
   const [enrollmentCounts, ratingAggregates, reviews] = await Promise.all([
-    getEnrollmentCountsByCourseId([row._id]),
-    getCourseRatingAggregates([row._id]),
-    getPublicCourseReviews(row._id),
+    getEnrollmentCountsByCourseId([courseId]),
+    getCourseRatingAggregates([courseId]),
+    getPublicCourseReviews(courseId),
   ]);
   await ensureCourseAutoStarted(course, {
-    activeStudentsCount: enrollmentCounts.get(String(row._id)) || 0,
+    activeStudentsCount: enrollmentCounts.get(String(courseId)) || 0,
   });
-  const ratingStats = ratingAggregates.get(String(row._id)) || { rating: 0, ratingCount: 0 };
+  const row = typeof course?.toObject === "function" ? course.toObject() : course;
+  const pricing = resolveCourseDisplayPricing(row, globalDiscountPercentage);
+  const ratingStats = ratingAggregates.get(String(courseId)) || { rating: 0, ratingCount: 0 };
   const normalizedCourse = {
     ...row,
     price: pricing.finalPrice,
@@ -336,7 +337,7 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
       hasTeacherBankPaymentInfo(row?.teacher) ||
       hasTeacherBankPaymentInfo(row?.teacherId) ||
       hasTeacherBankPaymentInfo(row?.createdBy),
-    enrolledStudentsCount: enrollmentCounts.get(String(row._id)) || 0,
+    enrolledStudentsCount: enrollmentCounts.get(String(courseId)) || 0,
     rating: ratingStats.rating,
     ratingCount: ratingStats.ratingCount,
     reviews,

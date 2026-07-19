@@ -1,4 +1,6 @@
 import Course from "../models/Course.js";
+import Enrollment from "../models/Enrollment.js";
+import { deriveCourseSchedule } from "./courseSchedule.js";
 
 const DAY_INDEX_BY_KEY = {
   sunday: 0,
@@ -119,16 +121,119 @@ export const shouldAutoStartCourse = (course = {}, options = {}) => {
   return enrolledStudentsCount >= minimumStudentsToStart;
 };
 
-export const ensureCourseAutoStarted = async (course = null, options = {}) => {
-  if (!course || !shouldAutoStartCourse(course, options)) {
-    return course;
+export const resolveNextCourseStartDate = (value = new Date()) => {
+  const source = value instanceof Date ? new Date(value) : new Date(value);
+  if (Number.isNaN(source.getTime())) return null;
+
+  const next = new Date(source);
+  if (next.getDate() < 15) {
+    next.setDate(15);
+  } else {
+    next.setDate(1);
+    next.setMonth(next.getMonth() + 1);
+  }
+  return next;
+};
+
+const isCourseDueForAutomaticAction = (course = {}, now = new Date()) => {
+  if (!course || course.classStartedAt || course.classEndedAt || course.classCancelledAt) {
+    return false;
+  }
+  if (String(course.status || "") !== "published" || course.isPublished !== true) {
+    return false;
   }
 
+  const scheduledStartAt = resolveCourseScheduledStartAt(course);
+  return Boolean(
+    scheduledStartAt &&
+    !Number.isNaN(now.getTime()) &&
+    now >= scheduledStartAt
+  );
+};
+
+const countActiveStudents = async (courseId, { now, session } = {}) => {
+  const query = Enrollment.countDocuments({
+    courseId,
+    enrollmentStatus: { $in: ["active", "completed"] },
+    accessStatus: "allowed",
+    $or: [
+      { accessExpiresAt: { $exists: false } },
+      { accessExpiresAt: null },
+      { accessExpiresAt: { $gt: now } },
+    ],
+  });
+  if (session) query.session(session);
+  return query;
+};
+
+export const ensureCourseAutoStarted = async (course = null, options = {}) => {
   const startedAt = options.now ? new Date(options.now) : new Date();
+  if (!isCourseDueForAutomaticAction(course, startedAt)) return course;
+
   const courseId = course?._id || course?.id;
   if (!courseId) return course;
 
-  await Course.findOneAndUpdate(
+  const activeStudentsCount = Number.isFinite(Number(options.activeStudentsCount))
+    ? Math.max(0, Number(options.activeStudentsCount))
+    : await countActiveStudents(courseId, { now: startedAt, session: options.session });
+  const minimumStudentsToStart = Math.max(1, Number(course.minimumStudentsToStart || 1));
+
+  if (activeStudentsCount < minimumStudentsToStart) {
+    const nextStartDate = resolveNextCourseStartDate(startedAt);
+    if (!nextStartDate) return course;
+    const previousStartDate = new Date(course.startDate);
+    if (!Number.isNaN(previousStartDate.getTime())) {
+      nextStartDate.setHours(
+        previousStartDate.getHours(),
+        previousStartDate.getMinutes(),
+        previousStartDate.getSeconds(),
+        previousStartDate.getMilliseconds(),
+      );
+    }
+
+    const derivedSchedule = deriveCourseSchedule({
+      startDate: nextStartDate,
+      schedule: course.schedule,
+      totalSessions: course.totalSessions,
+    });
+    const update = {
+      startDate: nextStartDate,
+      lastAutoRescheduledAt: startedAt,
+    };
+    if (derivedSchedule) {
+      update.endDate = derivedSchedule.endDate;
+      update.durationWeeks = derivedSchedule.durationWeeks;
+    }
+
+    const rescheduled = await Course.findOneAndUpdate(
+      {
+        _id: courseId,
+        startDate: course.startDate,
+        classStartedAt: null,
+        classEndedAt: null,
+        classCancelledAt: null,
+        status: "published",
+        isPublished: true,
+      },
+      { $set: update },
+      {
+        ...(options.session ? { session: options.session } : {}),
+        returnDocument: "after",
+      },
+    );
+
+    if (rescheduled) {
+      course.startDate = nextStartDate;
+      course.lastAutoRescheduledAt = startedAt;
+      if (derivedSchedule) {
+        course.endDate = derivedSchedule.endDate;
+        course.durationWeeks = derivedSchedule.durationWeeks;
+      }
+    }
+    return course;
+  }
+
+  const started = await Course.findOneAndUpdate(
     {
       _id: courseId,
       classStartedAt: null,
@@ -142,9 +247,12 @@ export const ensureCourseAutoStarted = async (course = null, options = {}) => {
         classStartedAt: startedAt,
       },
     },
-    options.session ? { session: options.session } : undefined,
+    {
+      ...(options.session ? { session: options.session } : {}),
+      returnDocument: "after",
+    },
   );
 
-  course.classStartedAt = startedAt;
+  if (started) course.classStartedAt = startedAt;
   return course;
 };

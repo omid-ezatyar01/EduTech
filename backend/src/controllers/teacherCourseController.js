@@ -619,11 +619,15 @@ export const startTeacherCourseClass = asyncHandler(async (req, res) => {
     );
   }
 
-  if (!course.startDate || !isSameLocalDate(course.startDate, new Date())) {
+  const now = new Date();
+  const isScheduledToday = course.startDate && isSameLocalDate(course.startDate, now);
+  const wasAutoRescheduledToday =
+    course.lastAutoRescheduledAt && isSameLocalDate(course.lastAutoRescheduledAt, now);
+  if (!isScheduledToday && !wasAutoRescheduledToday) {
     throw new ApiError(400, "Class can only be started on the scheduled start date");
   }
 
-  course.classStartedAt = new Date();
+  course.classStartedAt = now;
   await course.save();
 
   return res.json(

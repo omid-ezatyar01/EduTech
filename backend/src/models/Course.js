@@ -178,6 +178,9 @@ const courseSchema = new mongoose.Schema(
       type: Date,
       index: true,
     },
+    lastAutoRescheduledAt: {
+      type: Date,
+    },
     classCancelledAt: {
       type: Date,
       index: true,
