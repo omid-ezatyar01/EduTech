@@ -391,6 +391,10 @@ const userSchema = new mongoose.Schema(
         trim: true,
         default: "",
       },
+      courseIntroVideoUrls: {
+        type: [String],
+        default: [],
+      },
       nationalId: {
         type: String,
         trim: true,

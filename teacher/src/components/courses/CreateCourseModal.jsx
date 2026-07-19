@@ -770,12 +770,12 @@ export default function CreateCourseModal({
         className="flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[95vh] sm:rounded-2xl"
         dir={isRTL ? "rtl" : "ltr"}
       >
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-3 sm:px-5 sm:py-4">
-          <h3 className="text-lg font-black text-[#0F172A]">{language === "fa" ? "ایجاد کورس جدید" : "Create New Course"}</h3>
+        <div className="flex items-center justify-between gap-4 border-b border-[#E2E8F0] px-4 py-3 sm:px-5 sm:py-4">
+          <h3 className="min-w-0 text-start text-lg font-black text-[#0F172A]">{language === "fa" ? "ایجاد کورس جدید" : "Create New Course"}</h3>
           <button
             onClick={onClose}
             disabled={isSubmitting}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <X size={18} />
           </button>
@@ -801,7 +801,7 @@ export default function CreateCourseModal({
               </p>
             </div>
           ) : null}
-          <div className="grid gap-3 sm:gap-4 lg:grid-cols-2" dir={isRTL ? "rtl" : "ltr"}>
+          <div className="grid gap-3 text-start sm:gap-4 lg:grid-cols-2" dir={isRTL ? "rtl" : "ltr"}>
           {formError ? (
             <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 sm:col-span-2">
               {formError}
@@ -1024,12 +1024,6 @@ export default function CreateCourseModal({
             </select>
           </div>
 
-          <CourseTypePicker
-            value={form.courseType}
-            onChange={(courseType) => setForm({ ...form, courseType })}
-            language={language}
-          />
-
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "زبان کورس" : "Course language"}
@@ -1061,7 +1055,13 @@ export default function CreateCourseModal({
             </p>
           </div>
 
-          <div>
+          <CourseTypePicker
+            value={form.courseType}
+            onChange={(courseType) => setForm({ ...form, courseType })}
+            language={language}
+          />
+
+          <div className="lg:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "تعداد مجموعی جلسات" : "Total course sessions"}
             </label>
@@ -1316,7 +1316,7 @@ export default function CreateCourseModal({
             />
           </div>
 
-          <div>
+          <div className="lg:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "حداقل شاگرد برای شروع" : "Minimum students to start"}
             </label>
@@ -1387,19 +1387,19 @@ export default function CreateCourseModal({
             )}
           </div>
 
-          <div className="mt-2 hidden flex-col-reverse gap-2 sm:col-span-2 sm:flex-row sm:flex">
+          <div className="mt-3 hidden flex-col-reverse gap-2 border-t border-[#E2E8F0] pt-4 sm:col-span-2 sm:flex sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="h-11 flex-1 rounded-xl border border-[#E2E8F0] bg-white text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-11 flex-1 rounded-xl border border-[#E2E8F0] bg-white px-5 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-36 sm:flex-none"
             >
               {language === "fa" ? "لغو" : "Cancel"}
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#0B4FD8] text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-70"
+              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#0B4FD8] px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-70 sm:w-44 sm:flex-none"
             >
               {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : null}
               <span>{isSubmitting ? (language === "fa" ? "در حال ایجاد..." : "Creating") : (language === "fa" ? "ایجاد کورس" : "Create Course")}</span>

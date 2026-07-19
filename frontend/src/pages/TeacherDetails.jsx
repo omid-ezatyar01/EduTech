@@ -16,7 +16,6 @@ import TeacherStats from "../components/TeacherStats.jsx";
 import CourseCard from "../components/CourseCard.jsx";
 import SkillBadge from "../components/SkillBadge.jsx";
 import ProgressSkill from "../components/ProgressSkill.jsx";
-import ReviewCard from "../components/ReviewCard.jsx";
 import TeacherScheduleTable from "../components/TeacherScheduleTable.jsx";
 import FAQAccordion from "../components/FAQAccordion.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
@@ -647,6 +646,9 @@ export default function TeacherDetails({ language = "fa" }) {
     const formProfessionalTitle = String(teacherApplication?.professionalTitle || "").trim();
     const formEducation = String(teacherApplication?.education || "").trim();
     const formIntroVideoUrl = String(teacherApplication?.introVideoUrl || "").trim();
+    const formCourseIntroVideoUrls = normalizeList(
+      teacherApplication?.courseIntroVideoUrls || [],
+    ).slice(0, 8);
     const rawYearsExperience = Number(teacherApplication?.yearsExperience);
     const formYearsExperience = Number.isFinite(rawYearsExperience)
       ? Math.max(0, Math.round(rawYearsExperience))
@@ -882,6 +884,7 @@ export default function TeacherDetails({ language = "fa" }) {
         bio: resolvedBioText,
         avatar: teacher.avatar || "",
         introVideoUrl: formIntroVideoUrl,
+        courseIntroVideoUrls: formCourseIntroVideoUrls,
         socialLinks: teacher.socialLinks || {},
         teacherId: String(teacher._id || teacherIdParam),
         profilePath: buildTeacherPath({
@@ -982,6 +985,17 @@ export default function TeacherDetails({ language = "fa" }) {
 
   const introVideoUrl = String(data?.hero?.introVideoUrl || "").trim();
   const introVideoEmbedUrl = getYouTubeEmbedUrl(introVideoUrl);
+  const courseIntroVideos = (Array.isArray(data?.hero?.courseIntroVideoUrls)
+    ? data.hero.courseIntroVideoUrls
+    : []
+  )
+    .map((url) => ({ url: String(url || "").trim(), embedUrl: getYouTubeEmbedUrl(url) }))
+    .filter((video) => video.url && video.embedUrl)
+    .filter(
+      (video, index, rows) =>
+        rows.findIndex((row) => row.embedUrl === video.embedUrl) === index,
+    )
+    .slice(0, 8);
   const getRowNavState = (rowElement) => {
     if (!rowElement) return { canPrev: false, canNext: false };
     const maxScroll = Math.max(0, rowElement.scrollWidth - rowElement.clientWidth);
@@ -1168,6 +1182,66 @@ export default function TeacherDetails({ language = "fa" }) {
                   {isFa ? "باز کردن در YouTube" : "Open on YouTube"}
                 </a>
               </div>
+            </div>
+          </section>
+        ) : null}
+
+        {courseIntroVideos.length ? (
+          <section className="mt-8">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-black text-slate-950 md:text-3xl">
+                  {isFa
+                    ? "ویدیوهای معرفی کورس در یوتیوب"
+                    : "Course Introduction Videos on YouTube"}
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm font-semibold leading-7 text-slate-600">
+                  {isFa
+                    ? "پیش از انتخاب کورس، ویدیوهای معرفی مدرس را ببینید و با محتوای کورس و شیوه تدریس آشنا شوید."
+                    : "Watch the teacher's introductions before choosing a course and get familiar with its content and teaching style."}
+                </p>
+              </div>
+              <span className="text-xs font-black text-primary-700">
+                {isFa
+                  ? `${courseIntroVideos.length.toLocaleString("fa-AF")} ویدیو`
+                  : `${courseIntroVideos.length} ${courseIntroVideos.length === 1 ? "video" : "videos"}`}
+              </span>
+            </div>
+
+            <div className="mt-5 grid gap-5 md:grid-cols-2">
+              {courseIntroVideos.map((video, index) => (
+                <article
+                  key={video.embedUrl}
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.06)]"
+                >
+                  <iframe
+                    className="aspect-video w-full bg-slate-950"
+                    src={video.embedUrl}
+                    title={
+                      isFa
+                        ? `ویدیوی معرفی کورس ${index + 1}`
+                        : `Course introduction video ${index + 1}`
+                    }
+                    loading="lazy"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                  <div className="flex items-center justify-between gap-3 p-4">
+                    <p className="text-sm font-black text-slate-900">
+                      {isFa ? `معرفی کورس ${index + 1}` : `Course Introduction ${index + 1}`}
+                    </p>
+                    <a
+                      href={video.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-primary-300 hover:text-primary-700"
+                    >
+                      <ExternalLink size={15} />
+                      YouTube
+                    </a>
+                  </div>
+                </article>
+              ))}
             </div>
           </section>
         ) : null}

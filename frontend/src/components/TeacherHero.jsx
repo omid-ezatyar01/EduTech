@@ -1,15 +1,10 @@
 import { useState } from "react";
 import {
   AtSign,
-  BriefcaseBusiness,
-  Camera,
-  Code2,
-  MessageCircle,
   Send,
   Share2,
-  Users,
-  Video,
 } from "lucide-react";
+import SocialBrandIcon from "./SocialBrandIcon.jsx";
 import { resolveAvatarUrl } from "../utils/avatar";
 import { shareContent } from "../utils/share";
 
@@ -49,23 +44,23 @@ export default function TeacherHero({ data, dir }) {
   const avatarKey = `${data?.name || ""}:${teacherAvatar}`;
   const hasAvatar = Boolean(teacherAvatar) && failedAvatarKey !== avatarKey;
   const socialStyles = {
-    youtube: "hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700",
-    instagram: "hover:border-pink-300 hover:bg-pink-50 hover:text-pink-700",
-    facebook: "hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700",
-    linkedin: "hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700",
-    whatsapp: "hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700",
+    youtube: "text-[#FF0000] hover:border-rose-300 hover:bg-rose-50",
+    instagram: "text-[#E4405F] hover:border-pink-300 hover:bg-pink-50",
+    facebook: "text-[#1877F2] hover:border-blue-300 hover:bg-blue-50",
+    linkedin: "text-[#0A66C2] hover:border-sky-300 hover:bg-sky-50",
+    whatsapp: "text-[#25D366] hover:border-emerald-300 hover:bg-emerald-50",
     twitter: "hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700",
-    github: "hover:border-slate-400 hover:bg-slate-100 hover:text-slate-900",
+    github: "text-[#181717] hover:border-slate-400 hover:bg-slate-100",
     email: "hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700",
   };
   const socialItems = [
-    { key: "youtube", label: "YouTube", icon: Video },
-    { key: "instagram", label: "Instagram", icon: Camera },
-    { key: "facebook", label: "Facebook", icon: Users },
-    { key: "linkedin", label: "LinkedIn", icon: BriefcaseBusiness },
-    { key: "whatsapp", label: "WhatsApp", icon: MessageCircle },
+    { key: "youtube", label: "YouTube", brandIcon: true },
+    { key: "instagram", label: "Instagram", brandIcon: true },
+    { key: "facebook", label: "Facebook", brandIcon: true },
+    { key: "linkedin", label: "LinkedIn", brandIcon: true },
+    { key: "whatsapp", label: "WhatsApp", brandIcon: true },
     { key: "twitter", label: "Twitter", icon: Send },
-    { key: "github", label: "GitHub", icon: Code2 },
+    { key: "github", label: "GitHub", brandIcon: true },
     { key: "email", label: "Email", icon: AtSign },
   ]
     .map((item) => ({
@@ -108,7 +103,11 @@ export default function TeacherHero({ data, dir }) {
                         socialStyles[item.key] || "hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700"
                       }`}
                     >
-                      <Icon size={18} />
+                      {item.brandIcon ? (
+                        <SocialBrandIcon brand={item.key} size={18} />
+                      ) : (
+                        <Icon size={18} />
+                      )}
                     </a>
                   );
                 })}

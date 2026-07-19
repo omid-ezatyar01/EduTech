@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock3, Upload } from "lucide-react";
+import { Clock3, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import TeacherLayout from "../layouts/TeacherLayout";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
@@ -27,6 +27,7 @@ const SKILL_RATING_MAX_COUNT = 20;
 const TEACHING_LANGUAGE_MAX_COUNT = 20;
 const TEACHING_LANGUAGE_MIN_CHARS = 2;
 const TEACHING_LANGUAGE_MAX_CHARS = 60;
+const COURSE_INTRO_VIDEO_MAX_COUNT = 8;
 const PHONE_REGEX = /^\+?[0-9]{8,15}$/;
 const PROFILE_RESET_DRAFT_KEY = "edutech_teacher_profile_reset_form";
 const PROFILE_CACHE_KEY = getTeacherPageCacheKey("profile");
@@ -963,6 +964,12 @@ const getInitialForm = (user = {}) => ({
   skillRatings: normalizeSkillRatings(user?.teacherApplication?.skillRatings || []),
   portfolioUrl: String(user?.teacherApplication?.portfolioUrl || "").trim(),
   introVideoUrl: String(user?.teacherApplication?.introVideoUrl || "").trim(),
+  courseIntroVideoUrls: Array.isArray(user?.teacherApplication?.courseIntroVideoUrls)
+    ? user.teacherApplication.courseIntroVideoUrls
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .slice(0, COURSE_INTRO_VIDEO_MAX_COUNT)
+    : [],
   motivation: String(user?.teacherApplication?.motivation || "").trim(),
 });
 
@@ -988,6 +995,7 @@ const getEmptyForm = (lockedEmail = "") => ({
   skillRatings: [],
   portfolioUrl: "",
   introVideoUrl: "",
+  courseIntroVideoUrls: [],
   motivation: "",
 });
 
@@ -1136,6 +1144,7 @@ const mapBackendFieldToUiKey = (rawPath = "") => {
   if (path === "teacherApplication.languages" || path.startsWith("teacherApplication.languages")) return "languages";
   if (path === "teacherApplication.portfolioUrl") return "portfolioUrl";
   if (path === "teacherApplication.introVideoUrl") return "introVideoUrl";
+  if (path.startsWith("teacherApplication.courseIntroVideoUrls")) return "courseIntroVideoUrls";
   if (path === "teacherApplication.motivation") return "motivation";
   if (path.startsWith("teacherApplication.skillRatings")) return "skillRatings";
   return "";
@@ -1168,6 +1177,7 @@ const getLocalizedValidationMessage = (path = "", backendMessage = "", isFa = fa
     languages: isFa ? "زبان‌های تدریس" : "Teaching languages",
     portfolioUrl: isFa ? "پورتفولیو" : "Portfolio URL",
     introVideoUrl: isFa ? "ویدیوی معرفی" : "Intro video URL",
+    courseIntroVideoUrls: isFa ? "ویدیوهای معرفی کورس" : "Course introduction videos",
     motivation: isFa ? "انگیزه همکاری" : "Motivation",
     skillRatings: isFa ? "مهارت‌ها و تخصص‌ها" : "Skills & expertise",
   };
@@ -1431,6 +1441,38 @@ export default function TeacherProfile() {
         ? value.slice(0, maxLength)
         : value;
     setForm((prev) => ({ ...prev, [key]: normalizedValue }));
+  };
+
+  const addCourseIntroVideo = () => {
+    clearFieldError("courseIntroVideoUrls");
+    setForm((prev) => {
+      const rows = Array.isArray(prev.courseIntroVideoUrls) ? prev.courseIntroVideoUrls : [];
+      if (rows.length >= COURSE_INTRO_VIDEO_MAX_COUNT) return prev;
+      return { ...prev, courseIntroVideoUrls: [...rows, ""] };
+    });
+  };
+
+  const updateCourseIntroVideo = (index, value) => {
+    clearFieldError("courseIntroVideoUrls");
+    setForm((prev) => {
+      const rows = Array.isArray(prev.courseIntroVideoUrls)
+        ? [...prev.courseIntroVideoUrls]
+        : [];
+      if (index < 0 || index >= rows.length) return prev;
+      rows[index] = String(value || "").slice(0, 250);
+      return { ...prev, courseIntroVideoUrls: rows };
+    });
+  };
+
+  const removeCourseIntroVideo = (index) => {
+    clearFieldError("courseIntroVideoUrls");
+    setForm((prev) => ({
+      ...prev,
+      courseIntroVideoUrls: (Array.isArray(prev.courseIntroVideoUrls)
+        ? prev.courseIntroVideoUrls
+        : []
+      ).filter((_, rowIndex) => rowIndex !== index),
+    }));
   };
 
   const updateTeachingLanguages = (nextRows) => {
@@ -1746,6 +1788,29 @@ export default function TeacherProfile() {
         : "Intro video must be a YouTube link.";
     }
 
+    const courseIntroVideoUrls = (Array.isArray(form.courseIntroVideoUrls)
+      ? form.courseIntroVideoUrls
+      : []
+    )
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    const uniqueCourseIntroVideoKeys = new Set(
+      courseIntroVideoUrls.map((value) => getYouTubeVideoKey(value)),
+    );
+    if (courseIntroVideoUrls.some((value) => !hasYouTubeLink(value))) {
+      nextFieldErrors.courseIntroVideoUrls = isFa
+        ? "همه لینک‌های معرفی کورس باید از YouTube باشند."
+        : "All course introduction videos must be YouTube links.";
+    } else if (uniqueCourseIntroVideoKeys.size !== courseIntroVideoUrls.length) {
+      nextFieldErrors.courseIntroVideoUrls = isFa
+        ? "لینک تکراری را حذف کنید."
+        : "Remove the duplicate video link.";
+    } else if (courseIntroVideoUrls.length > COURSE_INTRO_VIDEO_MAX_COUNT) {
+      nextFieldErrors.courseIntroVideoUrls = isFa
+        ? `حداکثر ${COURSE_INTRO_VIDEO_MAX_COUNT} ویدیو مجاز است.`
+        : `You can add up to ${COURSE_INTRO_VIDEO_MAX_COUNT} videos.`;
+    }
+
     if (normalizedSkillRatings.length === 0) {
       nextFieldErrors.skillRatings = isFa
         ? "حداقل یک مهارت ثبت کنید."
@@ -1803,6 +1868,7 @@ export default function TeacherProfile() {
           skillRatings: normalizedSkillRatings,
           portfolioUrl: form.portfolioUrl,
           introVideoUrl: form.introVideoUrl,
+          courseIntroVideoUrls,
           motivation: form.motivation,
         },
         teacherApplicationAction: submitAction,
@@ -2370,6 +2436,85 @@ export default function TeacherProfile() {
                       </span>
                     </label>
                   </div>
+                  <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 md:col-span-2">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-[#0F172A]">
+                          {isFa ? "ویدیوهای معرفی کورس در یوتیوب" : "Course Introduction Videos on YouTube"}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                          {isFa
+                            ? "ویدیوهای کوتاه معرفی کورس‌های خود را اضافه کنید تا شاگردان پیش از انتخاب کورس آن‌ها را ببینند."
+                            : "Add short course introduction videos so learners can watch them before choosing a course."}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addCourseIntroVideo}
+                        disabled={(form.courseIntroVideoUrls?.length || 0) >= COURSE_INTRO_VIDEO_MAX_COUNT}
+                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#0B4FD8] px-3 text-xs font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Plus size={15} />
+                        {isFa ? "افزودن لینک" : "Add link"}
+                      </button>
+                    </div>
+
+                    {form.courseIntroVideoUrls?.length ? (
+                      <div className="mt-4 space-y-3">
+                        {form.courseIntroVideoUrls.map((videoUrl, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <span className="flex h-10 w-8 shrink-0 items-center justify-center text-xs font-black text-slate-500">
+                              {index + 1}
+                            </span>
+                            <input
+                              value={videoUrl}
+                              maxLength={250}
+                              onChange={(event) => updateCourseIntroVideo(index, event.target.value)}
+                              placeholder="https://youtube.com/watch?v=..."
+                              className={`h-10 min-w-0 flex-1 rounded-xl border px-3 text-sm font-semibold outline-none focus:border-[#0B4FD8] ${fieldErrors.courseIntroVideoUrls ? "border-rose-300 bg-rose-50" : "border-slate-200 bg-slate-50"}`}
+                              dir="ltr"
+                              aria-label={isFa ? `لینک ویدیوی ${index + 1}` : `Video link ${index + 1}`}
+                            />
+                            {hasYouTubeLink(videoUrl) ? (
+                              <a
+                                href={videoUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-blue-300 hover:text-[#0B4FD8]"
+                                title={isFa ? "باز کردن ویدیو" : "Open video"}
+                                aria-label={isFa ? "باز کردن ویدیو" : "Open video"}
+                              >
+                                <ExternalLink size={16} />
+                              </a>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => removeCourseIntroVideo(index)}
+                              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100"
+                              title={isFa ? "حذف لینک" : "Remove link"}
+                              aria-label={isFa ? "حذف لینک" : "Remove link"}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-xl bg-slate-50 px-3 py-3 text-xs font-semibold text-slate-500">
+                        {isFa ? "هنوز ویدیوی معرفی کورس اضافه نشده است." : "No course introduction video has been added yet."}
+                      </p>
+                    )}
+                    {fieldErrors.courseIntroVideoUrls ? (
+                      <p className="mt-2 text-xs font-semibold text-rose-600">
+                        {fieldErrors.courseIntroVideoUrls}
+                      </p>
+                    ) : null}
+                    <p className="mt-2 text-[11px] font-semibold text-slate-500">
+                      {isFa
+                        ? `حداکثر ${COURSE_INTRO_VIDEO_MAX_COUNT} لینک YouTube.`
+                        : `Up to ${COURSE_INTRO_VIDEO_MAX_COUNT} YouTube links.`}
+                    </p>
+                  </div>
                 </div>
                 </div>
               </div>
@@ -2554,6 +2699,38 @@ export default function TeacherProfile() {
                     >
                       {isFa ? "دیدن ویدیو" : "View Video"}
                     </a>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm font-bold text-[#0F172A]">-</p>
+                )}
+              </div>
+              <div className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-3 sm:col-span-2">
+                <p className="text-[11px] font-extrabold text-slate-500">
+                  {isFa ? "ویدیوهای معرفی کورس در یوتیوب" : "Course Introduction Videos on YouTube"}
+                </p>
+                {Array.isArray(approvedApplication?.courseIntroVideoUrls) &&
+                approvedApplication.courseIntroVideoUrls.length ? (
+                  <div className="mt-2 space-y-2">
+                    {approvedApplication.courseIntroVideoUrls.map((videoUrl, index) => (
+                      <div
+                        key={`${videoUrl}-${index}`}
+                        className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
+                      >
+                        <p className="min-w-0 truncate text-sm font-bold text-[#0F172A]" dir="ltr">
+                          {videoUrl}
+                        </p>
+                        <a
+                          href={videoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#0B4FD8]"
+                          title={isFa ? "دیدن ویدیو" : "View video"}
+                          aria-label={isFa ? "دیدن ویدیو" : "View video"}
+                        >
+                          <ExternalLink size={15} />
+                        </a>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <p className="mt-1 text-sm font-bold text-[#0F172A]">-</p>

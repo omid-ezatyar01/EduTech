@@ -295,6 +295,9 @@ const publicUserPayload = (req, user, includeToken = false) => {
       cvUrl: user.teacherApplication?.cvUrl || "",
       certificatesFileUrl: user.teacherApplication?.certificatesFileUrl || "",
       introVideoUrl: user.teacherApplication?.introVideoUrl || "",
+      courseIntroVideoUrls: Array.isArray(user.teacherApplication?.courseIntroVideoUrls)
+        ? user.teacherApplication.courseIntroVideoUrls.filter(Boolean)
+        : [],
       nationalId: user.teacherApplication?.nationalId || "",
       availableHoursPerWeek: Number(user.teacherApplication?.availableHoursPerWeek || 0),
       expectedMonthlySalaryAfn: Number(user.teacherApplication?.expectedMonthlySalaryAfn || 0),
@@ -467,6 +470,18 @@ const updateProfileSchema = Joi.object({
           ? value
           : helpers.message("Intro video must be a YouTube link"),
       ),
+    courseIntroVideoUrls: Joi.array()
+      .items(
+        Joi.string()
+          .trim()
+          .max(250)
+          .custom((value, helpers) =>
+            isYouTubeUrl(value)
+              ? value
+              : helpers.message("Course introduction video must be a YouTube link"),
+          ),
+      )
+      .max(8),
     nationalId: Joi.string().trim().max(80).allow(""),
     availableHoursPerWeek: Joi.number().min(0).max(168),
     expectedMonthlySalaryAfn: Joi.number().min(0),
@@ -2031,6 +2046,9 @@ export const updateUserProfile = async (req, res) => {
           incoming.certificatesFileUrl ?? existingApplication.certificatesFileUrl ?? "",
         ),
         introVideoUrl: normalizeText(incoming.introVideoUrl ?? existingApplication.introVideoUrl ?? ""),
+        courseIntroVideoUrls: normalizeStringArray(
+          incoming.courseIntroVideoUrls ?? existingApplication.courseIntroVideoUrls ?? [],
+        ),
         nationalId: normalizeText(incoming.nationalId ?? existingApplication.nationalId ?? ""),
         availableHoursPerWeek:
           incoming.availableHoursPerWeek ?? existingApplication.availableHoursPerWeek ?? 0,

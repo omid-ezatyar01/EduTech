@@ -49,7 +49,7 @@ export default function CourseCategoryFields({
   const selectedLeaf = byId.get(selectedLeafId);
 
   return (
-    <div className="rounded-2xl border border-teal-100 bg-teal-50/60 p-4 sm:col-span-2">
+    <div className="rounded-2xl border border-teal-100 bg-teal-50/60 p-4 text-start sm:col-span-2">
       <div className="mb-3">
         <h4 className="text-sm font-black text-slate-900">
           {language === "fa" ? "دسته‌بندی دقیق کورس" : "Specific course category"}

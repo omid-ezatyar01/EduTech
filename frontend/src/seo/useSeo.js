@@ -126,6 +126,26 @@ function getSeoConfig(pathname, language) {
       ],
     },
     {
+      match: /^\/blog\/?$/,
+      title: isFa
+        ? "نقشه‌های راه یادگیری | ایجوتک آکادمی"
+        : "Learning Roadmaps | EduTech Academy",
+      description: isFa
+        ? "نقشه‌های راه ایجوتک به شما کمک می‌کنند کورس‌ها را برای یادگیری هر مهارت به ترتیب درست انتخاب کنید."
+        : "EduTech learning roadmaps help you choose courses in the right order for each skill and goal.",
+      keywords: ["learning roadmaps", "course path", "نقشه راه یادگیری", "مسیر کورس"],
+    },
+    {
+      match: /^\/blog\/english\/?$/,
+      title: isFa
+        ? "نقشه راه یادگیری انگلیسی | ایجوتک آکادمی"
+        : "English Learning Roadmap | EduTech Academy",
+      description: isFa
+        ? "سطح انگلیسی خود را پیدا کنید و کورس‌های مناسب را در یک مسیر روشن از مبتدی تا پیشرفته انتخاب کنید."
+        : "Find your English level and follow a clear course roadmap from beginner foundations to advanced fluency.",
+      keywords: ["English roadmap", "learn English", "نقشه راه انگلیسی", "کورس انگلیسی"],
+    },
+    {
       match: /^\/about\/?$/,
       title: isFa ? "درباره ما | ایجوتک آکادمی" : "About Us | EduTech Academy",
       description: isFa

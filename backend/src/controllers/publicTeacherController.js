@@ -194,6 +194,9 @@ const mapPublicTeacherApplication = (application = {}) => ({
         }))
     : [],
   introVideoUrl: application.introVideoUrl || "",
+  courseIntroVideoUrls: Array.isArray(application.courseIntroVideoUrls)
+    ? application.courseIntroVideoUrls.filter(Boolean).slice(0, 8)
+    : [],
 });
 
 const escapeRegex = (value = "") =>
@@ -291,7 +294,7 @@ export const getPublicTeachers = asyncHandler(async (req, res) => {
   const [teachers, total, languages, expertiseAreas, teachingLevels, countries] =
     await Promise.all([
     User.find(filter)
-      .select("name email phone avatar bio city country socialLinks createdAt teacherApplication.status teacherApplication.professionalTitle teacherApplication.yearsExperience teacherApplication.education teacherApplication.expertiseAreas teacherApplication.teachingLevels teacherApplication.certifications teacherApplication.languages teacherApplication.skillRatings teacherApplication.introVideoUrl")
+      .select("name email phone avatar bio city country socialLinks createdAt teacherApplication.status teacherApplication.professionalTitle teacherApplication.yearsExperience teacherApplication.education teacherApplication.expertiseAreas teacherApplication.teachingLevels teacherApplication.certifications teacherApplication.languages teacherApplication.skillRatings teacherApplication.introVideoUrl teacherApplication.courseIntroVideoUrls")
       .sort(sort)
       .skip(skip)
       .limit(limit),
@@ -375,7 +378,7 @@ export const getPublicTeacherById = asyncHandler(async (req, res) => {
     status: "active",
     "teacherApplication.status": "approved",
   }).select(
-    "name email phone avatar bio city country socialLinks createdAt teacherApplication.status teacherApplication.professionalTitle teacherApplication.yearsExperience teacherApplication.education teacherApplication.expertiseAreas teacherApplication.teachingLevels teacherApplication.certifications teacherApplication.languages teacherApplication.skillRatings teacherApplication.introVideoUrl",
+    "name email phone avatar bio city country socialLinks createdAt teacherApplication.status teacherApplication.professionalTitle teacherApplication.yearsExperience teacherApplication.education teacherApplication.expertiseAreas teacherApplication.teachingLevels teacherApplication.certifications teacherApplication.languages teacherApplication.skillRatings teacherApplication.introVideoUrl teacherApplication.courseIntroVideoUrls",
   );
 
   if (!teacher) {

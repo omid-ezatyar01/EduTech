@@ -667,6 +667,9 @@ export const getTeacherProfile = asyncHandler(async (req, res) => {
           cvUrl: req.user?.teacherApplication?.cvUrl || "",
           certificatesFileUrl: req.user?.teacherApplication?.certificatesFileUrl || "",
           introVideoUrl: req.user?.teacherApplication?.introVideoUrl || "",
+          courseIntroVideoUrls: Array.isArray(req.user?.teacherApplication?.courseIntroVideoUrls)
+            ? req.user.teacherApplication.courseIntroVideoUrls.filter(Boolean)
+            : [],
           nationalId: req.user?.teacherApplication?.nationalId || "",
           availableHoursPerWeek: Number(req.user?.teacherApplication?.availableHoursPerWeek || 0),
           expectedMonthlySalaryAfn: Number(req.user?.teacherApplication?.expectedMonthlySalaryAfn || 0),

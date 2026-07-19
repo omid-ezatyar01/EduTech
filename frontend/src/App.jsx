@@ -35,6 +35,8 @@ const loadNowPaymentsPage = () => import("./pages/NowPaymentsPage.jsx");
 const loadVerifyCertificatePage = () => import("./pages/VerifyCertificatePage.jsx");
 const loadPrivacyPolicyPage = () => import("./pages/PrivacyPolicyPage.jsx");
 const loadTermsPage = () => import("./pages/TermsPage.jsx");
+const loadBlogPage = () => import("./pages/BlogPage.jsx");
+const loadEnglishRoadmapPage = () => import("./pages/EnglishRoadmapPage.jsx");
 
 const HomePage = lazy(loadHomePage);
 const LiveCoursesPage = lazy(loadLiveCoursesPage);
@@ -53,6 +55,8 @@ const NowPaymentsPage = lazy(loadNowPaymentsPage);
 const VerifyCertificatePage = lazy(loadVerifyCertificatePage);
 const PrivacyPolicyPage = lazy(loadPrivacyPolicyPage);
 const TermsPage = lazy(loadTermsPage);
+const BlogPage = lazy(loadBlogPage);
+const EnglishRoadmapPage = lazy(loadEnglishRoadmapPage);
 
 // Student Dashboard Components
 const loadMyCourses = () => import("./components/MyCourses.jsx");
@@ -94,6 +98,8 @@ const preloadRoutes = [
   { key: "teacher-details", test: (path) => path.startsWith("/teacher/"), load: loadTeacherDetails },
   { key: "about", test: (path) => path === "/about", load: loadAboutPage },
   { key: "contact", test: (path) => path === "/contact", load: loadContactPage },
+  { key: "blog", test: (path) => path === "/blog", load: loadBlogPage },
+  { key: "english-roadmap", test: (path) => path === "/blog/english", load: loadEnglishRoadmapPage },
   { key: "verify", test: (path) => path === "/verify", load: loadVerifyCertificatePage },
   { key: "privacy-policy", test: (path) => path === "/privacy-policy", load: loadPrivacyPolicyPage },
   { key: "terms", test: (path) => path === "/terms", load: loadTermsPage },
@@ -337,6 +343,7 @@ export default function App() {
     activeHref = "/live-courses";
   else if (path === "/about") activeHref = "/about";
   else if (path === "/contact") activeHref = "/contact";
+  else if (path.startsWith("/blog")) activeHref = "/blog";
 
   return (
     <RegionalPricingProvider>
@@ -378,6 +385,11 @@ export default function App() {
             <Route
               path="/contact"
               element={<ContactPage language={language} />}
+            />
+            <Route path="/blog" element={<BlogPage language={language} />} />
+            <Route
+              path="/blog/english"
+              element={<EnglishRoadmapPage language={language} />}
             />
             <Route path="/verify" element={<VerifyCertificatePage />} />
             <Route

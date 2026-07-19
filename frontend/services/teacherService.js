@@ -162,6 +162,9 @@ const mapTeacher = (teacher = {}) => ({
     languages: normalizeArray(teacher?.teacherApplication?.languages || []),
     skillRatings: normalizeSkillRatings(teacher?.teacherApplication?.skillRatings || []),
     introVideoUrl: normalizeText(teacher?.teacherApplication?.introVideoUrl || ""),
+    courseIntroVideoUrls: normalizeArray(
+      teacher?.teacherApplication?.courseIntroVideoUrls || [],
+    ).slice(0, 8),
   },
   endedCourses: Array.isArray(teacher.endedCourses)
     ? teacher.endedCourses.map(mapTeacherCourse)

@@ -843,13 +843,13 @@ export default function EditCourseModal({
         className="flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[95vh] sm:rounded-2xl"
         dir={isRTL ? "rtl" : "ltr"}
       >
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-3 sm:px-5 sm:py-4">
-          <h3 className="text-lg font-black text-[#0F172A]">
+        <div className="flex items-center justify-between gap-4 border-b border-[#E2E8F0] px-4 py-3 sm:px-5 sm:py-4">
+          <h3 className="min-w-0 text-start text-lg font-black text-[#0F172A]">
             {language === "fa" ? "ویرایش کورس" : "Edit Course"}
           </h3>
           <button
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+            className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100"
           >
             <X size={18} />
           </button>
@@ -862,7 +862,7 @@ export default function EditCourseModal({
           dir="ltr"
         >
           <div
-            className="grid gap-3 sm:gap-4 lg:grid-cols-2"
+            className="grid gap-3 text-start sm:gap-4 lg:grid-cols-2"
             dir={isRTL ? "rtl" : "ltr"}
           >
             {formError ? (
@@ -1115,12 +1115,6 @@ export default function EditCourseModal({
               </select>
             </div>
 
-            <CourseTypePicker
-              value={form.courseType}
-              onChange={(courseType) => setForm({ ...form, courseType })}
-              language={language}
-            />
-
             <div>
               <label className="mb-1 block text-xs font-bold text-slate-600">
                 {language === "fa" ? "زبان کورس" : "Course language"}
@@ -1156,6 +1150,12 @@ export default function EditCourseModal({
               </p>
             </div>
 
+            <CourseTypePicker
+              value={form.courseType}
+              onChange={(courseType) => setForm({ ...form, courseType })}
+              language={language}
+            />
+
             <div>
               <label className="mb-1 block text-xs font-bold text-slate-600">
                 {language === "fa" ? "مدت کورس (هفته)" : "Course duration (weeks)"}
@@ -1176,7 +1176,7 @@ export default function EditCourseModal({
               />
             </div>
 
-            <div>
+            <div className="lg:col-span-2">
               <label className="mb-1 block text-xs font-bold text-slate-600">
                 {language === "fa" ? "تعداد مجموعی جلسات" : "Total course sessions"}
               </label>
@@ -1475,7 +1475,7 @@ export default function EditCourseModal({
               />
             </div>
 
-            <div>
+            <div className="lg:col-span-2">
               <label className="mb-1 block text-xs font-bold text-slate-600">
                 {language === "fa" ? "حداقل شاگرد برای شروع" : "Minimum students to start"}
               </label>
@@ -1497,17 +1497,17 @@ export default function EditCourseModal({
               </p>
             </div>
 
-            <div className="mt-2 flex flex-col-reverse gap-2 sm:col-span-2 sm:flex-row">
+            <div className="mt-3 flex flex-col-reverse gap-2 border-t border-[#E2E8F0] pt-4 sm:col-span-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={onClose}
-                className="h-11 flex-1 rounded-xl border border-[#E2E8F0] bg-white text-sm font-bold text-slate-700"
+                className="h-11 flex-1 rounded-xl border border-[#E2E8F0] bg-white px-5 text-sm font-bold text-slate-700 sm:w-36 sm:flex-none"
               >
                 {language === "fa" ? "لغو" : "Cancel"}
               </button>
               <button
                 type="submit"
-                className="h-11 flex-1 rounded-xl bg-[#0B4FD8] text-sm font-bold text-white"
+                className="h-11 flex-1 rounded-xl bg-[#0B4FD8] px-5 text-sm font-bold text-white sm:w-44 sm:flex-none"
               >
                 {language === "fa" ? "ذخیره تغییرات" : "Save Changes"}
               </button>

@@ -13,7 +13,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import CourseCatalogCard from "../components/CourseCatalogCard.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import {
@@ -32,6 +32,46 @@ const MOBILE_SECTION_LIMIT = 20;
 const COURSE_PAGE_SIZE = 20;
 const INITIAL_LIST_PAGE_COUNT = 3;
 const LOAD_MORE_PAGE_STEP = 2;
+const ENGLISH_CATEGORY_TERMS = ["english", "انگلیسی", "انگليسی", "انگليسي"];
+
+const buildEnglishCategoryPath = (categories = []) => {
+  const rows = Array.isArray(categories) ? categories : [];
+  const byId = new Map(rows.map((item) => [String(item?._id || ""), item]));
+  const getParentId = (item) => String(item?.parent?._id || item?.parent || "");
+  const getDepth = (item) => {
+    let depth = 0;
+    let parentId = getParentId(item);
+    while (parentId && byId.has(parentId) && depth < 20) {
+      depth += 1;
+      parentId = getParentId(byId.get(parentId));
+    }
+    return depth;
+  };
+  const matches = rows
+    .filter((item) => {
+      const name = String(item?.name || "").trim().toLowerCase();
+      return ENGLISH_CATEGORY_TERMS.some((term) => name.includes(term));
+    })
+    .sort((left, right) => {
+      const leftName = String(left?.name || "").trim().toLowerCase();
+      const rightName = String(right?.name || "").trim().toLowerCase();
+      const leftExact = ENGLISH_CATEGORY_TERMS.includes(leftName) ? 0 : 1;
+      const rightExact = ENGLISH_CATEGORY_TERMS.includes(rightName) ? 0 : 1;
+      return leftExact - rightExact || getDepth(left) - getDepth(right);
+    });
+  const target = matches[0];
+  if (!target) return [];
+
+  const path = [];
+  let current = target;
+  let depth = 0;
+  while (current && depth < 20) {
+    path.unshift(String(current._id));
+    current = byId.get(getParentId(current));
+    depth += 1;
+  }
+  return path.filter(Boolean);
+};
 
 const chunkRows = (items = [], size = MOBILE_BATCH_SIZE) => {
   const rows = [];
@@ -71,12 +111,21 @@ export default function LiveCoursesPage({ t }) {
     language === "fa"
       ? "در حال حاضر هیچ کورس موجود نیست."
       : "There are no available courses right now.";
-
+  const [searchParams, setSearchParams] = useSearchParams();
+  const roadmap = searchParams.get("roadmap") || "";
+  const roadmapStage = searchParams.get("stage") || "";
+  const requestedLevel = searchParams.get("level") || "";
+  const initialRoadmapLevel = ["beginner", "intermediate", "advanced"].includes(requestedLevel)
+    ? requestedLevel
+    : "all";
   const [currentPage, setCurrentPage] = useState(INITIAL_LIST_PAGE_COUNT);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [categoryPath, setCategoryPath] = useState([]);
-  const [level, setLevel] = useState("all");
+  const [categories, setCategories] = useState(() => getCachedPublicCategories() || []);
+  const [categoryPath, setCategoryPath] = useState(() =>
+    roadmap === "english" ? buildEnglishCategoryPath(categories) : [],
+  );
+  const [level, setLevel] = useState(initialRoadmapLevel);
   const [courseLanguage, setCourseLanguage] = useState("all");
   const [pricing, setPricing] = useState("all");
   const [courseType, setCourseType] = useState("all");
@@ -86,7 +135,9 @@ export default function LiveCoursesPage({ t }) {
   const [sortMode, setSortMode] = useState("popular");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [courses, setCourses] = useState([]);
-  const [categories, setCategories] = useState(() => getCachedPublicCategories() || []);
+  const [roadmapCategoryResolved, setRoadmapCategoryResolved] = useState(
+    roadmap !== "english" || categories.length > 0,
+  );
   const [meta, setMeta] = useState({ totalPages: 1 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -151,6 +202,11 @@ export default function LiveCoursesPage({ t }) {
 
     const timer = setTimeout(async () => {
       try {
+        if (roadmap === "english" && (!roadmapCategoryResolved || categoryPath.length === 0)) {
+          setCourses([]);
+          setMeta({ totalPages: 1, total: 0 });
+          return;
+        }
         if (isRootSectionMode) {
           setCourses([]);
           setMeta({ totalPages: 1, total: 0 });
@@ -238,26 +294,38 @@ export default function LiveCoursesPage({ t }) {
     maxPrice,
     sortMode,
     language,
+    roadmap,
+    roadmapCategoryResolved,
+    categoryPath.length,
   ]);
 
   useEffect(() => {
+    const applyCategories = (rows) => {
+      const nextRows = Array.isArray(rows) ? rows : [];
+      setCategories(nextRows);
+      if (roadmap === "english") {
+        setCategoryPath(buildEnglishCategoryPath(nextRows));
+        setRoadmapCategoryResolved(true);
+      }
+    };
+
     const loadCategories = async () => {
       const cachedCategories = getCachedPublicCategories();
       if (cachedCategories?.length) {
-        setCategories(cachedCategories);
+        applyCategories(cachedCategories);
         return;
       }
 
       try {
         const rows = await fetchPublicCategories();
-        setCategories(rows);
+        applyCategories(rows);
       } catch {
-        setCategories([]);
+        applyCategories([]);
       }
     };
 
     loadCategories();
-  }, []);
+  }, [roadmap]);
 
   const loadEnrollments = useCallback(async (mountedRef) => {
     if (localStorage.getItem("edutech_auth") !== "true") {
@@ -280,7 +348,7 @@ export default function LiveCoursesPage({ t }) {
   useEffect(() => {
     const mountedRef = { current: true };
 
-    loadEnrollments(mountedRef);
+    queueMicrotask(() => loadEnrollments(mountedRef));
 
     const handleEnrollmentRefresh = () => {
       loadEnrollments(mountedRef);
@@ -461,6 +529,13 @@ export default function LiveCoursesPage({ t }) {
     setMinPrice("");
     setMaxPrice("");
     setSortMode("popular");
+    if (roadmap || requestedLevel || roadmapStage) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("roadmap");
+      nextParams.delete("level");
+      nextParams.delete("stage");
+      setSearchParams(nextParams, { replace: true });
+    }
   };
   const totalCourses = Number(meta?.total || 0);
   const courseRows = useMemo(
@@ -557,6 +632,27 @@ export default function LiveCoursesPage({ t }) {
 
         <div className="mt-5 space-y-6" ref={coursesTopRef}>
           <div className="min-w-0">
+            {roadmap === "english" ? (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm">
+                <div>
+                  <p className="font-black text-primary-900">
+                    {language === "fa" ? "کورس‌های نقشه راه انگلیسی" : "English roadmap courses"}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-primary-700">
+                    {roadmapStage
+                      ? language === "fa"
+                        ? `مرحله انتخاب‌شده: ${roadmapStage}`
+                        : `Selected stage: ${roadmapStage}`
+                      : language === "fa"
+                        ? "همه سطوح زبان انگلیسی"
+                        : "All English levels"}
+                  </p>
+                </div>
+                <Link to="/blog/english" className="font-black text-primary-700 hover:text-primary-600">
+                  {language === "fa" ? "بازگشت به نقشه راه" : "Back to roadmap"}
+                </Link>
+              </div>
+            ) : null}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                 <div>
