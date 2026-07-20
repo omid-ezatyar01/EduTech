@@ -31,7 +31,7 @@ import {
   useRegionalPricing,
 } from "../context/RegionalPricingContext.jsx";
 
-const fallbackCourseImage = "/logo-en.png";
+const fallbackCourseImage = "/logo.png";
 const COURSE_IMAGE_ASPECT_RATIO = "750 / 422";
 
 function resolveMediaUrl(value) {

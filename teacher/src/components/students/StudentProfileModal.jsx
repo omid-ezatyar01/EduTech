@@ -10,7 +10,7 @@ const statusStyle = {
 };
 
 const emptyValue = "ثبت نشده";
-const STUDENT_AVATAR_FALLBACK = "/logo-en.png";
+const STUDENT_AVATAR_FALLBACK = "/logo.png";
 
 export default function StudentProfileModal({ student, open, onClose }) {
   const [activeTab, setActiveTab] = useState("خلاصه");

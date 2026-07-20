@@ -10,7 +10,7 @@ self.addEventListener("push", (event) => {
   const options = {
     body: data.body || "A new review request is waiting.",
     icon: data.icon || "/logo.png",
-    badge: data.badge || "/icons/favicon-32x32.png",
+    badge: data.badge || "/icons/favicon-96x96.png",
     tag: data.type
       ? `${data.type}:${data.courseId || data.teacherId || ""}`
       : "admin-review",

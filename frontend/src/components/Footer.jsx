@@ -1,5 +1,6 @@
 import { Mail, MapPin } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import SocialBrandIcon from "./SocialBrandIcon.jsx";
 
 const WHATSAPP_NUMBER = "93772305458";
 const WHATSAPP_DISPLAY_NUMBER = "+93 772 305 458";
@@ -7,6 +8,7 @@ const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}`;
 const CONTACT_EMAIL = "info@edutech.study";
 const WHATSAPP_CHANNEL_URL = "https://whatsapp.com/channel/0029Vb6syw8CRs1pexVczE0A";
 const TELEGRAM_CHANNEL_URL = "https://t.me/edutech_main";
+const INSTAGRAM_URL = "https://www.instagram.com/edutech_main/";
 const LINKEDIN_URL = "https://www.linkedin.com/in/edu-tech-976697401/";
 const FACEBOOK_URL = "https://www.facebook.com/profile.php?id=61582246301198";
 const disableLinkClick = (event) => {
@@ -74,7 +76,7 @@ function TelegramIcon({ size = 18, className = "" }) {
 }
 
 export default function Footer({ t }) {
-  const logoSrc = t.meta.dir === "ltr" ? "/logo-en.png" : "/logo.png";
+  const logoSrc = "/logo.png";
   const isFa = t.meta.lang === "fa";
   const location = useLocation();
   const legalFrom = `${location.pathname}${location.search}${location.hash}`;
@@ -136,7 +138,7 @@ export default function Footer({ t }) {
             <h3 className="text-center text-sm font-black tracking-wide text-slate-950 md:text-start md:text-base">
               {t.footer.socialsTitle}
             </h3>
-            <div className="mt-3 grid grid-cols-4 gap-2 sm:mt-4 md:flex md:flex-wrap md:items-center md:justify-start md:gap-3">
+            <div className="mt-3 grid grid-cols-5 gap-2 sm:mt-4 md:flex md:flex-wrap md:items-center md:justify-start md:gap-3">
               {[
                 {
                   href: WHATSAPP_CHANNEL_URL,
@@ -148,6 +150,12 @@ export default function Footer({ t }) {
                   href: TELEGRAM_CHANNEL_URL,
                   label: "Telegram",
                   icon: <TelegramIcon size={18} className="text-sky-500" />,
+                  disabled: false,
+                },
+                {
+                  href: INSTAGRAM_URL,
+                  label: "Instagram",
+                  icon: <SocialBrandIcon brand="instagram" size={18} className="text-pink-600" />,
                   disabled: false,
                 },
                 {

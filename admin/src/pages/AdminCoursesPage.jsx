@@ -1866,12 +1866,12 @@ export default function AdminCoursesPage() {
                     <div className="flex min-w-[260px] items-center gap-3">
                       <div className="h-14 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
                         <img
-                          src={resolveAssetUrl(course.thumbnail) || "/logo-en.png"}
+                          src={resolveAssetUrl(course.thumbnail) || "/logo.png"}
                           alt={course.title || "Course"}
                           className={`h-full w-full ${course.thumbnail ? "object-cover" : "object-contain p-2"}`}
                           onError={(event) => {
                             event.currentTarget.onerror = null;
-                            event.currentTarget.src = "/logo-en.png";
+                            event.currentTarget.src = "/logo.png";
                             event.currentTarget.className = "h-full w-full object-contain p-2";
                           }}
                         />
@@ -2174,14 +2174,14 @@ export default function AdminCoursesPage() {
                         <div className="flex min-w-0 items-start gap-4">
                           <div className="h-14 w-14 overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/20">
                             <img
-                              src={resolveAssetUrl(reviewCourse.thumbnail) || "/logo-en.png"}
+                              src={resolveAssetUrl(reviewCourse.thumbnail) || "/logo.png"}
                               alt={reviewCourse.title || "Course"}
                               className={`h-full w-full ${
                                 reviewCourse.thumbnail ? "object-cover" : "object-contain p-2"
                               }`}
                               onError={(event) => {
                                 event.currentTarget.onerror = null;
-                                event.currentTarget.src = "/logo-en.png";
+                                event.currentTarget.src = "/logo.png";
                                 event.currentTarget.className = "h-full w-full object-contain p-2";
                               }}
                             />
@@ -2888,14 +2888,14 @@ export default function AdminCoursesPage() {
                         <div className="flex min-w-0 items-start gap-4">
                           <div className="h-14 w-14 overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/20">
                             <img
-                              src={resolveAssetUrl(editingCoursePreview?.thumbnail) || "/logo-en.png"}
+                              src={resolveAssetUrl(editingCoursePreview?.thumbnail) || "/logo.png"}
                               alt={editForm.title || "Course"}
                               className={`h-full w-full ${
                                 editingCoursePreview?.thumbnail ? "object-cover" : "object-contain p-2"
                               }`}
                               onError={(event) => {
                                 event.currentTarget.onerror = null;
-                                event.currentTarget.src = "/logo-en.png";
+                                event.currentTarget.src = "/logo.png";
                                 event.currentTarget.className = "h-full w-full object-contain p-2";
                               }}
                             />
@@ -3259,7 +3259,7 @@ export default function AdminCoursesPage() {
                                   src={
                                     editForm.thumbnailFile
                                       ? URL.createObjectURL(editForm.thumbnailFile)
-                                      : resolveAssetUrl(editForm.existingThumbnail) || "/logo-en.png"
+                                      : resolveAssetUrl(editForm.existingThumbnail) || "/logo.png"
                                   }
                                   alt={editForm.title || "Course"}
                                   className="h-full w-full object-cover"

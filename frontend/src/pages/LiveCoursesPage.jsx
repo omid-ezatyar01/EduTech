@@ -23,8 +23,9 @@ import {
   fetchStudentEnrollments,
 } from "../../services/courseService.js";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
-import { buildCourseCategoryPath } from "../utils/routePaths.js";
+import { buildCourseCategoryPath, buildCoursePath } from "../utils/routePaths.js";
 import { buildEnrolledCourseIdSet } from "../utils/courseEnrollmentAccess.js";
+import { applySeo } from "../seo/useSeo.js";
 
 const benefitIcons = [UsersRound, GraduationCap, Video, Headphones];
 const MOBILE_BATCH_SIZE = 20;
@@ -542,6 +543,68 @@ export default function LiveCoursesPage({ t }) {
     () => chunkRows(courses, MOBILE_BATCH_SIZE),
     [courses],
   );
+  const seoCourses = useMemo(() => {
+    const sourceRows = isRootSectionMode
+      ? mobileSections.flatMap((section) => section.courses || [])
+      : courses;
+    const seen = new Set();
+
+    return sourceRows
+      .filter((course) => {
+        const key = String(course?.slug || course?._id || course?.id || "").trim();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 20);
+  }, [courses, isRootSectionMode, mobileSections]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const itemList = seoCourses.length >= 3
+        ? {
+            "@type": "ItemList",
+            itemListElement: seoCourses.map((course, index) => {
+              const name = String(course?.title || "Course").trim();
+              const rawDescription = String(
+                course?.description || course?.shortDescription || name,
+              )
+                .replace(/<[^>]*>/g, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+              const description = rawDescription.length > 60
+                ? `${rawDescription.slice(0, 59).trimEnd()}…`
+                : rawDescription;
+
+              return {
+                "@type": "ListItem",
+                position: index + 1,
+                url: `https://edutech.study${buildCoursePath(course)}`,
+                item: {
+                  "@type": "Course",
+                  url: `https://edutech.study${buildCoursePath(course)}`,
+                  name,
+                  description,
+                  provider: {
+                    "@type": "Organization",
+                    name: "EduTech Academy",
+                    sameAs: "https://edutech.study",
+                  },
+                },
+              };
+            }),
+          }
+        : null;
+
+      applySeo({
+        pathname: "/live-courses",
+        language,
+        additionalStructuredData: itemList ? [itemList] : [],
+      });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [language, seoCourses]);
   const getRowNavState = useCallback((rowElement) => {
     if (!rowElement) return { canPrev: false, canNext: false };
     const maxScroll = Math.max(0, rowElement.scrollWidth - rowElement.clientWidth);

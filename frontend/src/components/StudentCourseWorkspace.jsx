@@ -30,7 +30,7 @@ import { buildTeacherPath } from "../utils/routePaths.js";
 import { resolveAvatarUrl } from "../utils/avatar.js";
 import { resolveStudentCourseProgressPercent } from "../utils/courseProgress.js";
 
-const COURSE_IMAGE_FALLBACK = "/logo-en.png";
+const COURSE_IMAGE_FALLBACK = "/logo.png";
 
 function formatLevelLabel(levelValue, language = "fa") {
   const key = String(levelValue || "").trim().toLowerCase();

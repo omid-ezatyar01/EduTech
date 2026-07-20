@@ -2,7 +2,7 @@ export default function Logo() {
   return (
     <div className="brand" aria-label="EduTech">
       <img
-        src="/logo-en.png"
+        src="/logo.png"
         alt="EduTech logo"
         className="brand-logo"
         loading="eager"

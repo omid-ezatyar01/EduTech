@@ -47,6 +47,20 @@ import {
   useRegionalCoursePrice,
   useRegionalPricing,
 } from "../context/RegionalPricingContext.jsx";
+import { applySeo } from "../seo/useSeo.js";
+
+function normalizeSeoText(value = "") {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateSeoText(value, maxLength) {
+  const normalized = normalizeSeoText(value);
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
 
 function getYouTubeEmbedUrl(value = "") {
   try {
@@ -117,7 +131,7 @@ function normalizePreviewVideoLinks(course = {}) {
     }));
 }
 const COURSE_IMAGE_ASPECT_RATIO = "750 / 422";
-const COURSE_IMAGE_FALLBACK = "/logo-en.png";
+const COURSE_IMAGE_FALLBACK = "/logo.png";
 const WEEK_DAY_ORDER = [
   "saturday",
   "sunday",
@@ -346,6 +360,7 @@ export default function CourseDetailsPage({ t }) {
   const [course, setCourse] = useState(() => cachedCourse);
   const [loading, setLoading] = useState(() => !cachedCourse);
   const [error, setError] = useState("");
+  const [notFound, setNotFound] = useState(false);
   const [isStartingPayment, setIsStartingPayment] = useState(false);
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
@@ -422,9 +437,11 @@ export default function CourseDetailsPage({ t }) {
           setCourse(initialCourse);
           setLoading(false);
         } else {
+          setCourse(null);
           setLoading(true);
         }
         setError("");
+        setNotFound(false);
 
         const loadedCourse = initialCourse || await fetchPublishedCourseBySlug(courseIdentifier);
         if (!loadedCourse) {
@@ -473,13 +490,21 @@ export default function CourseDetailsPage({ t }) {
         setIsEnrolled(enrolled);
       } catch (err) {
         if (!mounted) return;
+        const courseWasNotFound =
+          Number(err?.status) === 404 ||
+          /course not found/i.test(String(err?.message || ""));
+        setNotFound(courseWasNotFound);
         setError(
-          getLocalizedRequestErrorMessage(
-            err,
-            language,
-            "بارگذاری کورس انجام نشد.",
-            "Unable to load course.",
-          ),
+          courseWasNotFound
+            ? language === "fa"
+              ? "این کورس یافت نشد یا دیگر منتشر نیست."
+              : "This course was not found or is no longer published."
+            : getLocalizedRequestErrorMessage(
+                err,
+                language,
+                "بارگذاری کورس انجام نشد.",
+                "Unable to load course.",
+              ),
         );
       } finally {
         if (mounted) setLoading(false);
@@ -492,6 +517,110 @@ export default function CourseDetailsPage({ t }) {
       mounted = false;
     };
   }, [courseIdentifier, language, navigate, slugParam]);
+
+  useEffect(() => {
+    if (loading) return undefined;
+
+    const timer = window.setTimeout(() => {
+      if (course) {
+        const canonicalPath = buildCoursePath(course);
+        const courseTitle = normalizeSeoText(course.title) ||
+          (language === "fa" ? "دوره آنلاین" : "Online Course");
+        const teacherName = normalizeSeoText(course.teacher || course.teacherName);
+        const fallbackDescription = language === "fa"
+          ? `${courseTitle} را با کلاس‌های زنده و آموزش تعاملی در ایجوتک یاد بگیرید.`
+          : `Learn ${courseTitle} through live, interactive classes at EduTech Academy.`;
+        const description = truncateSeoText(
+          course.description || course.shortDescription || fallbackDescription,
+          160,
+        );
+        const schemaDescription = truncateSeoText(description, 60);
+        const image = course.thumbnail || "/logo.png";
+
+        applySeo({
+          pathname: location.pathname,
+          language,
+          overrides: {
+            canonicalPath,
+            title: `${courseTitle} | ${language === "fa" ? "ایجوتک آکادمی" : "EduTech Academy"}`,
+            description,
+            image,
+            imageAlt: courseTitle,
+            keywords: [courseTitle, teacherName, course.level, course.language].filter(Boolean),
+            robots: "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+            shouldIndex: true,
+          },
+          additionalStructuredData: [
+            {
+              "@type": "Course",
+              name: courseTitle,
+              description: schemaDescription,
+              image,
+              provider: {
+                "@type": "Organization",
+                name: "EduTech Academy",
+                sameAs: "https://edutech.study",
+              },
+              ...(teacherName
+                ? { creator: { "@type": "Person", name: teacherName } }
+                : {}),
+            },
+            {
+              "@type": "BreadcrumbList",
+              itemListElement: [
+                {
+                  "@type": "ListItem",
+                  position: 1,
+                  name: language === "fa" ? "خانه" : "Home",
+                  item: "https://edutech.study/",
+                },
+                {
+                  "@type": "ListItem",
+                  position: 2,
+                  name: language === "fa" ? "دوره‌ها" : "Courses",
+                  item: "https://edutech.study/live-courses",
+                },
+                {
+                  "@type": "ListItem",
+                  position: 3,
+                  name: courseTitle,
+                  item: `https://edutech.study${canonicalPath}`,
+                },
+              ],
+            },
+          ],
+        });
+        return;
+      }
+
+      if (!course) {
+        applySeo({
+          pathname: location.pathname,
+          language,
+          overrides: {
+            title: notFound
+              ? language === "fa"
+                ? "کورس یافت نشد | ایجوتک"
+                : "Course Not Found | EduTech"
+              : language === "fa"
+                ? "کورس در دسترس نیست | ایجوتک"
+                : "Course Unavailable | EduTech",
+            description: notFound
+              ? language === "fa"
+                ? "این کورس وجود ندارد یا دیگر در ایجوتک منتشر نیست."
+                : "This course does not exist or is no longer published on EduTech."
+              : language === "fa"
+                ? "جزئیات این کورس در حال حاضر در دسترس نیست."
+                : "This course is temporarily unavailable.",
+            robots: "noindex, nofollow",
+            shouldIndex: false,
+          },
+        });
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [course, language, loading, location.pathname, notFound]);
 
   const startHesabPayPurchase = async () => {
     if (!course || isStartingPayment) return;

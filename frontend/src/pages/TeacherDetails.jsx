@@ -29,8 +29,22 @@ import {
   getLocalizedRequestErrorMessage,
   isUnauthorizedError,
 } from "../../services/http.js";
+import { applySeo } from "../seo/useSeo.js";
 
 const PANEL_COLLAPSED_HEIGHT = 580;
+
+function normalizeTeacherSeoText(value = "") {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateTeacherSeoText(value, maxLength) {
+  const normalized = normalizeTeacherSeoText(value);
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
 
 function resolveCourseId(value) {
   if (!value) return "";
@@ -492,6 +506,7 @@ export default function TeacherDetails({ language = "fa" }) {
   const [teacher, setTeacher] = useState(() => cachedTeacher);
   const [loading, setLoading] = useState(() => !cachedTeacher);
   const [error, setError] = useState("");
+  const [notFound, setNotFound] = useState(false);
   const [enrolledCourseIds, setEnrolledCourseIds] = useState(() => new Set());
   const [sectionRowNav, setSectionRowNav] = useState({});
   const panelRefs = useRef({});
@@ -519,13 +534,16 @@ export default function TeacherDetails({ language = "fa" }) {
           setTeacher(initialTeacher);
           setLoading(false);
         } else {
+          setTeacher(null);
           setLoading(true);
         }
         setError("");
+        setNotFound(false);
         const row = initialTeacher || await fetchPublicTeacherById(teacherIdParam);
         if (!mounted) return;
         if (!row) {
           setError(isFa ? "استاد یافت نشد." : "Teacher not found.");
+          setNotFound(true);
           setTeacher(null);
           return;
         }
@@ -536,13 +554,21 @@ export default function TeacherDetails({ language = "fa" }) {
         setTeacher(row);
       } catch (err) {
         if (!mounted) return;
+        const teacherWasNotFound =
+          Number(err?.status) === 404 ||
+          /teacher not found/i.test(String(err?.message || ""));
+        setNotFound(teacherWasNotFound);
         setError(
-          getLocalizedRequestErrorMessage(
-            err,
-            isFa ? "fa" : "en",
-            "دریافت معلومات استاد ناموفق بود.",
-            "Failed to load teacher details.",
-          ),
+          teacherWasNotFound
+            ? isFa
+              ? "این استاد یافت نشد یا پروفایل او دیگر منتشر نیست."
+              : "This teacher was not found or their profile is no longer published."
+            : getLocalizedRequestErrorMessage(
+                err,
+                isFa ? "fa" : "en",
+                "دریافت معلومات استاد ناموفق بود.",
+                "Failed to load teacher details.",
+              ),
         );
         setTeacher(null);
       } finally {
@@ -556,6 +582,113 @@ export default function TeacherDetails({ language = "fa" }) {
       mounted = false;
     };
   }, [id, navigate, teacherIdParam, isFa]);
+
+  useEffect(() => {
+    if (loading) return undefined;
+
+    const timer = window.setTimeout(() => {
+      if (teacher) {
+        const canonicalPath = buildTeacherPath(teacher);
+        const teacherName = normalizeTeacherSeoText(teacher.name) ||
+          (isFa ? "مدرس ایجوتک" : "EduTech Teacher");
+        const professionalTitle = normalizeTeacherSeoText(
+          teacher.professionalTitle || teacher.headline || teacher.specialty,
+        );
+        const fallbackDescription = isFa
+          ? `پروفایل، تخصص و دوره‌های ${teacherName} را در ایجوتک ببینید.`
+          : `View ${teacherName}'s profile, expertise, and courses at EduTech Academy.`;
+        const description = truncateTeacherSeoText(
+          teacher.bio || professionalTitle || fallbackDescription,
+          160,
+        );
+
+        applySeo({
+          pathname: `/teacher/${id}`,
+          language: isFa ? "fa" : "en",
+          overrides: {
+            canonicalPath,
+            title: `${teacherName} | ${isFa ? "مدرس ایجوتک" : "EduTech Teacher"}`,
+            description,
+            image: teacher.avatar || "/logo.png",
+            imageAlt: teacherName,
+            keywords: [
+              teacherName,
+              professionalTitle,
+              ...(Array.isArray(teacher.skills) ? teacher.skills : []),
+            ].filter(Boolean),
+            robots: "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+            shouldIndex: true,
+          },
+          additionalStructuredData: [
+            {
+              "@type": "Person",
+              name: teacherName,
+              description,
+              image: teacher.avatar || undefined,
+              jobTitle: professionalTitle || undefined,
+              url: `https://edutech.study${canonicalPath}`,
+              worksFor: {
+                "@type": "EducationalOrganization",
+                name: "EduTech Academy",
+                url: "https://edutech.study",
+              },
+            },
+            {
+              "@type": "BreadcrumbList",
+              itemListElement: [
+                {
+                  "@type": "ListItem",
+                  position: 1,
+                  name: isFa ? "خانه" : "Home",
+                  item: "https://edutech.study/",
+                },
+                {
+                  "@type": "ListItem",
+                  position: 2,
+                  name: isFa ? "مدرسان" : "Teachers",
+                  item: "https://edutech.study/teachers",
+                },
+                {
+                  "@type": "ListItem",
+                  position: 3,
+                  name: teacherName,
+                  item: `https://edutech.study${canonicalPath}`,
+                },
+              ],
+            },
+          ],
+        });
+        return;
+      }
+
+      if (!teacher) {
+        applySeo({
+          pathname: `/teacher/${id}`,
+          language: isFa ? "fa" : "en",
+          overrides: {
+            title: notFound
+              ? isFa
+                ? "استاد یافت نشد | ایجوتک"
+                : "Teacher Not Found | EduTech"
+              : isFa
+                ? "پروفایل استاد در دسترس نیست | ایجوتک"
+                : "Teacher Profile Unavailable | EduTech",
+            description: notFound
+              ? isFa
+                ? "این پروفایل مدرس وجود ندارد یا دیگر در ایجوتک منتشر نیست."
+                : "This teacher profile does not exist or is no longer published on EduTech."
+              : isFa
+                ? "این پروفایل مدرس در حال حاضر در دسترس نیست."
+                : "This teacher profile is temporarily unavailable.",
+            robots: "noindex, nofollow",
+            shouldIndex: false,
+          },
+        });
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [id, isFa, loading, notFound, teacher]);
 
   useEffect(() => {
     let mounted = true;
@@ -1465,7 +1598,7 @@ export default function TeacherDetails({ language = "fa" }) {
                 >
                   <div className="aspect-[16/9] overflow-hidden bg-white">
                     <img
-                      src={course.thumbnail || "/logo-en.png"}
+                      src={course.thumbnail || "/logo.png"}
                       alt={course.title || (isFa ? "کورس" : "Course")}
                       className={`h-full w-full ${
                         course.thumbnail ? "object-cover" : "object-contain p-8"

@@ -164,7 +164,7 @@ export default function AboutPage({ language = "fa" }) {
   const isFa = language === "fa";
   const dir = isFa ? "rtl" : "ltr";
   const data = pageData[language] || pageData["fa"];
-  const logoSrc = isFa ? "/logo.png" : "/logo-en.png";
+  const logoSrc = "/logo.png";
   const [platformStats, setPlatformStats] = useState({
     activeCourses: 0,
     expertTeachers: 0,

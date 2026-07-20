@@ -16,7 +16,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 export function AuthHeader({ dir }) {
-  const logoSrc = dir === "ltr" ? "/logo-en.png" : "/logo.png";
+  const logoSrc = "/logo.png";
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">

@@ -2,7 +2,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 export default function TeacherAuthHeader({ language, isRTL, onLanguageChange }) {
-  const logoSrc = isRTL ? "/logo.png" : "/logo-en.png";
+  const logoSrc = "/logo.png";
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
 

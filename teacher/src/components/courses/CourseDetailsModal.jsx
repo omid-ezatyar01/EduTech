@@ -16,7 +16,7 @@ import {
 import { useEffect, useMemo } from "react";
 import { formatProgressLabel } from "../../utils/courseProgress";
 
-const COURSE_IMAGE_FALLBACK = "/logo-en.png";
+const COURSE_IMAGE_FALLBACK = "/logo.png";
 
 function formatNumber(value, language) {
   return Number(value || 0).toLocaleString(language === "fa" ? "fa-AF" : "en-US");

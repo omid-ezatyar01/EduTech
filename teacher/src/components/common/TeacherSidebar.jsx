@@ -46,11 +46,11 @@ export default function TeacherSidebar({
       >
         <div className={`flex items-center gap-2 ${isRTL ? "" : "flex-row-reverse justify-end"}`}>
           <img
-            src={isRTL ? "/logo.png" : "/logo-en.png"}
+            src="/logo.png"
             alt="EduTech"
             className="h-9 w-auto object-contain"
             onError={(event) => {
-              event.currentTarget.src = "/icons/favicon-32x32.png";
+              event.currentTarget.src = "/icons/favicon-96x96.png";
               event.currentTarget.className = "h-8 w-8 rounded-lg object-contain";
             }}
           />

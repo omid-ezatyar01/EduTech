@@ -80,7 +80,7 @@ export default function CertificatePreview({ certificate }) {
       <div className="certificate-preview-content">
         <div className="certificate-preview-logo" aria-hidden="true">
           <img
-            src="/logo-en.png"
+            src="/logo.png"
             alt="EduTech logo"
             className="certificate-preview-logo-image"
           />

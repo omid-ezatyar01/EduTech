@@ -3,7 +3,11 @@ import { useEffect } from "react";
 const SITE_NAME_EN = "EduTech Academy";
 const SITE_NAME_FA = "آکادمی ایجوتک";
 const DEFAULT_SITE_URL = "https://edutech.study";
-const DEFAULT_OG_IMAGE = "/logo-en.png";
+const DEFAULT_OG_IMAGE = "/logo.png";
+const OFFICIAL_SOCIAL_URLS = [
+  "https://www.instagram.com/edutech_main/",
+  "https://t.me/edutech_main",
+];
 
 const BASE_KEYWORDS = [
   "EduTech ",
@@ -91,6 +95,16 @@ function getSeoConfig(pathname, language) {
         ? "لیست دوره‌های زنده ایجوتک را ببینید، دوره مناسب خود را پیدا کنید و یادگیری را همین امروز شروع کنید."
         : "Explore EduTech live courses, compare options, and start learning with real-time classes.",
       keywords: ["course catalog", "live course", "دوره زنده", "کلاس زنده"],
+    },
+    {
+      match: /^\/live-courses\/category\/[^/]+\/?$/,
+      title: isFa
+        ? "دسته‌بندی دوره‌ها | ایجوتک آکادمی"
+        : "Course Category | EduTech Academy",
+      description: isFa
+        ? "دوره‌های زنده ایجوتک را بر اساس موضوع، سطح و زبان آموزشی پیدا کنید."
+        : "Browse EduTech live courses by subject, level, and teaching language.",
+      keywords: ["course category", "دسته‌بندی دوره", "موضوعات آموزشی"],
     },
     {
       match: /^\/course\/[^/]+\/?$/,
@@ -199,7 +213,17 @@ function getSeoConfig(pathname, language) {
       shouldIndex: false,
     },
     {
-      match: /^\/payment\/(success|failure)\/?$/,
+      match: /^\/verify\/?$/,
+      title: isFa
+        ? "بررسی اعتبار سرتیفیکیت | ایجوتک"
+        : "Verify a Certificate | EduTech Academy",
+      description: isFa
+        ? "اعتبار سرتیفیکیت صادرشده توسط ایجوتک را با شناسه آن بررسی کنید."
+        : "Verify the authenticity of a certificate issued by EduTech Academy.",
+      keywords: ["certificate verification", "بررسی سرتیفیکیت"],
+    },
+    {
+      match: /^\/payment\/(success|failure|crypto)\/?$/,
       title: isFa ? "پرداخت | ایجوتک" : "Payment | EduTech",
       description: isFa
         ? "وضعیت پرداخت شما در ایجوتک ثبت شد."
@@ -225,11 +249,13 @@ function getSeoConfig(pathname, language) {
 
   return {
     ...shared,
-    title: isFa ? "ایجوتک آکادمی" : "EduTech Academy",
+    title: isFa ? "صفحه یافت نشد | ایجوتک" : "Page Not Found | EduTech",
     description: isFa
-      ? "ایجوتک آکادمی آموزش آنلاین با دوره‌های زنده و تعاملی."
-      : "EduTech Academy with live and interactive online courses.",
-    keywords: ["academy", "online learning", "آموزش آنلاین"],
+      ? "این صفحه در وب‌سایت ایجوتک وجود ندارد یا منتقل شده است."
+      : "This page does not exist or has moved on the EduTech website.",
+    keywords: [],
+    robots: "noindex, nofollow",
+    shouldIndex: false,
   };
 }
 
@@ -267,14 +293,28 @@ function setLinkRel(rel, href, hreflang) {
   tag.setAttribute("href", href);
 }
 
-export default function useSeo({ pathname, language }) {
-  useEffect(() => {
+function removeLanguageAlternates() {
+  document.head
+    .querySelectorAll('link[rel="alternate"][hreflang]')
+    .forEach((tag) => tag.remove());
+}
+
+export function applySeo({
+  pathname,
+  language,
+  overrides = {},
+  additionalStructuredData = [],
+}) {
     const siteUrl = normalizeSiteUrl(import.meta.env.VITE_SITE_URL);
-    const config = getSeoConfig(pathname, language);
-    const canonicalUrl = ensureAbsoluteUrl(pathname || "/", siteUrl);
+    const config = { ...getSeoConfig(pathname, language), ...overrides };
+    const canonicalPath = config.canonicalPath || pathname || "/";
+    const canonicalUrl = ensureAbsoluteUrl(canonicalPath, siteUrl);
     const ogImage = ensureAbsoluteUrl(config.image, siteUrl);
     const locale = language === "fa" ? "fa_IR" : "en_US";
-    const keywords = [...BASE_KEYWORDS, ...(config.keywords || [])].join(", ");
+    const keywords = [...new Set([...BASE_KEYWORDS, ...(config.keywords || [])])]
+      .map((keyword) => String(keyword || "").trim())
+      .filter(Boolean)
+      .join(", ");
 
     document.title = config.title;
 
@@ -300,6 +340,10 @@ export default function useSeo({ pathname, language }) {
     );
     getOrCreateMetaByProperty("og:locale").setAttribute("content", locale);
     getOrCreateMetaByProperty("og:image").setAttribute("content", ogImage);
+    getOrCreateMetaByProperty("og:image:alt").setAttribute(
+      "content",
+      config.imageAlt || config.title,
+    );
 
     getOrCreateMetaByName("twitter:card").setAttribute(
       "content",
@@ -314,11 +358,13 @@ export default function useSeo({ pathname, language }) {
       config.description,
     );
     getOrCreateMetaByName("twitter:image").setAttribute("content", ogImage);
+    getOrCreateMetaByName("twitter:image:alt").setAttribute(
+      "content",
+      config.imageAlt || config.title,
+    );
 
     setLinkRel("canonical", canonicalUrl);
-    setLinkRel("alternate", canonicalUrl, "en");
-    setLinkRel("alternate", canonicalUrl, "fa");
-    setLinkRel("alternate", canonicalUrl, "x-default");
+    removeLanguageAlternates();
 
     let structuredDataTag = document.getElementById("edutech-structured-data");
     if (!structuredDataTag) {
@@ -346,6 +392,7 @@ export default function useSeo({ pathname, language }) {
           ],
           url: siteUrl,
           logo: ensureAbsoluteUrl("/logo.png", siteUrl),
+          sameAs: OFFICIAL_SOCIAL_URLS,
         },
         {
           "@type": "EducationalOrganization",
@@ -360,6 +407,7 @@ export default function useSeo({ pathname, language }) {
           url: siteUrl,
           inLanguage: ["en", "fa"],
           keywords: BASE_KEYWORDS.join(", "),
+          sameAs: OFFICIAL_SOCIAL_URLS,
         },
         {
           "@type": "WebSite",
@@ -368,11 +416,6 @@ export default function useSeo({ pathname, language }) {
           name: SITE_NAME_EN,
           inLanguage: ["en", "fa"],
           publisher: { "@id": `${siteUrl}/#organization` },
-          potentialAction: {
-            "@type": "SearchAction",
-            target: `${siteUrl}/live-courses?search={search_term_string}`,
-            "query-input": "required name=search_term_string",
-          },
         },
         {
           "@type": "WebPage",
@@ -390,8 +433,17 @@ export default function useSeo({ pathname, language }) {
       structuredData["@graph"] = structuredData["@graph"].filter(
         (item) => item["@type"] !== "WebPage",
       );
+    } else {
+      structuredData["@graph"].push(
+        ...additionalStructuredData.filter(Boolean),
+      );
     }
 
     structuredDataTag.textContent = JSON.stringify(structuredData);
+}
+
+export default function useSeo({ pathname, language }) {
+  useEffect(() => {
+    applySeo({ pathname, language });
   }, [language, pathname]);
 }

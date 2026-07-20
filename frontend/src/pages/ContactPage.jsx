@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import FAQAccordion from "../components/FAQAccordion.jsx";
 import CTASection from "../components/CTASection.jsx";
+import SocialBrandIcon from "../components/SocialBrandIcon.jsx";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http";
 import { getAuthUser } from "../../services/portal";
 
@@ -186,6 +187,7 @@ const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}`;
 const CONTACT_EMAIL = "info@edutech.study";
 const WHATSAPP_CHANNEL_URL = "https://whatsapp.com/channel/0029Vb6syw8CRs1pexVczE0A";
 const TELEGRAM_CHANNEL_URL = "https://t.me/edutech_main";
+const INSTAGRAM_URL = "https://www.instagram.com/edutech_main/";
 const LINKEDIN_URL = "https://www.linkedin.com/in/edu-tech-976697401/";
 const FACEBOOK_URL = "https://www.facebook.com/profile.php?id=61582246301198";
 const disableLinkClick = (event) => {
@@ -582,6 +584,12 @@ export default function ContactPage({ language = "fa" }) {
                     href: TELEGRAM_CHANNEL_URL,
                     label: "Telegram",
                     icon: <TelegramIcon className="text-sky-500" />,
+                    disabled: false,
+                  },
+                  {
+                    href: INSTAGRAM_URL,
+                    label: "Instagram",
+                    icon: <SocialBrandIcon brand="instagram" size={20} className="text-pink-600" />,
                     disabled: false,
                   },
                   {

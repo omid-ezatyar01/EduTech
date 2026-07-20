@@ -20,7 +20,7 @@ import {
   writeTeacherPageCache,
 } from "../utils/teacherPageCache";
 
-const STUDENT_AVATAR_FALLBACK = "/logo-en.png";
+const STUDENT_AVATAR_FALLBACK = "/logo.png";
 
 const resolveAssetUrl = (rawPath = "") => {
   const value = String(rawPath || "").trim();

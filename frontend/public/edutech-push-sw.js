@@ -33,8 +33,8 @@ self.addEventListener("push", (event) => {
 
   const options = {
     body,
-    icon: data.icon || "/icons/android-chrome-192x192.png",
-    badge: data.badge || "/icons/favicon-32x32.png",
+    icon: data.icon || "/icons/web-app-manifest-192x192.png",
+    badge: data.badge || "/icons/favicon-96x96.png",
     data: {
       url: resolveTargetUrl(),
       type: notificationType,

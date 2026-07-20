@@ -10,7 +10,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { resolveAvatarUrl } from "../utils/avatar";
 
-const COURSE_IMAGE_FALLBACK = "/logo-en.png";
+const COURSE_IMAGE_FALLBACK = "/logo.png";
 
 function getInitials(value = "") {
   const words = String(value)

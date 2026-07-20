@@ -81,7 +81,7 @@ export default function Header({
   const headerRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const logoSrc = t.meta.dir === "ltr" ? "/logo-en.png" : "/logo.png";
+  const logoSrc = "/logo.png";
 
   useEffect(() => {
     const handleAuthChange = () => {

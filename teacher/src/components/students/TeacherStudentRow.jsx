@@ -6,7 +6,7 @@ const statusBadgeStyles = {
   excellent: "bg-[#EDE9FE] text-[#8B5CF6]",
   low_attendance: "bg-[#FEE2E2] text-[#EF4444]",
 };
-const STUDENT_AVATAR_FALLBACK = "/logo-en.png";
+const STUDENT_AVATAR_FALLBACK = "/logo.png";
 
 export default function TeacherStudentRow({
   student,

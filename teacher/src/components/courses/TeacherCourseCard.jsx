@@ -1,7 +1,7 @@
 import { Ban, Edit3, Eye, PlayCircle, Send } from "lucide-react";
 import { formatProgressLabel } from "../../utils/courseProgress";
 
-const COURSE_IMAGE_FALLBACK = "/logo-en.png";
+const COURSE_IMAGE_FALLBACK = "/logo.png";
 
 function Thumbnail({ src, type, title }) {
   const map = {
