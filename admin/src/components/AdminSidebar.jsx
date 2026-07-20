@@ -12,6 +12,7 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  Clapperboard,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -23,6 +24,7 @@ const menuItems = [
   { key: "certificates", icon: Award, path: "/certificates" },
   { key: "courses", icon: BookOpen, path: "/courses" },
   { key: "categories", icon: Layers, path: "/categories" },
+  { key: "videos", icon: Clapperboard, path: "/videos" },
   { key: "payments", icon: CreditCard, path: "/payments" },
   { key: "teacherIncome", icon: Wallet, path: "/teacher-income" },
   { key: "coupons", icon: Ticket, path: "/coupons" },

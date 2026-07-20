@@ -150,6 +150,14 @@ function getSeoConfig(pathname, language) {
       keywords: ["learning roadmaps", "course path", "نقشه راه یادگیری", "مسیر کورس"],
     },
     {
+      match: /^\/videos\/?$/,
+      title: isFa ? "ویدیوهای آموزشی | ایجوتک آکادمی" : "Learning Videos | EduTech Academy",
+      description: isFa
+        ? "ویدیوهای آموزشی، نکته‌های کوتاه و محتوای تازه ایجوتک را از یوتیوب و اینستاگرام تماشا کنید."
+        : "Watch EduTech lessons, quick learning tips, and fresh videos from YouTube and Instagram.",
+      keywords: ["learning videos", "educational videos", "ویدیو آموزشی", "آموزش ویدیویی"],
+    },
+    {
       match: /^\/blog\/english\/?$/,
       title: isFa
         ? "نقشه راه یادگیری انگلیسی | ایجوتک آکادمی"

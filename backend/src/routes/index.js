@@ -18,6 +18,8 @@ import pushSubscriptionRoutes from "./pushSubscription.routes.js";
 import courseRatingRoutes from "./courseRating.routes.js";
 import sharePreviewRoutes from "./sharePreview.routes.js";
 import aiChatRoutes from "./aiChat.routes.js";
+import videoRoutes from "./video.routes.js";
+import teacherFollowRoutes from "./teacherFollow.routes.js";
 
 const router = express.Router();
 
@@ -40,5 +42,7 @@ router.use("/", sharePreviewRoutes);
 router.use("/", paymentRoutes);
 router.use("/", contactMessageRoutes);
 router.use("/", aiChatRoutes);
+router.use("/", videoRoutes);
+router.use("/", teacherFollowRoutes);
 
 export default router;

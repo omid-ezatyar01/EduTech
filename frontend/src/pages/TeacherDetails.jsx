@@ -30,6 +30,9 @@ import {
   isUnauthorizedError,
 } from "../../services/http.js";
 import { applySeo } from "../seo/useSeo.js";
+import { getToken } from "../../services/portal.js";
+import { fetchTeacherFollowStatus, followTeacher, unfollowTeacher } from "../../services/teacherSocialService.js";
+import { enableEduTechPushNotifications } from "../../services/pushNotifications.js";
 
 const PANEL_COLLAPSED_HEIGHT = 580;
 
@@ -509,6 +512,9 @@ export default function TeacherDetails({ language = "fa" }) {
   const [notFound, setNotFound] = useState(false);
   const [enrolledCourseIds, setEnrolledCourseIds] = useState(() => new Set());
   const [sectionRowNav, setSectionRowNav] = useState({});
+  const [following, setFollowing] = useState(false);
+  const [followerCount, setFollowerCount] = useState(null);
+  const [followBusy, setFollowBusy] = useState(false);
   const panelRefs = useRef({});
   const sectionRowRefs = useRef({});
   const courseCardLabels = useMemo(
@@ -582,6 +588,36 @@ export default function TeacherDetails({ language = "fa" }) {
       mounted = false;
     };
   }, [id, navigate, teacherIdParam, isFa]);
+
+  useEffect(() => {
+    if (!teacher?._id || !getToken()) return undefined;
+    let active = true;
+    fetchTeacherFollowStatus(teacher._id).then((status) => {
+      if (!active) return;
+      setFollowing(Boolean(status.following));
+      setFollowerCount(Number(status.followerCount || 0));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [teacher?._id, teacher?.followerCount]);
+
+  const handleToggleFollow = async () => {
+    if (!getToken()) { navigate("/login"); return; }
+    if (!teacher?._id || followBusy) return;
+    if (!following) {
+      const message = isFa
+        ? "با دنبال کردن این استاد، هنگام انتشار ویدیوی جدید از او اعلان دریافت می‌کنید. آیا می‌خواهید ادامه دهید؟"
+        : "By following this teacher, you will receive notifications when they publish a new video. Do you want to continue?";
+      if (!window.confirm(message)) return;
+    }
+    setFollowBusy(true);
+    try {
+      if (!following) await enableEduTechPushNotifications({ forcePrompt: true }).catch(() => false);
+      const status = following ? await unfollowTeacher(teacher._id) : await followTeacher(teacher._id);
+      setFollowing(Boolean(status.following));
+      setFollowerCount(Number(status.followerCount || 0));
+    } catch (err) { setError(err.message || (isFa ? "درخواست انجام نشد." : "Request failed.")); }
+    finally { setFollowBusy(false); }
+  };
 
   useEffect(() => {
     if (loading) return undefined;
@@ -1273,7 +1309,7 @@ export default function TeacherDetails({ language = "fa" }) {
           })}
         </nav>
 
-        <TeacherHero data={data.hero} dir={dir} />
+        <TeacherHero data={data.hero} dir={dir} following={following} followerCount={followerCount ?? Number(teacher?.followerCount || 0)} followBusy={followBusy} onToggleFollow={handleToggleFollow} />
 
         {introVideoUrl ? (
           <section className="mt-6 overflow-hidden rounded-[28px] border border-primary-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)]">

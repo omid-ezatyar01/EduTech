@@ -4,6 +4,7 @@ import Enrollment from "../models/Enrollment.js";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
+import TeacherFollow from "../models/TeacherFollow.js";
 import { getPlatformPricingSettings, resolveCourseDisplayPricing } from "../utils/platformSettings.js";
 import {
   getCourseRatingAggregates,
@@ -83,6 +84,7 @@ const mapTeacherRow = ({
   courses = [],
   enrollmentCounts = new Map(),
   teacherRatingMap = new Map(),
+  followerCount = 0,
 }) => {
   const publishedCoursesCount = courses.length;
   const totalStudents = courses.reduce(
@@ -123,6 +125,7 @@ const mapTeacherRow = ({
     totalStudents,
     rating: ratingStats.rating,
     ratingCount: ratingStats.ratingCount,
+    followerCount: Number(followerCount || 0),
     tags,
   };
 };
@@ -328,16 +331,22 @@ export const getPublicTeachers = asyncHandler(async (req, res) => {
       .find((id) => teacherIdSet.has(id));
     if (ownerId) coursesByTeacher.get(ownerId)?.push(course);
   });
-  const [enrollmentCounts, teacherRatingMap] = await Promise.all([
+  const [enrollmentCounts, teacherRatingMap, followerRows] = await Promise.all([
     getActiveEnrollmentCountsByCourse(publishedCourses.map((course) => course._id)),
     getTeacherRatingAggregates(teacherIds),
+    TeacherFollow.aggregate([
+      { $match: { teacher: { $in: teacherIds } } },
+      { $group: { _id: "$teacher", count: { $sum: 1 } } },
+    ]),
   ]);
+  const followerCountMap = new Map(followerRows.map((row) => [String(row._id), Number(row.count || 0)]));
   const rows = teachers.map((teacher) =>
     mapTeacherRow({
       teacher,
       courses: coursesByTeacher.get(String(teacher._id)) || [],
       enrollmentCounts,
       teacherRatingMap,
+      followerCount: followerCountMap.get(String(teacher._id)) || 0,
     }),
   );
 
@@ -388,7 +397,7 @@ export const getPublicTeacherById = asyncHandler(async (req, res) => {
   const filter = buildTeacherCourseFilter(teacher._id);
   const endedFilter = buildTeacherEndedCourseFilter(teacher._id);
 
-  const [publishedCoursesCount, courses, endedCourses, allCourseIds, pricingSettings] = await Promise.all([
+  const [publishedCoursesCount, courses, endedCourses, allCourseIds, pricingSettings, followerCount] = await Promise.all([
     Course.countDocuments(filter),
     Course.find(filter)
       .select(
@@ -404,6 +413,7 @@ export const getPublicTeacherById = asyncHandler(async (req, res) => {
       .limit(6),
     Course.find(filter).distinct("_id"),
     getPlatformPricingSettings(),
+    TeacherFollow.countDocuments({ teacher: teacher._id }),
   ]);
 
   const activeCourseIds = courses.map((course) => course._id);
@@ -473,6 +483,7 @@ export const getPublicTeacherById = asyncHandler(async (req, res) => {
         totalStudents,
         rating: teacherRatingStats.rating,
         ratingCount: teacherRatingStats.ratingCount,
+        followerCount,
         tags,
         reviews,
         publishedCourses: mappedCourses,

@@ -34,6 +34,7 @@ export const adminTranslations = {
         certificates: "سرتیفیکیت‌ها",
         courses: "کورس‌ها",
         categories: "دسته‌بندی‌ها",
+        videos: "ویدیوها",
         payments: "پرداخت‌ها",
         teacherIncome: "درآمد مدرسان",
         coupons: "کوپن‌ها",
@@ -71,6 +72,10 @@ export const adminTranslations = {
         title: "دسته‌بندی‌ها",
         subtitle: "مدیریت و مشاهده دسته‌بندی کورس‌ها",
         addButton: "افزودن دسته‌بندی جدید",
+      },
+      videos: {
+        title: "ویدیوها",
+        subtitle: "مدیریت ویدیوهای یوتیوب و اینستاگرام",
       },
       payments: {
         title: "پرداخت‌ها",
@@ -139,6 +144,7 @@ export const adminTranslations = {
         certificates: "Certificates",
         courses: "Courses",
         categories: "Categories",
+        videos: "Videos",
         payments: "Payments",
         teacherIncome: "Teacher Income",
         coupons: "Coupons",
@@ -176,6 +182,10 @@ export const adminTranslations = {
         title: "Categories",
         subtitle: "Manage and view course categories",
         addButton: "Add New Category",
+      },
+      videos: {
+        title: "Videos",
+        subtitle: "Manage YouTube and Instagram videos",
       },
       payments: {
         title: "Payments",

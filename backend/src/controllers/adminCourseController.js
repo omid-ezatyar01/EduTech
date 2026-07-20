@@ -20,6 +20,7 @@ import {
 } from "../utils/courseCategory.js";
 import { normalizeTeacherCourseDiscountPercentage } from "../utils/platformSettings.js";
 import { finalizeCourseEnd } from "../services/courseCompletion.service.js";
+import { publishTeacherActivity } from "../services/teacherActivity.service.js";
 
 const buildSort = ({ sortBy = "newest", sortOrder = "desc" }) => {
   if (sortBy === "price") return { price: sortOrder === "asc" ? 1 : -1 };
@@ -437,6 +438,17 @@ export const publishCourse = asyncHandler(async (req, res) => {
       notificationAudience: req.body?.notificationAudience || "all",
       notificationChannels: req.body?.notificationChannels || {},
     });
+    const teacherId = course.teacher || course.teacherId || course.createdBy;
+    if (teacherId) {
+      await publishTeacherActivity({
+        teacherId,
+        type: "teacher_course",
+        title: "A teacher you follow published a new course",
+        body: course.title,
+        url: `/course/${course.slug || course._id}`,
+        eventKey: `course:${course._id}`,
+      }).catch((error) => console.warn(`Failed to notify course followers: ${error.message}`));
+    }
   }
 
   return res.json(

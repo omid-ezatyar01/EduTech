@@ -51,6 +51,40 @@ const buildStudentCertificatesUrl = () => {
   return `${getPublicSiteOrigin()}/student/certificates`;
 };
 
+export const notifyTeacherFollowers = async ({
+  followerIds = [], teacherId, type, title, body = "", url = "/videos",
+} = {}) => {
+  if (!followerIds.length) return { sent: 0, failed: 0 };
+  if (!configureWebPush()) return { skipped: true, reason: "web_push_not_configured" };
+
+  const recipients = await PushSubscription.find({
+    role: "student",
+    app: "student",
+    userId: { $in: followerIds },
+  }).lean();
+  if (!recipients.length) return { sent: 0, failed: 0 };
+
+  const destination = /^https?:\/\//i.test(String(url || ""))
+    ? String(url)
+    : `${getPublicSiteOrigin()}${String(url || "/videos").startsWith("/") ? url : `/${url}`}`;
+  const payload = {
+    type, title, body,
+    icon: "/icons/web-app-manifest-192x192.png",
+    badge: "/icons/favicon-96x96.png",
+    url: destination,
+    teacherId: String(teacherId || ""),
+  };
+
+  let sent = 0;
+  let failed = 0;
+  for (let index = 0; index < recipients.length; index += 50) {
+    const results = await Promise.all(recipients.slice(index, index + 50).map((row) => sendToSubscription(row, payload)));
+    sent += results.filter((result) => result.ok).length;
+    failed += results.filter((result) => !result.ok).length;
+  }
+  return { sent, failed };
+};
+
 const getTeacherSiteOrigin = () => {
   const explicit = String(
     process.env.TEACHER_CLIENT_URL ||

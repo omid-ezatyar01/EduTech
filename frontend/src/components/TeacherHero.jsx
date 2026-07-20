@@ -3,6 +3,8 @@ import {
   AtSign,
   Send,
   Share2,
+  Bell,
+  BellRing,
 } from "lucide-react";
 import SocialBrandIcon from "./SocialBrandIcon.jsx";
 import { resolveAvatarUrl } from "../utils/avatar";
@@ -37,7 +39,7 @@ const resolveSocialHref = (platform, rawValue) => {
   }
 };
 
-export default function TeacherHero({ data, dir }) {
+export default function TeacherHero({ data, dir, following = false, followerCount = 0, followBusy = false, onToggleFollow }) {
   const [failedAvatarKey, setFailedAvatarKey] = useState("");
   const isRtl = dir === "rtl";
   const teacherAvatar = resolveAvatarUrl(data?.avatar || "");
@@ -87,6 +89,16 @@ export default function TeacherHero({ data, dir }) {
             {data.bio}
           </p>
           <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
+            <button
+              type="button"
+              onClick={onToggleFollow}
+              disabled={followBusy}
+              className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-black shadow-sm transition sm:w-auto ${following ? "border border-primary-200 bg-white text-primary-700 hover:bg-primary-50" : "bg-primary-600 text-white hover:bg-primary-700"} disabled:opacity-60`}
+            >
+              {following ? <BellRing size={17}/> : <Bell size={17}/>}
+              {following ? (isRtl ? "دنبال می‌کنید" : "Following") : (isRtl ? "دنبال کردن" : "Follow")}
+              <span className="rounded-full bg-current/10 px-2 py-0.5 text-xs">{Number(followerCount || 0).toLocaleString(isRtl ? "fa-AF" : "en-US")}</span>
+            </button>
             {socialItems.length ? (
               <div className="inline-grid grid-flow-col auto-cols-[2.5rem] items-center gap-2 rounded-2xl border border-white/90 bg-white/80 p-2 shadow-sm backdrop-blur">
                 {socialItems.map((item) => {

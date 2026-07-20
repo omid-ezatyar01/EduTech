@@ -16,6 +16,7 @@ const loadTeacherResources = () => import("../pages/TeacherResources");
 const loadTeacherIncome = () => import("../pages/TeacherIncome");
 const loadTeacherProfile = () => import("../pages/TeacherProfile");
 const loadTeacherSettings = () => import("../pages/TeacherSettings");
+const loadTeacherVideos = () => import("../pages/TeacherVideos");
 const loadTeacherPasswordRecovery = () => import("../auth/TeacherPasswordRecovery");
 
 const TeacherLogin = lazy(loadTeacherLogin);
@@ -30,6 +31,7 @@ const TeacherResources = lazy(loadTeacherResources);
 const TeacherIncome = lazy(loadTeacherIncome);
 const TeacherProfile = lazy(loadTeacherProfile);
 const TeacherSettings = lazy(loadTeacherSettings);
+const TeacherVideos = lazy(loadTeacherVideos);
 const TeacherPasswordRecovery = lazy(loadTeacherPasswordRecovery);
 
 const preloadRoutes = [
@@ -57,6 +59,7 @@ const preloadRoutes = [
   { key: "income", test: (path) => path === "/teacher/income", load: loadTeacherIncome },
   { key: "profile", test: (path) => path === "/teacher/profile", load: loadTeacherProfile },
   { key: "settings", test: (path) => path === "/teacher/settings", load: loadTeacherSettings },
+  { key: "videos", test: (path) => path === "/teacher/videos", load: loadTeacherVideos },
   {
     key: "password-recovery",
     test: (path) =>
@@ -256,6 +259,10 @@ export default function TeacherRoutes() {
                 <TeacherProfile />
               </TeacherProtectedRoute>
             }
+          />
+          <Route
+            path="/teacher/videos"
+            element={<TeacherProtectedRoute><TeacherVideos /></TeacherProtectedRoute>}
           />
           <Route
             path="/teacher/settings"

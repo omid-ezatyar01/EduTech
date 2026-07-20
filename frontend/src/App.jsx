@@ -37,6 +37,7 @@ const loadPrivacyPolicyPage = () => import("./pages/PrivacyPolicyPage.jsx");
 const loadTermsPage = () => import("./pages/TermsPage.jsx");
 const loadBlogPage = () => import("./pages/BlogPage.jsx");
 const loadEnglishRoadmapPage = () => import("./pages/EnglishRoadmapPage.jsx");
+const loadVideosPage = () => import("./pages/VideosPage.jsx");
 
 const HomePage = lazy(loadHomePage);
 const LiveCoursesPage = lazy(loadLiveCoursesPage);
@@ -57,6 +58,7 @@ const PrivacyPolicyPage = lazy(loadPrivacyPolicyPage);
 const TermsPage = lazy(loadTermsPage);
 const BlogPage = lazy(loadBlogPage);
 const EnglishRoadmapPage = lazy(loadEnglishRoadmapPage);
+const VideosPage = lazy(loadVideosPage);
 
 // Student Dashboard Components
 const loadMyCourses = () => import("./components/MyCourses.jsx");
@@ -99,6 +101,7 @@ const preloadRoutes = [
   { key: "about", test: (path) => path === "/about", load: loadAboutPage },
   { key: "contact", test: (path) => path === "/contact", load: loadContactPage },
   { key: "blog", test: (path) => path === "/blog", load: loadBlogPage },
+  { key: "videos", test: (path) => path === "/videos", load: loadVideosPage },
   { key: "english-roadmap", test: (path) => path === "/blog/english", load: loadEnglishRoadmapPage },
   { key: "verify", test: (path) => path === "/verify", load: loadVerifyCertificatePage },
   { key: "privacy-policy", test: (path) => path === "/privacy-policy", load: loadPrivacyPolicyPage },
@@ -248,7 +251,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    enableEduTechPushNotifications().catch((error) => {
+    enableEduTechPushNotifications({ promptIfNeeded: false }).catch((error) => {
       console.warn(`EduTech push notification setup failed: ${error.message}`);
     });
   }, [isAuthenticated]);
@@ -344,6 +347,7 @@ export default function App() {
   else if (path === "/about") activeHref = "/about";
   else if (path === "/contact") activeHref = "/contact";
   else if (path.startsWith("/blog")) activeHref = "/blog";
+  else if (path === "/videos") activeHref = "/videos";
 
   return (
     <RegionalPricingProvider>
@@ -387,6 +391,7 @@ export default function App() {
               element={<ContactPage language={language} />}
             />
             <Route path="/blog" element={<BlogPage language={language} />} />
+            <Route path="/videos" element={<VideosPage language={language} />} />
             <Route
               path="/blog/english"
               element={<EnglishRoadmapPage language={language} />}

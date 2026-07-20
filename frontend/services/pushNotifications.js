@@ -34,24 +34,25 @@ export const enableCoursePushNotifications = async () => {
   return enableEduTechPushNotifications();
 };
 
-export const enableEduTechPushNotifications = async () => {
+export const enableEduTechPushNotifications = async ({ forcePrompt = false, promptIfNeeded = true } = {}) => {
   if (typeof window === "undefined") return false;
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
     return false;
   }
 
-  const publicKey = await fetchVapidPublicKey();
-  if (!publicKey) return false;
-
   let permission = Notification.permission;
   if (permission === "default") {
-    if (localStorage.getItem(PROMPTED_KEY) === "true") return false;
+    if (!promptIfNeeded) return false;
+    if (!forcePrompt && localStorage.getItem(PROMPTED_KEY) === "true") return false;
     localStorage.setItem(PROMPTED_KEY, "true");
     permission = await Notification.requestPermission();
   }
   if (permission !== "granted") return false;
 
-  const registration = await navigator.serviceWorker.register("/edutech-push-sw.js");
+  const publicKey = await fetchVapidPublicKey();
+  if (!publicKey) return false;
+
+  await navigator.serviceWorker.register("/edutech-push-sw.js");
   const readyRegistration = await navigator.serviceWorker.ready;
   const existingSubscription = await readyRegistration.pushManager.getSubscription();
   const subscription =
