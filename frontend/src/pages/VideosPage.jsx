@@ -30,8 +30,18 @@ const trustedEmbed = (value) => {
   } catch { return ""; }
 };
 
-const VideoPreview = ({ embedUrl, title }) => {
+const VideoPreview = ({ active, embedUrl, onActivate, playLabel, thumbnailUrl, title }) => {
   const [loaded, setLoaded] = useState(false);
+
+  if (!active) {
+    return <div className="relative h-full w-full bg-gradient-to-br from-white via-blue-50 to-cyan-50">
+      <img src="/logo.png" alt="" className="absolute inset-0 m-auto w-[72%] max-w-sm object-contain"/>
+      {thumbnailUrl ? <img src={thumbnailUrl} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = "none"; }} className="absolute inset-0 h-full w-full object-cover"/> : null}
+      {embedUrl ? <button type="button" onClick={onActivate} aria-label={`${playLabel}: ${title}`} className="absolute inset-0 z-10 grid place-items-center bg-slate-950/10 transition hover:bg-slate-950/25 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-blue-500">
+        <span className="grid h-16 w-16 place-items-center rounded-full bg-white/95 text-blue-700 shadow-xl transition duration-300 hover:scale-110"><Play size={28} fill="currentColor"/></span>
+      </button> : null}
+    </div>;
+  }
 
   return <div className="relative h-full w-full bg-white">
     <div className={`pointer-events-none absolute inset-0 z-10 grid place-items-center bg-gradient-to-br from-white via-blue-50 to-cyan-50 transition-opacity duration-500 ${loaded ? "opacity-0" : "opacity-100"}`} aria-hidden="true">
@@ -54,6 +64,7 @@ export default function VideosPage({ language = "fa" }) {
   const [likedIds, setLikedIds] = useState(() => new Set());
   const [followingByTeacher, setFollowingByTeacher] = useState({});
   const [busyKey, setBusyKey] = useState("");
+  const [activeVideoId, setActiveVideoId] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const loadMoreRef = useRef(null);
 
@@ -71,7 +82,7 @@ export default function VideosPage({ language = "fa" }) {
   }, []);
 
   const load = async () => {
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setActiveVideoId("");
     try {
       const result = await fetchPublicVideos({ platform: filter, page: 1, limit: PAGE_SIZE });
       setFeeds((previous) => ({ ...previous, [filter]: { videos: result.videos, meta: result.meta, loaded: true } }));
@@ -97,7 +108,7 @@ export default function VideosPage({ language = "fa" }) {
   const filters = [["all", Video], ["youtube", Video], ["instagram", Video]];
 
   const selectPlatform = async (platform) => {
-    setFilter(platform); setError("");
+    setFilter(platform); setError(""); setActiveVideoId("");
     if (feeds[platform].loaded) return;
     setLoading(true);
     try {
@@ -190,7 +201,15 @@ export default function VideosPage({ language = "fa" }) {
               const isFollowing = Boolean(followingByTeacher[teacherId]);
               return <article key={item._id} className="group flex h-full min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.06)] transition duration-300 hover:-translate-y-1.5 hover:border-blue-200 hover:shadow-[0_22px_50px_rgba(37,99,235,0.14)]">
                 <div className="relative aspect-[4/3] shrink-0 overflow-hidden bg-slate-950">
-                  <VideoPreview key={embedUrl || item._id} embedUrl={embedUrl} title={item.title}/>
+                  <VideoPreview
+                    key={`${item._id}:${activeVideoId === item._id ? "active" : "cover"}`}
+                    active={activeVideoId === item._id}
+                    embedUrl={embedUrl}
+                    onActivate={() => setActiveVideoId(item._id)}
+                    playLabel={text.watch}
+                    thumbnailUrl={item.thumbnailUrl}
+                    title={item.title}
+                  />
                 </div>
                 <div className="flex flex-1 flex-col p-5 sm:p-6">
                   <div className="flex items-center justify-between gap-3">
