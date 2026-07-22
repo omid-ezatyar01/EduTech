@@ -72,7 +72,7 @@ const copy = {
     watch: "تماشای ویدیو",
     likes: "پسند",
     articlesBadge: "مجله آموزشی",
-    articlesTitle: "تازه‌ترین مقاله‌ها",
+    articlesTitle: "مقاله‌های برتر",
     articlesText: "راهنماها و ایده‌هایی برای اینکه بهتر و هدفمندتر یاد بگیرید.",
     allArticles: "مشاهده همه مقاله‌ها",
     read: "مطالعه مقاله",
@@ -82,6 +82,7 @@ const copy = {
     retry: "تلاش دوباره",
     loading: "در حال آماده‌سازی صفحه اصلی",
     noCourses: "در حال حاضر هیچ کورسی موجود نیست.",
+    rank: "رتبه",
   },
   en: {
     watchVideos: "Watch videos",
@@ -116,7 +117,7 @@ const copy = {
     watch: "Watch video",
     likes: "likes",
     articlesBadge: "Learning journal",
-    articlesTitle: "Latest articles",
+    articlesTitle: "Top articles",
     articlesText: "Guides and ideas that help you learn better and with more purpose.",
     allArticles: "View all articles",
     read: "Read article",
@@ -126,6 +127,7 @@ const copy = {
     retry: "Try again",
     loading: "Preparing the homepage",
     noCourses: "There are no available courses right now.",
+    rank: "Rank",
   },
 };
 
@@ -168,6 +170,56 @@ const buildEnrolledCourseIdSet = (rows = []) => new Set(
     .map(String),
 );
 
+const numericValue = (value) => Number(value || 0);
+const dateValue = (value) => {
+  const timestamp = new Date(value || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+const stableId = (item) => String(item?._id || item?.id || item?.slug || "");
+const compareRankFields = (left, right, fields) => {
+  for (const field of fields) {
+    const difference = numericValue(field(right)) - numericValue(field(left));
+    if (difference) return difference;
+  }
+  return stableId(left).localeCompare(stableId(right));
+};
+
+const rankCourses = (rows = []) => [...rows].sort((left, right) => compareRankFields(left, right, [
+  (item) => item.homeRank,
+  (item) => item.courseType === "special" ? 1 : 0,
+  (item) => item.enrolledStudentsCount,
+  (item) => item.rating,
+  (item) => item.ratingCount,
+  (item) => dateValue(item.createdAt),
+]));
+
+const rankTeachers = (rows = []) => [...rows].sort((left, right) => compareRankFields(left, right, [
+  (item) => item.homeRank,
+  (item) => item.totalStudents,
+  (item) => item.followerCount,
+  (item) => item.rating,
+  (item) => item.publishedCoursesCount,
+  (item) => item?.teacherApplication?.yearsExperience,
+  (item) => dateValue(item.createdAt),
+]));
+
+const rankVideos = (rows = []) => [...rows].sort((left, right) => compareRankFields(left, right, [
+  (item) => item.homeRank,
+  (item) => item.likeCount,
+  (item) => dateValue(item.createdAt),
+]));
+
+const rankArticles = (rows = []) => [...rows].sort((left, right) => compareRankFields(left, right, [
+  (item) => item.homeRank,
+  (item) => item.featured ? 1 : 0,
+  (item) => item.viewCount,
+  (item) => dateValue(item.publishedAt || item.createdAt),
+]));
+
+function RankBadge({ index, page }) {
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-black shadow-sm ${index === 0 ? "bg-amber-400 text-amber-950" : index < 3 ? "bg-primary-600 text-white" : "bg-white/95 text-slate-600"}`}>{page.rank} #{index + 1}</span>;
+}
+
 function ViewAllLink({ children, isRTL, to }) {
   const Arrow = isRTL ? ArrowLeft : ArrowRight;
   return (
@@ -190,10 +242,11 @@ function ContentHeading({ badge, title, text, action }) {
   );
 }
 
-function TeacherCard({ teacher, page, numberFormatter }) {
+function TeacherCard({ teacher, page, numberFormatter, rank }) {
   const professionalTitle = teacher?.teacherApplication?.professionalTitle || teacher?.teacherApplication?.expertiseAreas?.[0] || "EduTech";
   return (
     <Link to={buildTeacherPath(teacher)} className="group flex h-full flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:border-primary-200 hover:shadow-xl">
+      <div className="mb-4"><RankBadge index={rank} page={page} /></div>
       <div className="flex items-center gap-4">
         <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-primary-50 to-teal-50 p-1">
           <img src={teacher.avatar || "/logo.png"} alt={teacher.name || "EduTech"} loading="lazy" onError={(event) => { event.currentTarget.src = "/logo.png"; }} className={`h-full w-full rounded-xl ${teacher.avatar ? "object-cover" : "object-contain p-2"}`} />
@@ -214,7 +267,7 @@ function TeacherCard({ teacher, page, numberFormatter }) {
   );
 }
 
-function VideoCard({ video, page, numberFormatter }) {
+function VideoCard({ video, page, numberFormatter, rank }) {
   return (
     <Link to={`/videos?video=${encodeURIComponent(video._id || "")}`} className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
       <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-blue-50 to-cyan-50">
@@ -222,6 +275,7 @@ function VideoCard({ video, page, numberFormatter }) {
         {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt={video.title || ""} loading="lazy" onError={(event) => { event.currentTarget.style.display = "none"; }} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" /> : null}
         <span className="absolute inset-0 grid place-items-center bg-slate-950/10 transition group-hover:bg-slate-950/25"><span className="grid h-14 w-14 place-items-center rounded-full bg-white text-primary-700 shadow-xl"><Play size={24} fill="currentColor" /></span></span>
         <span className="absolute start-3 top-3 rounded-full bg-slate-950/75 px-3 py-1.5 text-[11px] font-black uppercase text-white backdrop-blur">{video.platform}</span>
+        <span className="absolute end-3 top-3"><RankBadge index={rank} page={page} /></span>
       </div>
       <div className="p-5">
         <h3 className="line-clamp-2 min-h-14 text-lg font-black leading-7 text-slate-950 group-hover:text-primary-700">{video.title}</h3>
@@ -237,7 +291,7 @@ function VideoCard({ video, page, numberFormatter }) {
   );
 }
 
-function ArticleCard({ article, locale, page, numberFormatter }) {
+function ArticleCard({ article, locale, page, numberFormatter, rank }) {
   const title = localized(article.title, locale);
   const image = resolveArticleCoverUrl(article.coverImage);
   const Arrow = locale === "fa" ? ArrowLeft : ArrowRight;
@@ -246,6 +300,7 @@ function ArticleCard({ article, locale, page, numberFormatter }) {
       <Link to={`/blog/${article.slug}`} className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-blue-50 to-cyan-50">
         <img src={image || "/logo.png"} alt={title} loading="lazy" onError={(event) => { event.currentTarget.src = "/logo.png"; event.currentTarget.className = "h-full w-full object-contain p-10"; }} className={`h-full w-full transition duration-500 group-hover:scale-105 ${image ? "object-cover" : "object-contain p-10"}`} />
         {article.featured ? <span className="absolute start-3 top-3 rounded-full bg-slate-950/80 px-3 py-1.5 text-xs font-black text-white"><Sparkles size={13} className="me-1 inline" />{locale === "fa" ? "ویژه" : "Featured"}</span> : null}
+        <span className="absolute end-3 top-3"><RankBadge index={rank} page={page} /></span>
       </Link>
       <div className="flex flex-1 flex-col p-5">
         <h3 className="line-clamp-2 text-xl font-black leading-8 text-slate-950 group-hover:text-primary-700"><Link to={`/blog/${article.slug}`}>{title}</Link></h3>
@@ -279,11 +334,11 @@ export default function HomePage({ language, t }) {
     setLoading(true);
     setFailedSections([]);
     const requests = [
-      ["courses", fetchPublishedCourses({ page: 1, limit: 6, sortBy: "popular" })],
+      ["courses", fetchPublishedCourses({ page: 1, limit: 18, sortBy: "popular" })],
       ["stats", fetchPublicPlatformStats()],
-      ["teachers", fetchPublicTeachers({ page: 1, limit: 4 })],
-      ["videos", fetchPublicVideos({ feed: "all", platform: "all", sort: "popular", page: 1, limit: 3 })],
-      ["articles", fetchArticles({ page: 1, limit: 3, sort: "latest" })],
+      ["teachers", fetchPublicTeachers({ page: 1, limit: 60, sortBy: "experience", sortOrder: "desc" })],
+      ["videos", fetchPublicVideos({ feed: "all", platform: "all", sort: "popular", page: 1, limit: 12 })],
+      ["articles", fetchArticles({ page: 1, limit: 12, sort: "popular" })],
     ];
     const results = await Promise.allSettled(requests.map(([, request]) => request));
     const failures = [];
@@ -291,11 +346,11 @@ export default function HomePage({ language, t }) {
       const key = requests[index][0];
       if (result.status === "rejected") { failures.push(key); return; }
       const value = result.value;
-      if (key === "courses") setFeaturedCourses(Array.isArray(value?.courses) ? value.courses : []);
+      if (key === "courses") setFeaturedCourses(rankCourses(Array.isArray(value?.courses) ? value.courses : []).slice(0, 6));
       if (key === "stats") setPlatformStats({ activeCourses: Number(value?.activeCourses || 0), expertTeachers: Number(value?.expertTeachers || 0), happyStudents: Number(value?.happyStudents || 0) });
-      if (key === "teachers") setTeachers(Array.isArray(value?.teachers) ? value.teachers : []);
-      if (key === "videos") setVideos(Array.isArray(value?.videos) ? value.videos : []);
-      if (key === "articles") setArticles(Array.isArray(value?.articles) ? value.articles : []);
+      if (key === "teachers") setTeachers(rankTeachers(Array.isArray(value?.teachers) ? value.teachers : []).slice(0, 4));
+      if (key === "videos") setVideos(rankVideos(Array.isArray(value?.videos) ? value.videos : []).slice(0, 3));
+      if (key === "articles") setArticles(rankArticles(Array.isArray(value?.articles) ? value.articles : []).slice(0, 3));
     });
     setFailedSections(failures);
     setLoading(false);
@@ -398,15 +453,15 @@ export default function HomePage({ language, t }) {
       <section id="courses" className="bg-white py-12 md:py-16" dir={dir}>
         <div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8">
           <ContentHeading badge={page.coursesBadge} title={t.coursesSection.title} text={t.coursesSection.subtitle} action={<ViewAllLink isRTL={isRTL} to="/live-courses">{page.allCourses}</ViewAllLink>} />
-          {loading && featuredCourses.length === 0 ? <FrontendPageLoader label={page.loading} minHeight="min-h-[220px]" /> : featuredCourses.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-slate-50 px-6 py-10 text-center"><p className="font-bold text-slate-600">{page.noCourses}</p></div> : <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{featuredCourses.map((course, index) => <CourseCard key={course._id || course.id || `${course.title}-${index}`} course={course} dir={dir} index={index} labels={t.courseLabels} language={language} isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))} />)}</div>}
+          {loading && featuredCourses.length === 0 ? <FrontendPageLoader label={page.loading} minHeight="min-h-[220px]" /> : featuredCourses.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-slate-50 px-6 py-10 text-center"><p className="font-bold text-slate-600">{page.noCourses}</p></div> : <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{featuredCourses.map((course, index) => <div key={course._id || course.id || `${course.title}-${index}`} className="relative"><span className="absolute end-3 top-3 z-20"><RankBadge index={index} page={page} /></span><CourseCard course={course} dir={dir} index={index} labels={t.courseLabels} language={language} isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))} /></div>)}</div>}
         </div>
       </section>
 
-      {teachers.length > 0 ? <section className="bg-slate-50 py-12 md:py-16" dir={dir}><div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8"><ContentHeading badge={page.teachersBadge} title={page.teachersTitle} text={page.teachersText} action={<ViewAllLink isRTL={isRTL} to="/teachers">{page.allTeachers}</ViewAllLink>} /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{teachers.map((teacher) => <TeacherCard key={teacher._id} teacher={teacher} page={page} numberFormatter={numberFormatter} />)}</div></div></section> : null}
+      {teachers.length > 0 ? <section className="bg-slate-50 py-12 md:py-16" dir={dir}><div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8"><ContentHeading badge={page.teachersBadge} title={page.teachersTitle} text={page.teachersText} action={<ViewAllLink isRTL={isRTL} to="/teachers">{page.allTeachers}</ViewAllLink>} /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{teachers.map((teacher, index) => <TeacherCard key={teacher._id} teacher={teacher} page={page} numberFormatter={numberFormatter} rank={index} />)}</div></div></section> : null}
 
-      {videos.length > 0 ? <section className="bg-white py-12 md:py-16" dir={dir}><div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8"><ContentHeading badge={page.videosBadge} title={page.videosTitle} text={page.videosText} action={<ViewAllLink isRTL={isRTL} to="/videos">{page.allVideos}</ViewAllLink>} /><div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{videos.map((video) => <VideoCard key={video._id} video={video} page={page} numberFormatter={numberFormatter} />)}</div></div></section> : null}
+      {videos.length > 0 ? <section className="bg-white py-12 md:py-16" dir={dir}><div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8"><ContentHeading badge={page.videosBadge} title={page.videosTitle} text={page.videosText} action={<ViewAllLink isRTL={isRTL} to="/videos">{page.allVideos}</ViewAllLink>} /><div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{videos.map((video, index) => <VideoCard key={video._id} video={video} page={page} numberFormatter={numberFormatter} rank={index} />)}</div></div></section> : null}
 
-      {articles.length > 0 ? <section className="bg-slate-50 py-12 md:py-16" dir={dir}><div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8"><ContentHeading badge={page.articlesBadge} title={page.articlesTitle} text={page.articlesText} action={<ViewAllLink isRTL={isRTL} to="/blog">{page.allArticles}</ViewAllLink>} /><div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{articles.map((article) => <ArticleCard key={article._id} article={article} locale={locale} page={page} numberFormatter={numberFormatter} />)}</div></div></section> : null}
+      {articles.length > 0 ? <section className="bg-slate-50 py-12 md:py-16" dir={dir}><div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8"><ContentHeading badge={page.articlesBadge} title={page.articlesTitle} text={page.articlesText} action={<ViewAllLink isRTL={isRTL} to="/blog">{page.allArticles}</ViewAllLink>} /><div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{articles.map((article, index) => <ArticleCard key={article._id} article={article} locale={locale} page={page} numberFormatter={numberFormatter} rank={index} />)}</div></div></section> : null}
 
       <section id="about" className="bg-white py-16" dir={dir}><div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8"><SectionTitle title={t.why.title} subtitle={t.why.subtitle} /><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{t.why.benefits.map((benefit) => <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-soft transition hover:-translate-y-1 hover:shadow-card" key={benefit.title}><span className="grid h-11 w-11 place-items-center rounded-xl bg-primary-50 text-primary-700"><GraduationCap size={21} /></span><h3 className="mt-5 text-lg font-black text-slate-950">{benefit.title}</h3><p className="mt-3 leading-7 text-slate-600">{benefit.text}</p></article>)}</div></div></section>
 

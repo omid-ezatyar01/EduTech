@@ -49,6 +49,8 @@ const PANEL_COLLAPSED_HEIGHT = 580;
 const localizedArticleText = (value, language) =>
   value?.[language] || value?.[language === "fa" ? "en" : "fa"] || "";
 
+const contentOwnerId = (value) => String(value?._id || value || "").trim();
+
 function formatContentDate(value, isFa) {
   if (!value) return "";
   const date = new Date(value);
@@ -638,18 +640,27 @@ export default function TeacherDetails({ language = "fa" }) {
     queueMicrotask(() => {
       if (active) setTeacherContentLoading(true);
     });
+    const activeTeacherId = String(teacher._id);
     Promise.all([
-      fetchPublicVideos({ teacherId: teacher._id, sort: "newest", page: 1, limit: 3 })
+      fetchPublicVideos({ teacherId: activeTeacherId, sort: "newest", page: 1, limit: 12 })
         .catch(() => ({ videos: [], meta: {} })),
-      fetchArticles({ authorId: teacher._id, sort: "latest", page: 1, limit: 3 })
+      fetchArticles({ authorId: activeTeacherId, sort: "latest", page: 1, limit: 24 })
         .catch(() => ({ articles: [], meta: {} })),
     ]).then(([videoResult, articleResult]) => {
       if (!active) return;
+      const returnedVideos = Array.isArray(videoResult.videos) ? videoResult.videos : [];
+      const returnedArticles = Array.isArray(articleResult.articles) ? articleResult.articles : [];
+      const matchingVideos = returnedVideos.filter((item) => contentOwnerId(item?.teacher) === activeTeacherId);
+      const matchingArticles = returnedArticles.filter((item) => contentOwnerId(item?.author) === activeTeacherId);
       setTeacherContent({
-        videos: videoResult.videos || [],
-        articles: articleResult.articles || [],
-        videoTotal: Number(videoResult.meta?.total || videoResult.videos?.length || 0),
-        articleTotal: Number(articleResult.meta?.total || articleResult.articles?.length || 0),
+        videos: matchingVideos.slice(0, 3),
+        articles: matchingArticles.slice(0, 3),
+        videoTotal: matchingVideos.length === returnedVideos.length
+          ? Number(videoResult.meta?.total || matchingVideos.length)
+          : matchingVideos.length,
+        articleTotal: matchingArticles.length === returnedArticles.length
+          ? Number(articleResult.meta?.total || matchingArticles.length)
+          : matchingArticles.length,
       });
     }).finally(() => {
       if (active) setTeacherContentLoading(false);

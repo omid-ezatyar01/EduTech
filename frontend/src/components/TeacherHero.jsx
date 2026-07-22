@@ -176,7 +176,7 @@ export default function TeacherHero({ data, dir, following = false, followerCoun
               {getInitials(data?.name)}
             </div>
           )}
-          <span className="absolute -bottom-2 end-2 grid h-11 w-11 place-items-center rounded-full border-4 border-white bg-teal-500 text-white shadow-lg" title={isRtl ? "تأییدشده" : "Verified"}><BadgeCheck size={21} /></span>
+          <span className="absolute bottom-1 end-2 grid h-11 w-11 place-items-center rounded-full border-4 border-white bg-teal-500 text-white shadow-lg" title={isRtl ? "تأییدشده" : "Verified"}><BadgeCheck size={21} /></span>
         </div>
       </div>
     </div>

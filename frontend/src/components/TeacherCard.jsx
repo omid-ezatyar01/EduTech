@@ -5,7 +5,7 @@ import { resolveAvatarUrl } from "../utils/avatar";
 import { buildTeacherPath } from "../utils/routePaths";
 import { shareContent } from "../utils/share";
 
-export default function TeacherCard({ labels, teacher, index = 0 }) {
+export default function TeacherCard({ labels, teacher, index = 0, rank = 0 }) {
   const [failedAvatarKey, setFailedAvatarKey] = useState("");
   const teacherId = teacher?._id || index;
   const teacherName = teacher?.name || "Teacher";
@@ -47,6 +47,7 @@ export default function TeacherCard({ labels, teacher, index = 0 }) {
       className="group mx-auto flex h-full w-full max-w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-primary-200 hover:shadow-xl"
     >
       <div className="relative h-24 bg-gradient-to-br from-primary-100 via-blue-50 to-teal-100">
+        {rank > 0 ? <span className={`absolute start-3 top-3 z-10 rounded-full border px-3 py-1.5 text-xs font-black shadow-sm backdrop-blur ${rank === 1 ? "border-amber-200 bg-amber-50/95 text-amber-800" : rank <= 3 ? "border-primary-200 bg-primary-50/95 text-primary-700" : "border-white/80 bg-white/90 text-slate-600"}`}>{isFa ? "رتبه" : "Rank"} #{rank}</span> : null}
         <button type="button" onClick={handleShareTeacher} aria-label={isFa ? "اشتراک‌گذاری مدرس" : "Share teacher"} className="absolute end-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-700 shadow-sm transition hover:text-primary-700"><Share2 size={16} /></button>
       </div>
       <div className="relative -mt-12 flex justify-center px-4">

@@ -1101,8 +1101,9 @@ export default function LiveCoursesPage({ t }) {
                         {section.courses.map((course, itemIndex) => (
                           <div
                             key={course._id || course.id || `${course.title}-${itemIndex}`}
-                            className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start sm:w-auto sm:min-w-0"
+                            className="relative w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start sm:w-auto sm:min-w-0"
                           >
+                            <span className={`pointer-events-none absolute start-3 top-3 z-20 rounded-full border px-3 py-1.5 text-xs font-black shadow-sm backdrop-blur ${itemIndex === 0 ? "border-amber-200 bg-amber-50/95 text-amber-800" : itemIndex < 3 ? "border-violet-200 bg-violet-50/95 text-violet-700" : "border-white/80 bg-white/90 text-slate-700"}`}>{language === "fa" ? "رتبه" : "Rank"} #{itemIndex + 1}</span>
                             <CourseCatalogCard
                               course={course}
                               dir={dir}
@@ -1152,8 +1153,9 @@ export default function LiveCoursesPage({ t }) {
                 {courses.map((course, index) => (
                   <div
                     key={course._id || course.id || `${course.title}-${index}`}
-                    className="w-full"
+                    className="relative w-full"
                   >
+                    <span className={`pointer-events-none absolute start-3 top-3 z-20 rounded-full border px-3 py-1.5 text-xs font-black shadow-sm backdrop-blur ${index === 0 ? "border-amber-200 bg-amber-50/95 text-amber-800" : index < 3 ? "border-violet-200 bg-violet-50/95 text-violet-700" : "border-white/80 bg-white/90 text-slate-700"}`}>{language === "fa" ? "رتبه" : "Rank"} #{index + 1}</span>
                     <CourseCatalogCard
                       course={course}
                       dir={dir}

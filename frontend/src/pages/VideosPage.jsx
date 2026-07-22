@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellRing, Bookmark, ChevronDown, ChevronUp, ExternalLink, Heart, Play, RefreshCw, Share2, Sparkles, Video, X } from "lucide-react";
+import { Bell, BellRing, Bookmark, ChevronDown, ExternalLink, Heart, Play, RefreshCw, Share2, Sparkles, Video } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { fetchPublicVideo, fetchPublicVideos, fetchVideoSocialState, toggleVideoLike, toggleVideoSave } from "../../services/videoService.js";
 import { fetchTeacherFollowStatus, followTeacher, unfollowTeacher } from "../../services/teacherSocialService.js";
@@ -58,45 +58,6 @@ const VideoPreview = ({ active, embedUrl, onActivate, playLabel, thumbnailUrl, t
   </div>;
 };
 
-const MobileVideoViewer = ({ busyKey, hasMore, item, isLiked, isSaved, loadedCount, loadingMore, onClose, onLike, onMove, onSave, onShare, position, text, total }) => {
-  const touchStartY = useRef(0);
-  const embedUrl = trustedEmbed(item?.embedUrl);
-  if (!item) return null;
-
-  return <div
-    className="fixed inset-0 z-[100] flex flex-col bg-slate-950 text-white"
-    onTouchStart={(event) => { touchStartY.current = event.touches[0]?.clientY || 0; }}
-    onTouchEnd={(event) => {
-      const endY = event.changedTouches[0]?.clientY || 0;
-      const distance = touchStartY.current - endY;
-      if (Math.abs(distance) >= 55) onMove(distance > 0 ? 1 : -1);
-    }}
-  >
-    <div className="flex items-center justify-between px-4 py-3">
-      <span className="text-xs font-black text-white/65">{position + 1} / {total}</span>
-      <button type="button" onClick={onClose} aria-label={text.close} className="grid h-10 w-10 place-items-center rounded-full bg-white/10"><X size={20}/></button>
-    </div>
-    <div className="relative flex min-h-0 flex-1 items-center justify-center px-2">
-      <div className={`overflow-hidden rounded-2xl bg-white shadow-2xl ${item.platform === "instagram" ? "aspect-[9/16] h-full max-h-[calc(100dvh-15rem)] w-auto max-w-full" : "aspect-video w-full"}`}>
-        <VideoPreview key={`viewer:${item._id}`} active embedUrl={embedUrl} playLabel={text.watch} thumbnailUrl={item.thumbnailUrl} title={item.title}/>
-      </div>
-      <div className="absolute end-4 top-1/2 flex -translate-y-1/2 flex-col gap-3">
-        <button type="button" onClick={() => onMove(-1)} disabled={position === 0} aria-label={text.previous} className="grid h-11 w-11 place-items-center rounded-full bg-black/55 disabled:opacity-25"><ChevronUp size={21}/></button>
-        <button type="button" onClick={() => onMove(1)} disabled={loadingMore || (position >= loadedCount - 1 && !hasMore)} aria-label={text.next} className="grid h-11 w-11 place-items-center rounded-full bg-black/55 disabled:opacity-25">{loadingMore ? <RefreshCw size={19} className="animate-spin"/> : <ChevronDown size={21}/>}</button>
-      </div>
-    </div>
-    <div className="border-t border-white/10 bg-slate-950/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
-      <h2 className="line-clamp-2 text-lg font-black leading-7">{item.title}</h2>
-      <p className="mt-1 text-sm font-bold text-white/60">{item?.teacher?.name || "EduTech"}</p>
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <button type="button" onClick={() => onLike(item)} disabled={busyKey === `like:${item._id}`} className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-3 text-xs font-black ${isLiked ? "bg-rose-500 text-white" : "bg-white/10 text-white"}`}><Heart size={17} fill={isLiked ? "currentColor" : "none"}/>{Number(item.likeCount || 0)}</button>
-        <button type="button" onClick={() => onSave(item)} disabled={busyKey === `save:${item._id}`} className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-3 text-xs font-black ${isSaved ? "bg-blue-600 text-white" : "bg-white/10 text-white"}`}><Bookmark size={17} fill={isSaved ? "currentColor" : "none"}/>{isSaved ? text.savedAction : text.save}</button>
-        <button type="button" onClick={() => onShare(item)} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-3 text-xs font-black"><Share2 size={17}/>{text.share}</button>
-      </div>
-    </div>
-  </div>;
-};
-
 const PAGE_SIZE = 6;
 const EMPTY_FEED = { videos: [], meta: { page: 0, hasMore: true, total: 0 }, loaded: false };
 const feedKeyFor = (filter, sort) => `${filter}:${sort}`;
@@ -132,7 +93,6 @@ export default function VideosPage({ language = "fa" }) {
   const [followingByTeacher, setFollowingByTeacher] = useState({});
   const [busyKey, setBusyKey] = useState("");
   const [activeVideoId, setActiveVideoId] = useState("");
-  const [viewerVideoId, setViewerVideoId] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const loadMoreRef = useRef(null);
 
@@ -179,33 +139,23 @@ export default function VideosPage({ language = "fa" }) {
         return { ...previous, [key]: { ...feed, videos, loaded: true } };
       });
       setActiveVideoId(sharedVideo._id);
-      if (window.matchMedia("(max-width: 639px)").matches) setViewerVideoId(sharedVideo._id);
     })();
     return () => { active = false; };
   }, [loadFeed, location.search]);
-
-  useEffect(() => {
-    if (!viewerVideoId) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event) => { if (event.key === "Escape") setViewerVideoId(""); };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
-    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", closeOnEscape); };
-  }, [viewerVideoId]);
 
   const filters = [["all", Video], ["youtube", Video], ["instagram", Video], ["following", BellRing], ["saved", Bookmark]];
   const sorts = ["popular", "newest", "trending"];
 
   const selectFilter = async (nextFilter) => {
     if (["following", "saved"].includes(nextFilter) && !getToken()) { navigate("/login"); return; }
-    setFilter(nextFilter); setError(""); setActiveVideoId(""); setViewerVideoId("");
+    setFilter(nextFilter); setError(""); setActiveVideoId("");
     const nextKey = feedKeyFor(nextFilter, sort);
     if (feeds[nextKey]?.loaded) { setLoading(false); return; }
     await loadFeed(nextFilter, sort);
   };
 
   const selectSort = async (nextSort) => {
-    setSort(nextSort); setError(""); setActiveVideoId(""); setViewerVideoId("");
+    setSort(nextSort); setError(""); setActiveVideoId("");
     const nextKey = feedKeyFor(filter, nextSort);
     if (feeds[nextKey]?.loaded) { setLoading(false); return; }
     await loadFeed(filter, nextSort);
@@ -296,20 +246,6 @@ export default function VideosPage({ language = "fa" }) {
 
   const openVideo = (item) => {
     setActiveVideoId(item._id);
-    if (item.platform === "instagram" || window.matchMedia("(max-width: 639px)").matches) {
-      setViewerVideoId(item._id);
-    }
-  };
-
-  const viewerPosition = Math.max(0, visible.findIndex((item) => item._id === viewerVideoId));
-  const viewerItem = visible.find((item) => item._id === viewerVideoId) || null;
-  const moveViewer = async (direction) => {
-    const next = visible[viewerPosition + direction];
-    if (next) { setViewerVideoId(next._id); setActiveVideoId(next._id); return; }
-    if (direction > 0 && currentFeed.meta?.hasMore) {
-      const added = await loadMore();
-      if (added[0]) { setViewerVideoId(added[0]._id); setActiveVideoId(added[0]._id); }
-    }
   };
   const emptyMessage = filter === "following" ? text.followingEmpty : filter === "saved" ? text.savedEmpty : text.empty;
 
@@ -341,7 +277,7 @@ export default function VideosPage({ language = "fa" }) {
         {notice && <div className="fixed bottom-5 left-1/2 z-[120] -translate-x-1/2 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-2xl">{notice}</div>}
         {loading ? <div className="mx-auto grid max-w-[1120px] gap-6 pt-8 sm:grid-cols-2 xl:grid-cols-3">{[1,2,3].map((key) => <div key={key} className="overflow-hidden rounded-3xl border border-slate-200 bg-white"><div className="aspect-[4/3] animate-pulse bg-slate-200"/><div className="space-y-3 p-5"><div className="h-5 w-2/3 animate-pulse rounded bg-slate-200"/><div className="h-4 w-full animate-pulse rounded bg-slate-100"/></div></div>)}</div> : error ? <div className="mt-8 rounded-3xl border border-red-200 bg-white py-16 text-center"><p className="font-bold text-red-700">{error}</p><button onClick={() => loadFeed(filter, sort)} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white"><RefreshCw size={17}/>{text.retry}</button></div> : visible.length === 0 ? <div className="mt-8 rounded-3xl border border-dashed border-slate-300 bg-white py-20 text-center"><Video className="mx-auto text-slate-300" size={48}/><p className="mt-3 font-bold text-slate-500">{emptyMessage}</p></div> : (
           <div className="mx-auto grid max-w-[1120px] items-stretch gap-6 pt-8 sm:grid-cols-2 xl:grid-cols-3">
-            {visible.map((item) => {
+            {visible.map((item, index) => {
               const embedUrl = trustedEmbed(item.embedUrl);
               const isYoutube = item.platform === "youtube";
               const teacherId = String(item?.teacher?._id || "");
@@ -352,7 +288,8 @@ export default function VideosPage({ language = "fa" }) {
               const isFollowing = Boolean(followingByTeacher[teacherId]);
               return <article key={item._id} className="group flex h-full min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.06)] transition duration-300 hover:-translate-y-1.5 hover:border-blue-200 hover:shadow-[0_22px_50px_rgba(37,99,235,0.14)]">
                 <div className="relative aspect-video shrink-0 overflow-hidden bg-slate-950">
-                  <VideoPreview key={`${item._id}:${activeVideoId === item._id ? "active" : "cover"}`} active={activeVideoId === item._id && !viewerVideoId} embedUrl={embedUrl} onActivate={() => openVideo(item)} playLabel={text.watch} thumbnailUrl={item.thumbnailUrl} title={item.title}/>
+                  <VideoPreview key={`${item._id}:${activeVideoId === item._id ? "active" : "cover"}`} active={activeVideoId === item._id} embedUrl={embedUrl} onActivate={() => openVideo(item)} playLabel={text.watch} thumbnailUrl={item.thumbnailUrl} title={item.title}/>
+                  <span className={`pointer-events-none absolute start-3 top-3 z-20 rounded-full border px-3 py-1.5 text-xs font-black shadow-sm backdrop-blur ${index === 0 ? "border-amber-200 bg-amber-50/95 text-amber-800" : index < 3 ? "border-blue-200 bg-blue-50/95 text-blue-700" : "border-white/70 bg-white/90 text-slate-700"}`}>{language === "fa" ? "رتبه" : "Rank"} #{index + 1}</span>
                 </div>
                 <div className="flex flex-1 flex-col p-5 sm:p-6">
                   <div className="flex items-center justify-between gap-3"><div className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-black ${isYoutube ? "bg-red-50 text-red-700 ring-1 ring-red-100" : "bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-100"}`}><Video size={15}/>{text[item.platform]}</div><span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-300">EduTech</span></div>
@@ -377,7 +314,6 @@ export default function VideosPage({ language = "fa" }) {
         {!loading && !error && visible.length > 0 && currentFeed.meta?.hasMore && <div ref={loadMoreRef} className="mt-8 flex min-h-16 items-center justify-center" aria-live="polite">{loadingMore && <span className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-slate-600 shadow-sm"><RefreshCw size={17} className="animate-spin"/>{text.loadingMore}</span>}</div>}
       </main>
 
-      <MobileVideoViewer busyKey={busyKey} hasMore={Boolean(currentFeed.meta?.hasMore)} item={viewerItem} isLiked={viewerItem ? likedIds.has(viewerItem._id) : false} isSaved={viewerItem ? savedIds.has(viewerItem._id) : false} loadedCount={visible.length} loadingMore={loadingMore} onClose={() => setViewerVideoId("")} onLike={handleLike} onMove={moveViewer} onSave={handleSave} onShare={handleShare} position={viewerPosition} text={text} total={Number(currentFeed.meta?.total || visible.length)}/>
     </div>
   );
 }

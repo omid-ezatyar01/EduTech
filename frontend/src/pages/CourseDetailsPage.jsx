@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   BookOpen,
   CalendarDays,
   CheckCircle2,
@@ -372,11 +373,19 @@ export default function CourseDetailsPage({ t }) {
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [expandedDescriptionSlug, setExpandedDescriptionSlug] = useState("");
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const quotedPriceLabel = useRegionalCoursePrice(Number(course?.price || 0), language);
   const cryptoAmountLabel = useCryptoUsdtQuoteLabel(Number(course?.price || 0), language);
 
   useEffect(() => {
     window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => setShowScrollTop(window.scrollY > 640);
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
@@ -1070,9 +1079,9 @@ export default function CourseDetailsPage({ t }) {
       : "Enroll & pay";
 
   return (
-    <section className="overflow-x-hidden bg-slate-100 pb-24 pt-5 sm:pt-6">
-      <div className="mx-auto max-w-[1160px] px-4 sm:px-6 lg:px-8">
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-500">
+    <section className="overflow-x-hidden bg-slate-50 pb-24 pt-6 sm:pt-8" dir={dir}>
+      <div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8">
+        <div className="mb-5 flex flex-wrap items-center gap-2 px-1 text-xs font-bold text-slate-500 sm:text-sm">
           <Link className="hover:text-primary-700" to="/">
             {detail.breadcrumbs[0]}
           </Link>
@@ -1081,17 +1090,19 @@ export default function CourseDetailsPage({ t }) {
             {breadcrumbBackLabel}
           </Link>
           <span>/</span>
-          <span className="break-words [overflow-wrap:anywhere] text-slate-900">{course.title}</span>
+          <span className="max-w-full truncate text-slate-900">{course.title}</span>
         </div>
 
         {!isEnrolled ? (
-          <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-900">
+          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900">
+            <BookOpen size={18} className="shrink-0 text-sky-700" />
             {language === "fa"
               ? "شما هنوز در این کورس ثبت‌نام نکرده‌اید."
               : "You are not enrolled in this course yet."}
           </div>
         ) : (
-          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900">
+          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+            <CheckCircle2 size={18} className="shrink-0 text-emerald-700" />
             {language === "fa"
               ? "شما در این کورس ثبت‌نام هستید."
               : "You are already enrolled in this course."}
@@ -1100,34 +1111,34 @@ export default function CourseDetailsPage({ t }) {
 
         <div
           className={`grid gap-6 ${
-            isEnrolled ? "" : "xl:grid-cols-[minmax(0,1fr)_340px]"
+            isEnrolled ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"
           }`}
         >
           <div className="flex flex-col gap-5">
             <div
-              className={`order-[-3] mx-auto w-full overflow-hidden rounded-3xl border border-primary-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)] ${
-                isEnrolled ? "max-w-none" : "max-w-[1040px]"
-              }`}
+              className="relative order-[-3] mx-auto w-full overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)]"
             >
-              <div className="flex flex-col gap-5 p-4 sm:p-6">
-                <div className="order-2 min-w-0 space-y-4">
+              <div className="pointer-events-none absolute -start-20 -top-24 h-64 w-64 rounded-full bg-blue-100/60 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-28 end-0 h-64 w-64 rounded-full bg-teal-100/60 blur-3xl" />
+              <div className="relative grid gap-7 p-5 sm:p-7 lg:grid-cols-[minmax(0,1fr)_minmax(340px,0.9fr)] lg:items-center lg:p-8">
+                <div className="order-2 min-w-0 space-y-4 lg:order-1">
                   <div>
-                    <h1 className="break-words whitespace-normal text-start text-xl font-black leading-snug text-slate-950 [overflow-wrap:anywhere] sm:text-2xl md:text-3xl">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-2 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-black text-teal-700"><BookOpen size={14} />{language === "fa" ? "کورس آنلاین ایجوتک" : "EduTech online course"}</span>
+                      {isSpecialCourse ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1.5 text-xs font-black text-white shadow-sm">
+                          <Star size={13} fill="currentColor" />{language === "fa" ? "کورس ویژه" : "Special course"}
+                        </span>
+                      ) : null}
+                    </div>
+                    <h1 className="mt-4 break-words whitespace-normal text-start text-2xl font-black leading-[1.35] text-slate-950 [overflow-wrap:anywhere] sm:text-3xl lg:text-4xl">
                       {course.title}
                     </h1>
-                    {isSpecialCourse ? (
-                      <span className="mt-3 inline-flex h-7 items-center gap-1.5 rounded-md bg-amber-500 px-3 text-xs font-black leading-none text-white shadow-sm">
-                        <Star size={14} fill="currentColor" className="shrink-0" />
-                        <span className="leading-none">
-                          {language === "fa" ? "کورس ویژه" : "Special course"}
-                        </span>
-                      </span>
-                    ) : null}
                     {courseDescription ? (
                       <>
                         <p
                           dir="auto"
-                          className={`edutech-prose-justify mt-3 whitespace-pre-wrap break-words text-start text-[15px] leading-7 text-slate-600 [overflow-wrap:anywhere] ${
+                          className={`edutech-prose-justify mt-4 whitespace-pre-wrap break-words text-start text-[15px] font-medium leading-8 text-slate-600 [overflow-wrap:anywhere] ${
                             isHeroDescriptionExpanded
                               ? ""
                               : "max-h-[84px] overflow-hidden sm:max-h-none"
@@ -1137,7 +1148,7 @@ export default function CourseDetailsPage({ t }) {
                         </p>
                         <button
                           type="button"
-                          className="mt-2 flex w-full items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-primary-700 shadow-sm sm:hidden"
+                          className="mt-2 flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-primary-700 shadow-sm sm:hidden"
                           onClick={() =>
                             setExpandedDescriptionSlug((prev) =>
                               prev === slugParam ? "" : slugParam,
@@ -1155,23 +1166,27 @@ export default function CourseDetailsPage({ t }) {
                       </>
                     ) : null}
                     {countdownText ? (
-                      <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-black text-sky-800">
+                      <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-black text-sky-800">
                         <Clock3 size={16} />
                         <span>{countdownText}</span>
                       </div>
                     ) : null}
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <button type="button" onClick={handleDownloadSyllabus} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-primary-200 hover:text-primary-700"><Download size={15} />{detail.download}</button>
+                      <button type="button" onClick={handleShare} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-primary-200 hover:text-primary-700"><Share2 size={15} />{detail.share}</button>
+                    </div>
                   </div>
 
                 </div>
 
-                <div className="order-1 min-w-0 space-y-3">
+                <div className="order-1 min-w-0 space-y-3 lg:order-2">
                   <div
-                    className="flex w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 sm:p-3"
+                    className="flex w-full items-center justify-center overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-blue-50 to-teal-50 shadow-sm"
                     style={{ aspectRatio: COURSE_IMAGE_ASPECT_RATIO }}
                   >
                     <img
-                      className={`block max-h-full max-w-full object-contain object-center ${
-                        courseImage === COURSE_IMAGE_FALLBACK ? "p-8 sm:p-10" : ""
+                      className={`block h-full w-full object-center ${
+                        courseImage === COURSE_IMAGE_FALLBACK ? "object-contain p-8 sm:p-10" : "object-cover"
                       }`}
                       src={courseImage}
                       alt={course.title}
@@ -1179,7 +1194,7 @@ export default function CourseDetailsPage({ t }) {
                         event.currentTarget.onerror = null;
                         event.currentTarget.src = COURSE_IMAGE_FALLBACK;
                         event.currentTarget.className =
-                          "block max-h-full max-w-full object-contain object-center p-8 sm:p-10";
+                          "block h-full w-full object-contain object-center p-8 sm:p-10";
                       }}
                     />
                   </div>
@@ -1195,10 +1210,10 @@ export default function CourseDetailsPage({ t }) {
                   return (
                     <div
                       key={item.label}
-                      className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_10px_20px_rgba(15,23,42,0.05)]"
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-md"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="mt-0.5 grid h-9 w-9 place-items-center rounded-full bg-primary-50 text-primary-700">
+                        <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary-50 text-primary-700">
                           <Icon size={16} />
                         </div>
                         <div className="min-w-0">
@@ -1224,7 +1239,7 @@ export default function CourseDetailsPage({ t }) {
             ) : null}
 
             {previewVideos.length ? (
-              <div className="overflow-hidden rounded-2xl border border-red-100 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+              <div className="overflow-hidden rounded-3xl border border-red-100 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
                 <div className="border-b border-red-100 bg-gradient-to-r from-red-50 via-white to-white p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -1253,7 +1268,7 @@ export default function CourseDetailsPage({ t }) {
                   {previewVideos.map((videoItem, index) => (
                     <div
                       key={`${videoItem.url}-${index}`}
-                      className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950"
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950"
                     >
                       <div className="aspect-video bg-slate-900">
                         {videoItem.embedUrl ? (
@@ -1294,7 +1309,7 @@ export default function CourseDetailsPage({ t }) {
             ) : null}
 
             <div className="contents">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <h2 className="text-xl font-black text-slate-950">
                   {detail.suitableTitle}
                 </h2>
@@ -1318,7 +1333,7 @@ export default function CourseDetailsPage({ t }) {
                 </div>
               </div>
 
-              <div className="-order-1 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+              <div className="-order-1 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <h2 className="text-xl font-black text-slate-950">
                   {detail.scheduleTitle}
                 </h2>
@@ -1383,7 +1398,7 @@ export default function CourseDetailsPage({ t }) {
             </div>
 
             <div className="grid gap-5 lg:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <h2 className="text-xl font-black text-slate-950">
                   {detail.outcomesTitle}
                 </h2>
@@ -1407,7 +1422,7 @@ export default function CourseDetailsPage({ t }) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <h2 className="text-xl font-black text-slate-950">
                   {detail.requirementsTitle}
                 </h2>
@@ -1415,7 +1430,7 @@ export default function CourseDetailsPage({ t }) {
                   {requirements.length ? requirements.map((item, idx) => (
                     <div
                       key={`${item}-${idx}`}
-                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700"
+                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700"
                     >
                       <span className="break-words [overflow-wrap:anywhere]">{item}</span>
                     </div>
@@ -1428,7 +1443,7 @@ export default function CourseDetailsPage({ t }) {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <h2 className="text-xl font-black text-slate-950">{detail.tabs[1]}</h2>
               <div
                 className={`mt-3 max-h-[520px] space-y-2 overflow-y-auto pe-1 ${
@@ -1438,7 +1453,7 @@ export default function CourseDetailsPage({ t }) {
                 {syllabusItems.length ? syllabusItems.map((item, index) => (
                   <div
                     key={`${item}-${index}`}
-                    className={`flex min-h-11 items-center justify-between gap-4 rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-800 ${
+                    className={`flex min-h-11 items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-sm font-bold text-slate-800 ${
                       dir === "rtl" ? "[direction:rtl]" : ""
                     }`}
                   >
@@ -1452,7 +1467,7 @@ export default function CourseDetailsPage({ t }) {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-xl font-black text-slate-950">
                   {language === "fa" ? "نظریات شاگردان درباره کورس" : "Student Reviews About This Course"}
@@ -1480,7 +1495,7 @@ export default function CourseDetailsPage({ t }) {
 
           {!isEnrolled ? (
             <aside className="hidden xl:block">
-              <div className="sticky top-24 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+              <div className="sticky top-24 overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.10)]">
                 <p className="text-center text-xs font-black uppercase tracking-wide text-slate-500">
                   {detail.priceLabel}
                 </p>
@@ -1499,7 +1514,7 @@ export default function CourseDetailsPage({ t }) {
                 ) : null}
 
                 <button
-                  className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-black text-white shadow-lg shadow-primary-100 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
                   onClick={handlePurchase}
                   disabled={isStartingPayment}
                 >
@@ -1518,7 +1533,7 @@ export default function CourseDetailsPage({ t }) {
 
                 <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
                   {seatInfo.maxStudents > 0 ? (
-                    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
                         <UsersRound size={15} className="text-primary-700" />
                         {detail.stats.remaining}
@@ -1529,7 +1544,7 @@ export default function CourseDetailsPage({ t }) {
                     </div>
                   ) : null}
                   {seatInfo.minimumStudentsToStart > 0 ? (
-                    <div className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${
+                    <div className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
                       seatInfo.minimumReached ? "bg-emerald-50" : "bg-amber-50"
                     }`}>
                       <div className={`flex items-center gap-2 text-sm font-semibold ${
@@ -1546,14 +1561,14 @@ export default function CourseDetailsPage({ t }) {
                     </div>
                   ) : null}
                   {!seatInfo.minimumReached ? (
-                    <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold leading-6 text-amber-900">
+                    <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-6 text-amber-900">
                       {language === "fa"
                         ? "کورس بعد از رسیدن به حداقل شاگردها آماده شروع می‌شود، اما مدرس می‌تواند خودش زودتر صنف را شروع کند."
                         : "The course becomes ready once the minimum student count is reached, but the teacher can still start the class manually earlier."}
                     </div>
                   ) : null}
                   {startDateText ? (
-                    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
                         <CalendarDays size={15} className="text-primary-700" />
                         {detail.nextBatch}
@@ -1564,7 +1579,7 @@ export default function CourseDetailsPage({ t }) {
                     </div>
                   ) : null}
                   {countdownText ? (
-                    <div className="flex items-center justify-between gap-3 rounded-lg bg-sky-50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-sky-50 px-3 py-2.5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-sky-800">
                         <Clock3 size={15} className="text-sky-700" />
                         {language === "fa" ? "زمان تا شروع" : "Starts in"}
@@ -1578,14 +1593,14 @@ export default function CourseDetailsPage({ t }) {
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-primary-300 hover:text-primary-700"
+                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:border-primary-300 hover:text-primary-700"
                     onClick={handleDownloadSyllabus}
                   >
                     <Download size={14} />
                     {detail.download}
                   </button>
                   <button
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-primary-300 hover:text-primary-700"
+                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:border-primary-300 hover:text-primary-700"
                     onClick={handleShare}
                   >
                     <Share2 size={14} />
@@ -1600,7 +1615,7 @@ export default function CourseDetailsPage({ t }) {
 
       {!isEnrolled ? (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur xl:hidden">
-          <div className="mx-auto flex max-w-[1160px] items-center gap-3">
+          <div className="mx-auto flex max-w-[1340px] items-center gap-3">
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
                 {detail.priceLabel}
@@ -1615,7 +1630,7 @@ export default function CourseDetailsPage({ t }) {
               ) : null}
             </div>
             <button
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
               onClick={handlePurchase}
               disabled={isStartingPayment}
             >
@@ -1634,6 +1649,16 @@ export default function CourseDetailsPage({ t }) {
           </div>
         </div>
       ) : null}
+
+      <button
+        type="button"
+        onClick={() => window.scrollTo({ top: 0, left: 0, behavior: "smooth" })}
+        className={`fixed right-5 z-[29] grid h-12 w-12 place-items-center rounded-full border border-primary-400 bg-white text-primary-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100 ${!isEnrolled ? "bottom-24 xl:bottom-5" : "bottom-5"} ${showScrollTop ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"}`}
+        aria-label={language === "fa" ? "رفتن به بالای صفحه" : "Scroll to top"}
+        title={language === "fa" ? "رفتن به بالای صفحه" : "Scroll to top"}
+      >
+        <ArrowUp size={20} />
+      </button>
 
       <PaymentMethodModal
         isOpen={isPaymentMethodModalOpen}
