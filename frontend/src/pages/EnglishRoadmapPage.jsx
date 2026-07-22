@@ -226,7 +226,7 @@ export default function EnglishRoadmapPage({ language = "fa" }) {
         <div className="relative mx-auto flex min-h-[400px] max-w-[1340px] items-center px-5 py-12 sm:min-h-[420px] sm:px-8 lg:px-12">
           <div className="max-w-2xl text-white">
             <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2">
-              <Link to="/blog" className="inline-flex items-center gap-2 text-xs font-black text-slate-200 transition hover:text-white">
+              <Link to="/roadmaps" className="inline-flex items-center gap-2 text-xs font-black text-slate-200 transition hover:text-white">
                 <LayoutGrid size={16} />{page.allRoadmaps}
               </Link>
               <span className="inline-flex items-center gap-2 text-sm font-black text-teal-300"><Route size={18} />{page.eyebrow}</span>

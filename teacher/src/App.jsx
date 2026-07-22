@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import TeacherRoutes from "./routes/TeacherRoutes";
 import { enableCoursePushNotifications } from "../services/pushNotifications";
 import { isTeacherAuthenticated } from "../services/portal";
+import { applyEduTechLogoFallback } from "./utils/imageFallback.js";
 
 function App() {
   useEffect(() => {
@@ -28,7 +29,7 @@ function App() {
     return () => window.removeEventListener("teacher_auth_change", setupPushNotifications);
   }, []);
 
-  return <TeacherRoutes />;
+  return <div onErrorCapture={applyEduTechLogoFallback}><TeacherRoutes /></div>;
 }
 
 export default App;

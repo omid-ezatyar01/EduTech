@@ -1,15 +1,29 @@
 import { buildAuthHeaders, fetchJsonWithCache, getApiBase, getApiCacheTtl, parseJsonResponse } from "./http.js";
 
-export const fetchPublicVideos = async ({ platform = "all", page = 1, limit = 6 } = {}) => {
-  const params = new URLSearchParams({ platform, page: String(page), limit: String(limit) });
-  const response = await fetchJsonWithCache(`${getApiBase()}/videos?${params.toString()}`, {}, {
-    ttlMs: getApiCacheTtl({ publicTtl: 2 * 60 * 1000 }),
-    cacheKey: `public-videos:${platform}:${page}:${limit}`,
-  });
+export const fetchPublicVideos = async ({ feed = "all", platform = "all", sort = "popular", page = 1, limit = 6 } = {}) => {
+  const authenticatedFeed = feed === "following" || feed === "saved";
+  const params = new URLSearchParams({ platform, sort, page: String(page), limit: String(limit) });
+  if (authenticatedFeed) params.set("feed", feed);
+  const path = authenticatedFeed ? "/student/videos" : "/videos";
+  const requestOptions = authenticatedFeed ? { headers: buildAuthHeaders(), cache: "no-store" } : {};
+  const response = authenticatedFeed
+    ? await parseJsonResponse(await fetch(`${getApiBase()}${path}?${params.toString()}`, requestOptions))
+    : await fetchJsonWithCache(`${getApiBase()}${path}?${params.toString()}`, requestOptions, {
+      ttlMs: getApiCacheTtl({ publicTtl: 2 * 60 * 1000 }),
+      cacheKey: `public-videos:${platform}:${sort}:${page}:${limit}`,
+    });
   return {
     videos: Array.isArray(response?.data) ? response.data : [],
-    meta: response?.meta || { platform, page, limit, total: 0, totalPages: 0, hasMore: false },
+    meta: response?.meta || { feed, platform, sort, page, limit, total: 0, totalPages: 0, hasMore: false },
   };
+};
+
+export const fetchPublicVideo = async (videoId) => {
+  const response = await fetchJsonWithCache(`${getApiBase()}/videos/${encodeURIComponent(videoId)}`, {}, {
+    ttlMs: getApiCacheTtl({ publicTtl: 2 * 60 * 1000 }),
+    cacheKey: `public-video:${videoId}`,
+  });
+  return response?.data || null;
 };
 
 export const fetchVideoSocialState = async () => {
@@ -19,5 +33,10 @@ export const fetchVideoSocialState = async () => {
 
 export const toggleVideoLike = async (videoId) => {
   const response = await fetch(`${getApiBase()}/videos/${videoId}/like`, { method: "POST", headers: buildAuthHeaders() });
+  return (await parseJsonResponse(response))?.data || {};
+};
+
+export const toggleVideoSave = async (videoId) => {
+  const response = await fetch(`${getApiBase()}/videos/${videoId}/save`, { method: "POST", headers: buildAuthHeaders() });
   return (await parseJsonResponse(response))?.data || {};
 };

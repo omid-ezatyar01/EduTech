@@ -21,6 +21,11 @@ export const videoIdParamSchema = Joi.object({ id: objectId.required() });
 
 export const publicVideoQuerySchema = Joi.object({
   platform: Joi.string().valid("all", "youtube", "instagram").default("all"),
+  sort: Joi.string().valid("popular", "newest", "trending").default("popular"),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(12).default(6),
+});
+
+export const studentVideoQuerySchema = publicVideoQuerySchema.keys({
+  feed: Joi.string().valid("following", "saved").required(),
 });

@@ -17,6 +17,7 @@ const videoSchema = new mongoose.Schema(
 );
 
 videoSchema.index({ isPublished: 1, sortOrder: 1, createdAt: -1 });
+videoSchema.index({ isPublished: 1, likeCount: -1, createdAt: -1 });
 videoSchema.index({ teacher: 1, createdAt: -1 });
 
 export default mongoose.model("Video", videoSchema);

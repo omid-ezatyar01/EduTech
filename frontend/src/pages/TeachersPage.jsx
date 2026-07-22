@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUp,
   BriefcaseBusiness,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   Headphones,
   MessageCircle,
@@ -11,11 +9,11 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
+  UserSearch,
   UsersRound,
   X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
-import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
+import { Link, useSearchParams } from "react-router-dom";
 import TeacherCard from "../components/TeacherCard.jsx";
 import { fetchPublicPlatformStats } from "../../services/courseService.js";
 import {
@@ -25,16 +23,11 @@ import {
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 
 const benefitIcons = [BriefcaseBusiness, MessageCircle, Headphones, Rocket];
-const TEACHERS_PAGE_SIZE = 60;
-const TEACHERS_PER_ROW = 20;
+const TEACHERS_PAGE_SIZE = 12;
 
-const chunkRows = (items = [], size = TEACHERS_PER_ROW) => {
-  const rows = [];
-  for (let index = 0; index < items.length; index += size) {
-    rows.push(items.slice(index, index + size));
-  }
-  return rows;
-};
+function TeacherGridSkeleton() {
+  return <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-hidden="true">{Array.from({ length: 8 }, (_, index) => <div key={index} className="rounded-3xl border border-slate-200 bg-white p-5"><div className="mx-auto h-24 w-24 animate-pulse rounded-2xl bg-slate-200"/><div className="mx-auto mt-5 h-5 w-2/3 animate-pulse rounded bg-slate-200"/><div className="mx-auto mt-3 h-4 w-1/2 animate-pulse rounded bg-slate-100"/><div className="mt-5 grid grid-cols-3 gap-2">{[0, 1, 2].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100"/>)}</div><div className="mt-4 h-11 animate-pulse rounded-xl bg-slate-100"/></div>)}</div>;
+}
 
 const resolveTeacherExperienceYears = (teacher = {}) => {
   const hasApplicationYears =
@@ -63,15 +56,19 @@ const mapTeacherForCard = (item, language) => {
   return {
     _id: item._id,
     name: item.name,
-    role: isFa ? "مدرس ارشد" : "Senior Instructor",
+    role:
+      item?.teacherApplication?.professionalTitle ||
+      item?.teacherApplication?.expertiseAreas?.[0] ||
+      (isFa ? "مدرس ایجوتک" : "EduTech Instructor"),
     avatar: item.avatar || "",
     bio:
       item.bio ||
       (isFa
         ? "مدرس با تجربه با تمرکز روی آموزش عملی و رشد مهارت‌های واقعی شاگردان."
         : "Experienced instructor focused on practical teaching and real skill development."),
-    tags:
-      Array.isArray(item.tags) && item.tags.length
+    tags: Array.isArray(item?.teacherApplication?.expertiseAreas) && item.teacherApplication.expertiseAreas.length
+      ? item.teacherApplication.expertiseAreas
+      : Array.isArray(item.tags) && item.tags.length
         ? item.tags
         : [isFa ? "تدریس آنلاین" : "Online Teaching"],
     tagsRaw: Array.isArray(item.tags) ? item.tags : [],
@@ -112,6 +109,7 @@ const mapTeacherForCard = (item, language) => {
     },
     publishedCoursesCount: Number(item.publishedCoursesCount || 0),
     totalStudents: Number(item.totalStudents || 0),
+    followerCount: Number(item.followerCount || 0),
     joinedAt: item.joinedAt,
   };
 };
@@ -140,29 +138,29 @@ function FilterSelect({ value, onChange, options }) {
 
 export default function TeachersPage({ t }) {
   const page = t.teachersPage;
+  const [searchParams, setSearchParams] = useSearchParams();
   const [teacherPage, setTeacherPage] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("q") || "");
   const [teachers, setTeachers] = useState([]);
   const [teacherMeta, setTeacherMeta] = useState({ total: 0, facets: {} });
-  const [experienceFilter, setExperienceFilter] = useState("most_experience");
-  const [teacherLanguage, setTeacherLanguage] = useState("all");
-  const [expertise, setExpertise] = useState("all");
-  const [teachingLevel, setTeachingLevel] = useState("all");
-  const [country, setCountry] = useState("all");
-  const [minExperience, setMinExperience] = useState("all");
-  const [introVideo, setIntroVideo] = useState("all");
+  const [experienceFilter, setExperienceFilter] = useState(["most_experience", "newest", "most_students"].includes(searchParams.get("sort")) ? searchParams.get("sort") : "most_experience");
+  const [teacherLanguage, setTeacherLanguage] = useState(searchParams.get("language") || "all");
+  const [expertise, setExpertise] = useState(searchParams.get("expertise") || "all");
+  const [teachingLevel, setTeachingLevel] = useState(searchParams.get("level") || "all");
+  const [country, setCountry] = useState(searchParams.get("country") || "all");
+  const [minExperience, setMinExperience] = useState(searchParams.get("experience") || "all");
+  const [introVideo, setIntroVideo] = useState(["yes", "no"].includes(searchParams.get("video")) ? searchParams.get("video") : "all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [rowNav, setRowNav] = useState({});
+  const [retrySeed, setRetrySeed] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [platformStats, setPlatformStats] = useState({
     activeCourses: 0,
     expertTeachers: 0,
     happyStudents: 0,
   });
-  const rowRefs = useRef([]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -287,6 +285,7 @@ export default function TeachersPage({ t }) {
     minExperience,
     introVideo,
     experienceFilter,
+    retrySeed,
     t.meta.lang,
   ]);
 
@@ -368,6 +367,17 @@ export default function TeachersPage({ t }) {
     minExperience,
     introVideo,
   ].filter((value) => value !== "all").length;
+  const activeFilterCount = advancedFilterCount + (search.trim() ? 1 : 0) + (experienceFilter !== "most_experience" ? 1 : 0);
+  const filterChips = [
+    search.trim() ? { key: "search", label: `${isFa ? "جستجو" : "Search"}: ${search.trim()}` } : null,
+    teacherLanguage !== "all" ? { key: "language", label: teacherLanguage } : null,
+    expertise !== "all" ? { key: "expertise", label: expertise } : null,
+    teachingLevel !== "all" ? { key: "level", label: teachingLevel } : null,
+    country !== "all" ? { key: "country", label: country } : null,
+    minExperience !== "all" ? { key: "experience", label: isFa ? `حداقل ${minExperience} سال تجربه` : `${minExperience}+ years experience` } : null,
+    introVideo !== "all" ? { key: "video", label: introVideo === "yes" ? (isFa ? "دارای ویدیوی معرفی" : "Has intro video") : (isFa ? "بدون ویدیوی معرفی" : "No intro video") } : null,
+    experienceFilter !== "most_experience" ? { key: "sort", label: experienceOptions.find((item) => item.value === experienceFilter)?.label || experienceFilter } : null,
+  ].filter(Boolean);
   const resetTeacherFilters = () => {
     setTeacherPage(1);
     setSearch("");
@@ -383,6 +393,36 @@ export default function TeachersPage({ t }) {
     setTeacherPage(1);
     setter(event.target.value);
   };
+  const removeTeacherFilter = (key) => {
+    setTeacherPage(1);
+    if (key === "search") setSearch("");
+    if (key === "language") setTeacherLanguage("all");
+    if (key === "expertise") setExpertise("all");
+    if (key === "level") setTeachingLevel("all");
+    if (key === "country") setCountry("all");
+    if (key === "experience") setMinExperience("all");
+    if (key === "video") setIntroVideo("all");
+    if (key === "sort") setExperienceFilter("most_experience");
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        ["q", "sort", "language", "expertise", "level", "country", "experience", "video"].forEach((key) => next.delete(key));
+        if (search.trim()) next.set("q", search.trim());
+        if (experienceFilter !== "most_experience") next.set("sort", experienceFilter);
+        if (teacherLanguage !== "all") next.set("language", teacherLanguage);
+        if (expertise !== "all") next.set("expertise", expertise);
+        if (teachingLevel !== "all") next.set("level", teachingLevel);
+        if (country !== "all") next.set("country", country);
+        if (minExperience !== "all") next.set("experience", minExperience);
+        if (introVideo !== "all") next.set("video", introVideo);
+        return next;
+      }, { replace: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [country, experienceFilter, expertise, introVideo, minExperience, search, setSearchParams, teacherLanguage, teachingLevel]);
 
   const filteredTeachers = useMemo(() => {
     let rows = [...teachers];
@@ -397,65 +437,10 @@ export default function TeachersPage({ t }) {
 
     return rows;
   }, [teachers, experienceFilter]);
-  const teacherRows = useMemo(
-    () => chunkRows(filteredTeachers, TEACHERS_PER_ROW),
-    [filteredTeachers],
-  );
-  const getRowNavState = (rowElement) => {
-    if (!rowElement) return { canPrev: false, canNext: false };
-    const maxScroll = Math.max(0, rowElement.scrollWidth - rowElement.clientWidth);
-    if (isFa) {
-      const progress = Math.min(maxScroll, Math.abs(rowElement.scrollLeft || 0));
-      return {
-        canPrev: progress > 8,
-        canNext: progress < maxScroll - 8,
-      };
-    }
-
-    const progress = rowElement.scrollLeft || 0;
-    return {
-      canPrev: progress > 8,
-      canNext: progress < maxScroll - 8,
-    };
-  };
-  const updateRowNav = (key, rowElement) => {
-    const nextState = getRowNavState(rowElement);
-    setRowNav((previous) => {
-      const current = previous[key];
-      if (current?.canPrev === nextState.canPrev && current?.canNext === nextState.canNext) {
-        return previous;
-      }
-      return { ...previous, [key]: nextState };
-    });
-  };
-  const scrollRowForward = (rowElement) => {
-    if (!rowElement) return;
-    const scrollAmount = Math.max(280, Math.round(rowElement.clientWidth * 0.82));
-    rowElement.scrollBy({
-      left: isFa ? -scrollAmount : scrollAmount,
-      behavior: "smooth",
-    });
-  };
-  const scrollRowBackward = (rowElement) => {
-    if (!rowElement) return;
-    const scrollAmount = Math.max(280, Math.round(rowElement.clientWidth * 0.82));
-    rowElement.scrollBy({
-      left: isFa ? scrollAmount : -scrollAmount,
-      behavior: "smooth",
-    });
-  };
   const scrollPageToTop = () => {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   };
 
-  useEffect(() => {
-    teacherRows.forEach((_, rowIndex) => {
-      const element = rowRefs.current[rowIndex];
-      if (element) {
-        updateRowNav(rowIndex, element);
-      }
-    });
-  }, [teacherRows, isFa]);
   const teacherTotalPages = Math.max(1, Number(teacherMeta?.totalPages || 1));
 
   const numberFormatter = useMemo(
@@ -499,27 +484,27 @@ export default function TeachersPage({ t }) {
       className="bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] pb-16"
     >
       <div className="mx-auto max-w-[1536px] px-4 pt-8 sm:px-6 lg:px-8">
-        <div className="relative overflow-hidden rounded-3xl bg-white">
-          <div className="relative z-10 mx-auto max-w-3xl px-4 py-8 text-center sm:py-10">
-            <h1 className="text-4xl font-black leading-tight tracking-tight text-slate-950 md:text-5xl">
+        <div className="relative overflow-hidden rounded-3xl border border-slate-100 bg-white px-5 py-7 shadow-sm sm:px-8 sm:py-9">
+          <div className="relative z-10 mx-auto max-w-5xl text-center">
+            <h1 className="text-3xl font-black leading-tight tracking-tight text-slate-950 sm:text-4xl md:text-5xl">
               {page.titleBefore}{" "}
               <span className="text-teal-500">{page.titleHighlight}</span>
             </h1>
-            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-slate-600">
+            <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base sm:leading-8">
               {page.subtitle}
             </p>
-            <div className="mt-7 grid gap-4 sm:grid-cols-3">
+            <div className="mx-auto mt-6 grid max-w-3xl grid-cols-3 gap-2 sm:gap-4">
               {statCards.map((stat) => (
                 <div
-                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                  className="rounded-2xl border border-slate-200 bg-slate-50/60 px-2 py-4 shadow-sm sm:px-4"
                   key={stat.label}
                 >
-                  <div className="mx-auto flex min-h-[48px] w-[180px] items-center justify-center">
+                  <div className="mx-auto flex min-h-[44px] items-center justify-center">
                     <div className="text-center">
-                      <p className="text-xl font-black text-primary-700">
+                      <p className="text-xl font-black text-primary-700 sm:text-2xl">
                         {stat.value}
                       </p>
-                      <p className="whitespace-nowrap text-xs font-bold text-slate-500">
+                      <p className="mt-1 text-[10px] font-bold leading-4 text-slate-500 sm:text-xs">
                         {stat.label}
                       </p>
                     </div>
@@ -532,7 +517,12 @@ export default function TeachersPage({ t }) {
 
         <div className="mt-4 space-y-8">
           <div className="min-w-0">
-            <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_240px_auto]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div><h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><UserSearch size={19} className="text-teal-600" />{isFa ? "پیدا کردن مدرس مناسب" : "Find the right teacher"}</h2><p className="mt-1 text-xs font-bold text-slate-500">{isFa ? `${Number(teacherMeta?.total || 0)} مدرس یافت شد` : `${Number(teacherMeta?.total || 0)} teachers found`}</p></div>
+                {activeFilterCount > 0 ? <button type="button" onClick={resetTeacherFilters} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-700 hover:bg-rose-50 hover:text-rose-700"><RotateCcw size={14} />{isFa ? `پاک‌کردن فیلترها (${activeFilterCount})` : `Clear filters (${activeFilterCount})`}</button> : null}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_240px_auto]">
               <label className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-500 shadow-sm">
                 <Search size={19} className="text-slate-400" />
                   <input
@@ -561,6 +551,8 @@ export default function TeachersPage({ t }) {
                   </span>
                 ) : null}
               </button>
+              </div>
+              {filterChips.length > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3"><span className="text-xs font-black text-slate-500">{isFa ? "فیلترهای فعال:" : "Active filters:"}</span>{filterChips.map((chip) => <button key={chip.key} type="button" onClick={() => removeTeacherFilter(chip.key)} className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-3 py-1.5 text-xs font-black text-primary-700 hover:bg-rose-50 hover:text-rose-700"><span className="max-w-48 truncate">{chip.label}</span><X size={13} /></button>)}</div> : null}
             </div>
 
             {filtersOpen ? (
@@ -696,75 +688,15 @@ export default function TeachersPage({ t }) {
               </div>
             ) : null}
 
-            <div id="teacher-results" className="mt-5 space-y-4">
-              {teacherRows.map((row, rowIndex) => (
-                <div key={`teacher-row-${rowIndex + 1}`} className="relative">
-                  <div
-                    ref={(element) => {
-                      rowRefs.current[rowIndex] = element;
-                    }}
-                    onScroll={(event) => updateRowNav(rowIndex, event.currentTarget)}
-                    className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 sm:gap-4"
-                    dir={isFa ? "rtl" : "ltr"}
-                  >
-                    {row.map((teacher, itemIndex) => (
-                      <div
-                        key={teacher._id || teacher.name}
-                        className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start sm:w-[calc(50%-0.5rem)] sm:min-w-[calc(50%-0.5rem)] lg:w-[calc((100%-2rem)/3)] lg:min-w-[calc((100%-2rem)/3)] xl:w-[calc((100%-3rem)/4)] xl:min-w-[calc((100%-3rem)/4)]"
-                      >
-                        <TeacherCard
-                          labels={page}
-                          teacher={teacher}
-                          index={(rowIndex * TEACHERS_PER_ROW) + itemIndex}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  {rowNav[rowIndex]?.canPrev ? (
-                    <button
-                      type="button"
-                      onClick={() => scrollRowBackward(rowRefs.current[rowIndex])}
-                      className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
-                      aria-label={isFa ? "نمایش موارد قبلی" : "Show previous items"}
-                    >
-                      <ChevronLeft size={18} className={isFa ? "rotate-180" : ""} />
-                    </button>
-                  ) : null}
-                  {rowNav[rowIndex]?.canNext ? (
-                    <button
-                      type="button"
-                      onClick={() => scrollRowForward(rowRefs.current[rowIndex])}
-                      className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
-                      aria-label={isFa ? "نمایش موارد بعدی" : "Show next items"}
-                    >
-                      <ChevronRight size={18} className={isFa ? "rotate-180" : ""} />
-                    </button>
-                  ) : null}
-                </div>
-              ))}
+            {error ? <div className="mt-5 flex flex-col items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-center sm:flex-row sm:text-start"><p className="text-sm font-bold text-rose-700">{error}</p><button type="button" onClick={() => setRetrySeed((value) => value + 1)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-rose-700 shadow-sm"><RotateCcw size={15} />{isFa ? "تلاش دوباره" : "Try again"}</button></div> : null}
+
+            {loading && filteredTeachers.length === 0 ? <div className="mt-5"><TeacherGridSkeleton /></div> : null}
+
+            <div id="teacher-results" className="mt-5 flex flex-wrap justify-center gap-5">
+              {filteredTeachers.map((teacher, index) => <div key={teacher._id || teacher.name} className="w-full max-w-[320px]"><TeacherCard labels={page} teacher={teacher} index={index} /></div>)}
             </div>
 
-            {loading ? (
-              <FrontendPageLoader
-                label={isFa ? "در حال بارگذاری مدرسان" : "Loading teachers"}
-                minHeight="min-h-[180px]"
-                className="mt-4"
-              />
-            ) : null}
-
-            {!loading && !filteredTeachers.length ? (
-              <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-bold text-slate-600">
-                {t.meta.lang === "fa"
-                  ? "هیچ مدرسی برای نمایش یافت نشد."
-                  : "No teachers found to display."}
-              </div>
-            ) : null}
-
-            {error ? (
-              <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-                {error}
-              </div>
-            ) : null}
+            {!loading && !error && !filteredTeachers.length ? <div className="mt-5 rounded-3xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm"><span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-primary-50 text-primary-700"><UserSearch size={30} /></span><h2 className="mt-5 text-xl font-black text-slate-950">{activeFilterCount > 0 ? (isFa ? "مدرسی مطابق انتخاب شما پیدا نشد" : "No teachers match your selection") : (isFa ? "مدرسان تازه به‌زودی اضافه می‌شوند" : "New teachers are coming soon")}</h2><p className="mx-auto mt-3 max-w-xl text-sm font-medium leading-7 text-slate-600">{activeFilterCount > 0 ? (isFa ? "یک یا چند فیلتر را بردارید یا نام دیگری جستجو کنید." : "Remove one or more filters or search for another name.") : (isFa ? "پروفایل مدرسان پس از تأیید و انتشار در اینجا نمایش داده می‌شود." : "Approved teacher profiles will appear here once published.")}</p>{activeFilterCount > 0 ? <button type="button" onClick={resetTeacherFilters} className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white"><RotateCcw size={16} />{isFa ? "پاک‌کردن فیلترها" : "Clear filters"}</button> : null}</div> : null}
 
             {teacherPage < teacherTotalPages ? (
               <div className="mt-7 text-center">

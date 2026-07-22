@@ -13,6 +13,7 @@ import {
   Settings,
   LogOut,
   Clapperboard,
+  Newspaper,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -25,6 +26,7 @@ const menuItems = [
   { key: "courses", icon: BookOpen, path: "/courses" },
   { key: "categories", icon: Layers, path: "/categories" },
   { key: "videos", icon: Clapperboard, path: "/videos" },
+  { key: "articles", icon: Newspaper, path: "/articles" },
   { key: "payments", icon: CreditCard, path: "/payments" },
   { key: "teacherIncome", icon: Wallet, path: "/teacher-income" },
   { key: "coupons", icon: Ticket, path: "/coupons" },

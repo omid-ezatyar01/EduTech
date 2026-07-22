@@ -10,18 +10,27 @@ import {
   TrendingUp,
   Lightbulb,
   UserRound,
+  ArrowUpRight,
+  BookOpen,
+  PlayCircle,
+  Route,
+  Sparkles,
+  UsersRound,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { fetchPublicPlatformStats } from "../../services/courseService.js";
 
 const pageData = {
   fa: {
     breadcrumbs: ["خانه", "درباره ما"],
     hero: {
+      eyebrow: "آکادمی آنلاین ایجوتک",
       title: "درباره ایجوتک",
       subtitle: "با یادگیری آنلاین، مهارت واقعی، آینده بهتر",
       description:
         "ایجوتک یک پلتفرم آموزشی آنلاین است که شاگردان را در کورس‌های آنلاین و تعاملی با استادان متخصص وصل می‌کند. هدف ما این است که آموزش آنلاین را ساده، عملی، قابل اعتماد و نزدیک به نیازهای واقعی شاگردان بسازیم.",
       btn: "مشاهده کورس‌های آنلاین",
+      secondaryBtn: "آشنایی با مدرسان",
     },
     why: {
       title: " چرا ایجوتک؟",
@@ -69,6 +78,15 @@ const pageData = {
       "رشد شاگردان",
       "نوآوری در یادگیری",
     ],
+    journey: {
+      title: "ایجوتک چگونه به شما کمک می‌کند؟",
+      text: "از انتخاب مسیر تا تمرین و پیشرفت، ابزارها و همراهی مورد نیاز شما را یک‌جا فراهم می‌کنیم.",
+      steps: [
+        { title: "مسیر خود را پیدا کنید", text: "کورس، مدرس یا نقشه راه مناسب هدف خود را انتخاب کنید." },
+        { title: "مستقیم یاد بگیرید", text: "در کلاس‌های آنلاین شرکت کنید و از محتوای آموزشی استفاده کنید." },
+        { title: "تمرین کنید و رشد کنید", text: "با تمرین، بازخورد و پیگیری پیشرفت، مهارت واقعی بسازید." },
+      ],
+    },
     team: {
       title: "تیم ما",
       text: "ما یک تیم پرانرژی از مدرسان، متخصصان آموزش و توسعه‌دهندگان هستیم که برای رشد شما کار می‌کنیم.",
@@ -89,11 +107,13 @@ const pageData = {
   en: {
     breadcrumbs: ["Home", "About Us"],
     hero: {
+      eyebrow: "EduTech online academy",
       title: "About EduTech",
       subtitle: "Live learning, real skills, better future",
       description:
         "EduTech is an online education platform that connects students with expert instructors through live and interactive classes. Our goal is to make online learning simple, practical, reliable, and connected to real student needs.",
       btn: "View Live Courses",
+      secondaryBtn: "Meet Our Teachers",
     },
     why: {
       title: "Why EduTech?",
@@ -141,6 +161,15 @@ const pageData = {
       "Student Growth",
       "Learning Innovation",
     ],
+    journey: {
+      title: "How EduTech supports your learning",
+      text: "From choosing a path to practicing and progressing, we bring the tools and guidance you need into one place.",
+      steps: [
+        { title: "Find your path", text: "Choose the right course, teacher, or roadmap for your goal." },
+        { title: "Learn directly", text: "Join online classes and use practical educational content." },
+        { title: "Practice and grow", text: "Build real skills through practice, feedback, and progress tracking." },
+      ],
+    },
     team: {
       title: "Our Team",
       text: "We are an energetic team of instructors, education experts, and developers working for your growth.",
@@ -165,12 +194,7 @@ export default function AboutPage({ language = "fa" }) {
   const dir = isFa ? "rtl" : "ltr";
   const data = pageData[language] || pageData["fa"];
   const logoSrc = "/logo.png";
-  const [platformStats, setPlatformStats] = useState({
-    activeCourses: 0,
-    expertTeachers: 0,
-    happyStudents: 0,
-    satisfactionRate: 0,
-  });
+  const [platformStats, setPlatformStats] = useState(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -191,12 +215,7 @@ export default function AboutPage({ language = "fa" }) {
         });
       } catch {
         if (!mounted) return;
-        setPlatformStats({
-          activeCourses: 0,
-          expertTeachers: 0,
-          happyStudents: 0,
-          satisfactionRate: 0,
-        });
+        setPlatformStats(null);
       }
     };
 
@@ -218,10 +237,12 @@ export default function AboutPage({ language = "fa" }) {
   const resolvedStats = useMemo(
     () =>
       data.stats.map((stat) => {
+        const hasValue = platformStats && Number.isFinite(Number(platformStats?.[stat.key]));
         const rawValue = Number(platformStats?.[stat.key] || 0);
         const numeric = Math.max(0, Math.round(rawValue));
-        const renderedValue =
-          stat.key === "satisfactionRate"
+        const renderedValue = !hasValue || (stat.key === "satisfactionRate" && numeric === 0)
+          ? "—"
+          : stat.key === "satisfactionRate"
             ? language === "fa"
               ? `%${statsFormatter.format(numeric)}`
               : `${statsFormatter.format(numeric)}%`
@@ -237,6 +258,7 @@ export default function AboutPage({ language = "fa" }) {
 
   const whyIcons = [Award, MonitorPlay, CheckCircle2, Headphones, FileBadge];
   const valueIcons = [Wrench, Heart, TrendingUp, Lightbulb];
+  const journeyIcons = [Route, PlayCircle, TrendingUp];
 
   return (
     <div
@@ -244,37 +266,43 @@ export default function AboutPage({ language = "fa" }) {
       dir={dir}
     >
       <div className="mx-auto max-w-[1536px] px-4 sm:px-6 lg:px-8">
-        {/* Hero Section */}
-        <section className="relative overflow-hidden rounded-[32px] border border-slate-200 bg-white p-8 shadow-[0_12px_35px_rgba(15,23,42,0.03)] lg:p-16">
+        <section className="relative overflow-hidden rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8 lg:p-12">
           <div className="absolute -left-20 -top-20 h-96 w-96 rounded-full bg-teal-50/60 blur-3xl" />
           <div className="absolute -bottom-20 -right-20 h-80 w-80 rounded-full bg-primary-50/60 blur-3xl" />
-          <div className="relative z-10 grid gap-10 lg:grid-cols-2 lg:items-center">
-            <div>
-              <h1 className="text-4xl font-black text-slate-950 md:text-5xl lg:text-6xl">
+          <div className="relative z-10 grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
+            <div className="text-center lg:text-start">
+              <span className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-4 py-2 text-xs font-black text-primary-700"><Sparkles size={14} />{data.hero.eyebrow}</span>
+              <h1 className="mt-5 text-3xl font-black text-slate-950 sm:text-4xl lg:text-5xl">
                 {data.hero.title.replace(isFa ? "ایجوتک" : "EduTech", "")}{" "}
                 <span className="text-teal-500">
                   {isFa ? "ایجوتک" : "EduTech"}
                 </span>
               </h1>
-              <p className="mt-4 text-xl font-black text-primary-600">
+              <p className="mt-3 text-lg font-black text-primary-600 sm:text-xl">
                 {data.hero.subtitle}
               </p>
-              <p className="mt-6 text-lg font-medium leading-8 text-slate-600">
+              <p className="mx-auto mt-5 max-w-2xl text-sm font-medium leading-7 text-slate-600 sm:text-base sm:leading-8 lg:mx-0">
                 {data.hero.description}
               </p>
+              <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start">
+                <Link to="/live-courses" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white shadow-glow transition hover:bg-primary-700">{data.hero.btn}<ArrowUpRight size={17} /></Link>
+                <Link to="/teachers" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 transition hover:border-primary-200 hover:text-primary-700"><UsersRound size={17} />{data.hero.secondaryBtn}</Link>
+              </div>
             </div>
-            <div className="relative flex min-h-[320px] items-center justify-center overflow-hidden rounded-3xl border border-slate-100 bg-white p-8 shadow-sm lg:min-h-[420px]">
+            <div className="relative flex min-h-[190px] items-center justify-center overflow-hidden rounded-3xl border border-slate-100 bg-gradient-to-br from-white via-primary-50/50 to-teal-50 p-6 shadow-sm sm:min-h-[240px] lg:min-h-[300px]">
               <img
                 src={logoSrc}
                 alt={isFa ? "لوگوی ایجوتک" : "EduTech logo"}
-                className="h-auto max-h-[260px] w-full max-w-[520px] object-contain lg:max-h-[340px]"
+                width="512"
+                height="220"
+                decoding="async"
+                className="h-auto max-h-[150px] w-full max-w-[420px] object-contain sm:max-h-[190px]"
               />
             </div>
           </div>
         </section>
 
-        {/* Why EduTech */}
-        <section className="mt-16">
+        <section className="mt-12 sm:mt-16">
           <h2 className="mb-8 text-center text-3xl font-black text-slate-950">
             {data.why.title}
           </h2>
@@ -283,7 +311,7 @@ export default function AboutPage({ language = "fa" }) {
               const Icon = whyIcons[idx];
               return (
                 <div
-                  className="flex flex-col items-center text-center rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-primary-100 hover:shadow-md"
+                  className="flex flex-col items-center rounded-3xl border border-slate-200 bg-white p-5 text-center shadow-sm transition hover:-translate-y-1 hover:border-primary-100 hover:shadow-md"
                   key={idx}
                 >
                   <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-50 text-teal-600">
@@ -299,12 +327,11 @@ export default function AboutPage({ language = "fa" }) {
           </div>
         </section>
 
-        {/* Stats */}
-        <section className="mt-16 rounded-[32px] border border-slate-200 bg-white py-12 shadow-sm">
-          <div className="grid grid-cols-2 gap-8 divide-slate-100 md:grid-cols-4 md:divide-x md:divide-x-reverse">
+        <section className="mt-12 rounded-[32px] border border-slate-200 bg-white py-8 shadow-sm sm:mt-16 sm:py-10">
+          <div className="grid grid-cols-2 gap-y-8 divide-slate-100 md:grid-cols-4 md:divide-x md:divide-x-reverse">
             {resolvedStats.map((stat, idx) => (
               <div className="text-center px-4" key={idx}>
-                <p className="text-4xl font-black text-primary-700">
+                <p className="text-3xl font-black text-primary-700 sm:text-4xl">
                   {stat.value}
                 </p>
                 <p className="mt-2 text-sm font-bold text-slate-500">
@@ -315,12 +342,11 @@ export default function AboutPage({ language = "fa" }) {
           </div>
         </section>
 
-        {/* Mission & Vision & Values */}
-        <section className="mt-16 grid gap-6 lg:grid-cols-2">
+        <section className="mt-12 grid gap-6 sm:mt-16 lg:grid-cols-2">
           <div className="space-y-6">
             {[data.mission, data.vision].map((item, idx) => (
               <div
-                className="rounded-[24px] border border-slate-200 bg-white p-8 shadow-sm"
+                className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
                 key={idx}
               >
                 <h3 className="text-2xl font-black text-slate-950">
@@ -332,7 +358,7 @@ export default function AboutPage({ language = "fa" }) {
               </div>
             ))}
           </div>
-          <div className="rounded-[24px] border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
             <h3 className="text-2xl font-black text-slate-950 mb-6">
               {data.valuesTitle}
             </h3>
@@ -353,8 +379,16 @@ export default function AboutPage({ language = "fa" }) {
           </div>
         </section>
 
-        {/* Team Section */}
-        <section className="mt-16 mb-12 text-center">
+        <section className="mt-12 overflow-hidden rounded-[32px] border border-slate-200 bg-gradient-to-br from-white via-primary-50/40 to-teal-50/60 p-6 text-slate-950 shadow-sm sm:mt-16 sm:p-10">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-2xl"><span className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-4 py-2 text-xs font-black text-primary-700"><BookOpen size={15} />EduTech</span><h2 className="mt-4 text-2xl font-black sm:text-3xl">{data.journey.title}</h2><p className="mt-3 text-sm font-medium leading-7 text-slate-600 sm:text-base">{data.journey.text}</p></div>
+          </div>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {data.journey.steps.map((step, index) => { const Icon = journeyIcons[index]; return <article key={step.title} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:border-primary-200 hover:shadow-md"><div className="flex items-center justify-between"><span className="grid h-11 w-11 place-items-center rounded-xl bg-teal-50 text-teal-700"><Icon size={21} /></span><span className="grid h-10 min-w-10 place-items-center rounded-xl bg-primary-50 px-2 text-xl font-black text-primary-700">{statsFormatter.format(index + 1)}</span></div><h3 className="mt-5 text-lg font-black text-slate-950">{step.title}</h3><p className="mt-2 text-sm font-medium leading-7 text-slate-600">{step.text}</p></article>; })}
+          </div>
+        </section>
+
+        <section className="mb-12 mt-12 text-center sm:mt-16">
           <h2 className="text-3xl font-black text-slate-950">
             {data.team.title}
           </h2>
@@ -389,6 +423,14 @@ export default function AboutPage({ language = "fa" }) {
                 </p>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="relative mb-8 overflow-hidden rounded-[32px] bg-gradient-to-br from-primary-700 via-primary-600 to-teal-500 p-6 text-white shadow-hero sm:p-10">
+          <div className="absolute -end-20 -top-24 h-64 w-64 rounded-full bg-white/15 blur-3xl" />
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl"><h2 className="text-2xl font-black sm:text-3xl">{data.cta.title}</h2><p className="mt-3 text-sm font-medium leading-7 text-white/85 sm:text-base">{data.cta.text}</p></div>
+            <div className="flex flex-col gap-3 sm:flex-row"><Link to="/live-courses" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-black text-primary-700"><BookOpen size={17} />{data.cta.primaryBtn}</Link><Link to="/contact" className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/35 px-5 text-sm font-black text-white transition hover:bg-white/10">{data.cta.secondaryBtn}</Link></div>
           </div>
         </section>
       </div>

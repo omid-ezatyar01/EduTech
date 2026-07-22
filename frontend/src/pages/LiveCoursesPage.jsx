@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
+  BookOpen,
   ChevronLeft,
   ChevronRight,
   GraduationCap,
@@ -15,7 +16,6 @@ import {
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import CourseCatalogCard from "../components/CourseCatalogCard.jsx";
-import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import {
   fetchPublicCategories,
   fetchPublishedCourses,
@@ -28,11 +28,10 @@ import { buildEnrolledCourseIdSet } from "../utils/courseEnrollmentAccess.js";
 import { applySeo } from "../seo/useSeo.js";
 
 const benefitIcons = [UsersRound, GraduationCap, Video, Headphones];
-const MOBILE_BATCH_SIZE = 20;
-const MOBILE_SECTION_LIMIT = 20;
-const COURSE_PAGE_SIZE = 20;
-const INITIAL_LIST_PAGE_COUNT = 3;
-const LOAD_MORE_PAGE_STEP = 2;
+const MOBILE_SECTION_LIMIT = 8;
+const COURSE_PAGE_SIZE = 12;
+const INITIAL_LIST_PAGE_COUNT = 1;
+const LOAD_MORE_PAGE_STEP = 1;
 const ENGLISH_CATEGORY_TERMS = ["english", "انگلیسی", "انگليسی", "انگليسي"];
 
 const buildEnglishCategoryPath = (categories = []) => {
@@ -74,13 +73,38 @@ const buildEnglishCategoryPath = (categories = []) => {
   return path.filter(Boolean);
 };
 
-const chunkRows = (items = [], size = MOBILE_BATCH_SIZE) => {
-  const rows = [];
-  for (let index = 0; index < items.length; index += size) {
-    rows.push(items.slice(index, index + size));
+const buildCategoryPath = (categories = [], targetId = "") => {
+  if (!targetId) return [];
+  const byId = new Map(categories.map((item) => [String(item?._id || ""), item]));
+  const path = [];
+  let currentId = String(targetId);
+  let depth = 0;
+  while (currentId && depth < 20) {
+    path.unshift(currentId);
+    const current = byId.get(currentId);
+    currentId = String(current?.parent?._id || current?.parent || "");
+    depth += 1;
   }
-  return rows;
+  return path;
 };
+
+function CourseGridSkeleton() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="aspect-[16/9] animate-pulse bg-slate-100" />
+          <div className="space-y-3 p-5">
+            <div className="h-4 w-1/3 animate-pulse rounded bg-slate-100" />
+            <div className="h-5 w-4/5 animate-pulse rounded bg-slate-200" />
+            <div className="h-4 w-2/3 animate-pulse rounded bg-slate-100" />
+            <div className="h-11 animate-pulse rounded-xl bg-slate-100" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function FilterSelect({ label, value, onChange, options, setCurrentPage }) {
   return (
@@ -116,24 +140,32 @@ export default function LiveCoursesPage({ t }) {
   const roadmap = searchParams.get("roadmap") || "";
   const roadmapStage = searchParams.get("stage") || "";
   const requestedLevel = searchParams.get("level") || "";
+  const requestedCategory = searchParams.get("category") || "";
+  const requestedSearch = searchParams.get("q") || "";
   const initialRoadmapLevel = ["beginner", "intermediate", "advanced"].includes(requestedLevel)
     ? requestedLevel
     : "all";
   const [currentPage, setCurrentPage] = useState(INITIAL_LIST_PAGE_COUNT);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchInput, setSearchInput] = useState("");
+  const [searchTerm, setSearchTerm] = useState(requestedSearch);
+  const [searchInput, setSearchInput] = useState(requestedSearch);
   const [categories, setCategories] = useState(() => getCachedPublicCategories() || []);
   const [categoryPath, setCategoryPath] = useState(() =>
-    roadmap === "english" ? buildEnglishCategoryPath(categories) : [],
+    roadmap === "english"
+      ? buildEnglishCategoryPath(categories)
+      : buildCategoryPath(categories, requestedCategory).length
+        ? buildCategoryPath(categories, requestedCategory)
+        : requestedCategory
+          ? [requestedCategory]
+          : [],
   );
   const [level, setLevel] = useState(initialRoadmapLevel);
-  const [courseLanguage, setCourseLanguage] = useState("all");
-  const [pricing, setPricing] = useState("all");
-  const [courseType, setCourseType] = useState("all");
-  const [paymentPlan, setPaymentPlan] = useState("all");
-  const [minPrice, setMinPrice] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
-  const [sortMode, setSortMode] = useState("popular");
+  const [courseLanguage, setCourseLanguage] = useState(searchParams.get("language") || "all");
+  const [pricing, setPricing] = useState(["free", "paid"].includes(searchParams.get("pricing")) ? searchParams.get("pricing") : "all");
+  const [courseType, setCourseType] = useState(["general", "special"].includes(searchParams.get("type")) ? searchParams.get("type") : "all");
+  const [paymentPlan, setPaymentPlan] = useState(["monthly", "whole_period"].includes(searchParams.get("plan")) ? searchParams.get("plan") : "all");
+  const [minPrice, setMinPrice] = useState(searchParams.get("minPrice") || "");
+  const [maxPrice, setMaxPrice] = useState(searchParams.get("maxPrice") || "");
+  const [sortMode, setSortMode] = useState(["popular", "newest", "price_low", "price_high", "startDate"].includes(searchParams.get("sort")) ? searchParams.get("sort") : "popular");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [courses, setCourses] = useState([]);
   const [roadmapCategoryResolved, setRoadmapCategoryResolved] = useState(
@@ -147,11 +179,10 @@ export default function LiveCoursesPage({ t }) {
   const [mobileSectionsLoading, setMobileSectionsLoading] = useState(false);
   const [mobileSectionsError, setMobileSectionsError] = useState("");
   const [sectionRowNav, setSectionRowNav] = useState({});
-  const [listRowNav, setListRowNav] = useState({});
+  const [retrySeed, setRetrySeed] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const coursesTopRef = useRef(null);
   const sectionRowRefs = useRef([]);
-  const listRowRefs = useRef([]);
   const category = categoryPath.at(-1) || "all";
   const filtersAtDefault =
     categoryPath.length === 0 &&
@@ -298,6 +329,7 @@ export default function LiveCoursesPage({ t }) {
     roadmap,
     roadmapCategoryResolved,
     categoryPath.length,
+    retrySeed,
   ]);
 
   useEffect(() => {
@@ -307,6 +339,8 @@ export default function LiveCoursesPage({ t }) {
       if (roadmap === "english") {
         setCategoryPath(buildEnglishCategoryPath(nextRows));
         setRoadmapCategoryResolved(true);
+      } else if (requestedCategory) {
+        setCategoryPath(buildCategoryPath(nextRows, requestedCategory));
       }
     };
 
@@ -326,7 +360,7 @@ export default function LiveCoursesPage({ t }) {
     };
 
     loadCategories();
-  }, [roadmap]);
+  }, [requestedCategory, roadmap]);
 
   const loadEnrollments = useCallback(async (mountedRef) => {
     if (localStorage.getItem("edutech_auth") !== "true") {
@@ -458,6 +492,64 @@ export default function LiveCoursesPage({ t }) {
     () => categories.filter((item) => !item?.parent),
     [categories],
   );
+  const selectedCategoryName = categories.find((item) => String(item?._id || "") === category)?.name || "";
+  const displayTotalCourses = isRootSectionMode
+    ? mobileSections.reduce((total, section) => total + Number(section.total || 0), 0)
+    : Number(meta?.total || 0);
+  const sortLabels = {
+    popular: language === "fa" ? "محبوب‌ترین" : "Most popular",
+    newest: language === "fa" ? "جدیدترین" : "Newest",
+    price_low: language === "fa" ? "کمترین قیمت" : "Lowest price",
+    price_high: language === "fa" ? "بیشترین قیمت" : "Highest price",
+    startDate: language === "fa" ? "نزدیک‌ترین شروع" : "Starting soon",
+  };
+  const filterChips = [
+    searchTerm.trim() ? { key: "search", label: `${language === "fa" ? "جستجو" : "Search"}: ${searchTerm}` } : null,
+    category !== "all" ? { key: "category", label: selectedCategoryName || (language === "fa" ? "موضوع انتخاب‌شده" : "Selected subject") } : null,
+    level !== "all" ? { key: "level", label: levelOptions.find((item) => item.value === level)?.label || level } : null,
+    courseLanguage !== "all" ? { key: "language", label: courseLanguage } : null,
+    pricing !== "all" ? { key: "pricing", label: pricing === "free" ? (language === "fa" ? "رایگان" : "Free") : (language === "fa" ? "پولی" : "Paid") } : null,
+    courseType !== "all" ? { key: "type", label: courseType === "special" ? (language === "fa" ? "ویژه" : "Special") : (language === "fa" ? "عمومی" : "General") } : null,
+    paymentPlan !== "all" ? { key: "plan", label: paymentPlan === "monthly" ? (language === "fa" ? "پرداخت ماهانه" : "Monthly") : (language === "fa" ? "پرداخت تمام دوره" : "Whole period") } : null,
+    minPrice !== "" ? { key: "minPrice", label: `${language === "fa" ? "حداقل" : "Min"}: $${minPrice}` } : null,
+    maxPrice !== "" ? { key: "maxPrice", label: `${language === "fa" ? "حداکثر" : "Max"}: $${maxPrice}` } : null,
+    sortMode !== "popular" ? { key: "sort", label: sortLabels[sortMode] } : null,
+  ].filter(Boolean);
+
+  const removeFilter = (key) => {
+    setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+    if (key === "search") { setSearchTerm(""); setSearchInput(""); }
+    if (key === "category") setCategoryPath([]);
+    if (key === "level") setLevel("all");
+    if (key === "language") setCourseLanguage("all");
+    if (key === "pricing") setPricing("all");
+    if (key === "type") setCourseType("all");
+    if (key === "plan") setPaymentPlan("all");
+    if (key === "minPrice") setMinPrice("");
+    if (key === "maxPrice") setMaxPrice("");
+    if (key === "sort") setSortMode("popular");
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        ["q", "category", "language", "pricing", "type", "plan", "minPrice", "maxPrice", "sort"].forEach((key) => next.delete(key));
+        if (searchTerm.trim()) next.set("q", searchTerm.trim());
+        if (category !== "all") next.set("category", category);
+        if (courseLanguage !== "all") next.set("language", courseLanguage);
+        if (pricing !== "all") next.set("pricing", pricing);
+        if (courseType !== "all") next.set("type", courseType);
+        if (paymentPlan !== "all") next.set("plan", paymentPlan);
+        if (minPrice !== "") next.set("minPrice", minPrice);
+        if (maxPrice !== "") next.set("maxPrice", maxPrice);
+        if (sortMode !== "popular") next.set("sort", sortMode);
+        if (level !== "all") next.set("level", level); else next.delete("level");
+        return next;
+      }, { replace: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [category, courseLanguage, courseType, level, maxPrice, minPrice, paymentPlan, pricing, searchTerm, setSearchParams, sortMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -515,7 +607,7 @@ export default function LiveCoursesPage({ t }) {
     return () => {
       cancelled = true;
     };
-  }, [isRootSectionMode, language, rootCategories]);
+  }, [isRootSectionMode, language, retrySeed, rootCategories]);
 
   const resetFilters = () => {
     setCurrentPage(INITIAL_LIST_PAGE_COUNT);
@@ -538,11 +630,7 @@ export default function LiveCoursesPage({ t }) {
       setSearchParams(nextParams, { replace: true });
     }
   };
-  const totalCourses = Number(meta?.total || 0);
-  const courseRows = useMemo(
-    () => chunkRows(courses, MOBILE_BATCH_SIZE),
-    [courses],
-  );
+  const totalCourses = displayTotalCourses;
   const seoCourses = useMemo(() => {
     const sourceRows = isRootSectionMode
       ? mobileSections.flatMap((section) => section.courses || [])
@@ -648,16 +736,6 @@ export default function LiveCoursesPage({ t }) {
       return { ...previous, [key]: nextState };
     });
   }, [getRowNavState]);
-  const updateListRowNav = useCallback((key, rowElement) => {
-    const nextState = getRowNavState(rowElement);
-    setListRowNav((previous) => {
-      const current = previous[key];
-      if (current?.canPrev === nextState.canPrev && current?.canNext === nextState.canNext) {
-        return previous;
-      }
-      return { ...previous, [key]: nextState };
-    });
-  }, [getRowNavState]);
   const scrollPageToTop = useCallback(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   }, []);
@@ -671,27 +749,33 @@ export default function LiveCoursesPage({ t }) {
     });
   }, [mobileSections, updateSectionRowNav]);
 
-  useEffect(() => {
-    courseRows.forEach((_, rowIndex) => {
-      const element = listRowRefs.current[rowIndex];
-      if (element) {
-        updateListRowNav(rowIndex, element);
-      }
-    });
-  }, [courseRows, updateListRowNav]);
-
   return (
     <section id="live-courses" className="bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] pb-20">
       <div className="mx-auto max-w-[1536px] px-4 pt-8 sm:px-6 lg:px-8">
-        <div className="relative min-h-[150px] overflow-hidden rounded-3xl bg-white">
-          <img className="mx-auto h-32 w-auto object-contain sm:absolute sm:start-8 sm:top-4 sm:h-36" src="/courses-hero.png" alt={page.titleHighlight} />
-          <div className="relative z-10 mx-auto max-w-3xl px-4 py-8 text-center sm:py-10">
-            <h1 className="text-4xl font-black leading-tight tracking-tight text-slate-950 md:text-5xl">
+        <div className="relative overflow-hidden rounded-3xl border border-slate-100 bg-white px-5 py-6 shadow-sm sm:px-8 sm:py-8">
+          <div className="mx-auto grid max-w-5xl items-center gap-5 sm:grid-cols-[1fr_190px] lg:grid-cols-[1fr_230px]">
+            <div className="text-center sm:text-start">
+            <h1 className="text-3xl font-black leading-tight tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">
               {page.titleBefore} <span className="text-teal-500">{page.titleHighlight}</span> {page.titleAfter}
             </h1>
-            <p className="mt-5 text-base leading-8 text-slate-600 md:text-lg">{page.subtitle}</p>
+            <p className="mt-3 text-sm leading-7 text-slate-600 sm:text-base md:text-lg">{page.subtitle}</p>
+            </div>
+            <img className="mx-auto h-24 w-auto object-contain sm:order-none sm:h-28 lg:h-32" src="/courses-hero.png" width="270" height="150" decoding="async" alt={page.titleHighlight} />
           </div>
         </div>
+
+        {rootCategories.length > 0 ? (
+          <nav className="mt-5" aria-label={language === "fa" ? "موضوعات محبوب" : "Popular subjects"}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-sm font-black text-slate-900">{language === "fa" ? "موضوعات محبوب" : "Popular subjects"}</h2>
+              {category !== "all" ? <button type="button" onClick={() => { setCategoryPath([]); setCurrentPage(INITIAL_LIST_PAGE_COUNT); }} className="text-xs font-black text-primary-700">{language === "fa" ? "نمایش همه" : "View all"}</button> : null}
+            </div>
+            <div className="edutech-scrollbar flex gap-2 overflow-x-auto pb-2">
+              <button type="button" onClick={() => { setCategoryPath([]); setCurrentPage(INITIAL_LIST_PAGE_COUNT); }} className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-black transition ${category === "all" ? "border-primary-600 bg-primary-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-primary-200"}`}>{language === "fa" ? "همه کورس‌ها" : "All courses"}</button>
+              {rootCategories.slice(0, 8).map((item) => <button key={item._id} type="button" onClick={() => { setCategoryPath([String(item._id)]); setCurrentPage(INITIAL_LIST_PAGE_COUNT); coursesTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }} className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-black transition ${categoryPath[0] === String(item._id) ? "border-teal-600 bg-teal-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-teal-200 hover:text-teal-700"}`}>{item.name}</button>)}
+            </div>
+          </nav>
+        ) : null}
 
         <div className="mt-5 space-y-6" ref={coursesTopRef}>
           <div className="min-w-0">
@@ -807,6 +891,7 @@ export default function LiveCoursesPage({ t }) {
                   </button>
                 </div>
               </div>
+              {filterChips.length > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3"><span className="text-xs font-black text-slate-500">{language === "fa" ? "فیلترهای فعال:" : "Active filters:"}</span>{filterChips.map((chip) => <button key={chip.key} type="button" onClick={() => removeFilter(chip.key)} className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-3 py-1.5 text-xs font-black text-primary-700 transition hover:bg-rose-50 hover:text-rose-700"><span className="max-w-48 truncate">{chip.label}</span><X size={13} /></button>)}</div> : null}
             </div>
 
             {filtersOpen ? (
@@ -983,8 +1068,7 @@ export default function LiveCoursesPage({ t }) {
               </div>
             ) : null}
 
-            {error ? <p className="mt-4 text-sm font-bold text-rose-600">{error}</p> : null}
-            {mobileSectionsError ? <p className="mt-4 text-sm font-bold text-rose-600">{mobileSectionsError}</p> : null}
+            {error || mobileSectionsError ? <div className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-center sm:flex-row sm:text-start"><p className="text-sm font-bold text-rose-700">{error || mobileSectionsError}</p><button type="button" onClick={() => setRetrySeed((value) => value + 1)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-rose-700 shadow-sm"><RotateCcw size={15} />{language === "fa" ? "تلاش دوباره" : "Try again"}</button></div> : null}
 
             <div className="mt-5 space-y-4 sm:space-y-0">
               {isRootSectionMode ? (
@@ -1011,13 +1095,13 @@ export default function LiveCoursesPage({ t }) {
                             sectionRowRefs.current[section.category._id] = element;
                           }}
                           onScroll={(event) => updateSectionRowNav(section.category._id, event.currentTarget)}
-                          className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2"
+                          className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 sm:grid sm:snap-none sm:grid-cols-2 sm:overflow-visible xl:grid-cols-4"
                           dir={language === "fa" ? "rtl" : "ltr"}
                         >
                         {section.courses.map((course, itemIndex) => (
                           <div
                             key={course._id || course.id || `${course.title}-${itemIndex}`}
-                            className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
+                            className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start sm:w-auto sm:min-w-0"
                           >
                             <CourseCatalogCard
                               course={course}
@@ -1034,7 +1118,7 @@ export default function LiveCoursesPage({ t }) {
                           <button
                             type="button"
                             onClick={() => scrollRowBackward(sectionRowRefs.current[section.category._id])}
-                            className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                            className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700 sm:hidden"
                             aria-label={language === "fa" ? "نمایش موارد قبلی" : "Show previous items"}
                           >
                             <ChevronLeft size={18} className={dir === "rtl" ? "rotate-180" : ""} />
@@ -1044,7 +1128,7 @@ export default function LiveCoursesPage({ t }) {
                           <button
                             type="button"
                             onClick={() => scrollRowForward(sectionRowRefs.current[section.category._id])}
-                            className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
+                            className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700 sm:hidden"
                             aria-label={language === "fa" ? "نمایش موارد بعدی" : "Show next items"}
                           >
                             <ChevronRight size={18} className={dir === "rtl" ? "rotate-180" : ""} />
@@ -1064,59 +1148,7 @@ export default function LiveCoursesPage({ t }) {
                   ))}
                 </div>
               ) : (
-                <div className="space-y-4 sm:hidden">
-                {courseRows.map((row, rowIndex) => (
-                  <div key={`course-row-${rowIndex + 1}`} className="relative">
-                    <div
-                      ref={(element) => {
-                        listRowRefs.current[rowIndex] = element;
-                      }}
-                      onScroll={(event) => updateListRowNav(rowIndex, event.currentTarget)}
-                      className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2"
-                      dir={language === "fa" ? "rtl" : "ltr"}
-                    >
-                      {row.map((course, itemIndex) => (
-                        <div
-                          key={course._id || course.id || `${course.title}-${rowIndex}-${itemIndex}`}
-                          className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
-                        >
-                          <CourseCatalogCard
-                            course={course}
-                            dir={dir}
-                            index={(rowIndex * MOBILE_BATCH_SIZE) + itemIndex}
-                            labels={t.courseLabels}
-                            language={language}
-                            isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    {listRowNav[rowIndex]?.canPrev ? (
-                      <button
-                        type="button"
-                        onClick={() => scrollRowBackward(listRowRefs.current[rowIndex])}
-                        className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
-                        aria-label={language === "fa" ? "نمایش موارد قبلی" : "Show previous items"}
-                      >
-                        <ChevronLeft size={18} className={dir === "rtl" ? "rotate-180" : ""} />
-                      </button>
-                    ) : null}
-                    {listRowNav[rowIndex]?.canNext ? (
-                      <button
-                        type="button"
-                        onClick={() => scrollRowForward(listRowRefs.current[rowIndex])}
-                        className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
-                        aria-label={language === "fa" ? "نمایش موارد بعدی" : "Show next items"}
-                      >
-                        <ChevronRight size={18} className={dir === "rtl" ? "rotate-180" : ""} />
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-                </div>
-              )}
-
-              <div className={`${isRootSectionMode ? "hidden" : "hidden"} grid-cols-2 gap-4 sm:grid xl:grid-cols-3`}>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {courses.map((course, index) => (
                   <div
                     key={course._id || course.id || `${course.title}-${index}`}
@@ -1133,31 +1165,17 @@ export default function LiveCoursesPage({ t }) {
                   </div>
                 ))}
               </div>
+              )}
             </div>
 
-            {loading ? (
-              <FrontendPageLoader
-                label={language === "fa" ? "در حال بارگذاری کورس‌ها" : "Loading courses"}
-                minHeight="min-h-[180px]"
-                className="mt-4"
-              />
-            ) : null}
-            {mobileSectionsLoading ? (
-              <FrontendPageLoader
-                label={language === "fa" ? "در حال بارگذاری بخش‌های کورس" : "Loading course sections"}
-                minHeight="min-h-[180px]"
-                className="mt-4"
-              />
-            ) : null}
+            {(loading && courses.length === 0) || (mobileSectionsLoading && mobileSections.length === 0) ? <div className="mt-5"><CourseGridSkeleton /></div> : null}
 
-            {!loading && !mobileSectionsLoading && !isRootSectionMode && courses.length === 0 ? (
-              <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 text-center text-sm font-semibold text-slate-600">
-                {noCoursesText}
-              </div>
-            ) : null}
-            {!loading && !mobileSectionsLoading && isRootSectionMode && mobileSections.length === 0 ? (
-              <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 text-center text-sm font-semibold text-slate-600">
-                {noCoursesText}
+            {!loading && !mobileSectionsLoading && !error && !mobileSectionsError && (isRootSectionMode ? mobileSections.length === 0 : courses.length === 0) ? (
+              <div className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm sm:px-10">
+                <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-primary-50 text-primary-700"><BookOpen size={30} /></span>
+                <h2 className="mt-5 text-xl font-black text-slate-950 sm:text-2xl">{activeFilterCount > 0 ? (language === "fa" ? "کورسی مطابق انتخاب شما پیدا نشد" : "No courses match your selection") : (language === "fa" ? "کورس‌های تازه به‌زودی منتشر می‌شوند" : "New courses are coming soon")}</h2>
+                <p className="mx-auto mt-3 max-w-xl text-sm font-medium leading-7 text-slate-600">{activeFilterCount > 0 ? (language === "fa" ? "یک یا چند فیلتر را بردارید یا عبارت دیگری جستجو کنید." : "Remove one or more filters or try a different search.") : noCoursesText}</p>
+                {activeFilterCount > 0 ? <button type="button" onClick={resetFilters} className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white"><RotateCcw size={16} />{language === "fa" ? "پاک‌کردن فیلترها" : "Clear filters"}</button> : null}
               </div>
             ) : null}
 
@@ -1184,35 +1202,33 @@ export default function LiveCoursesPage({ t }) {
             ) : null}
           </div>
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.05)] lg:col-span-2">
+          <div className="space-y-5">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
               <h2 className="text-xl font-black leading-tight text-slate-950 md:text-2xl">{page.sidebarTitle}</h2>
-              <div className="mt-4 space-y-4">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {page.benefits.map((benefit, index) => {
                   const Icon = benefitIcons[index];
                   return (
-                    <div className="flex gap-3" key={benefit.title}>
-                      <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-full ${index % 2 === 0 ? "bg-primary-50 text-primary-700" : "bg-teal-50 text-teal-700"}`}>
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4" key={benefit.title}>
+                      <div className={`grid h-11 w-11 place-items-center rounded-xl ${index % 2 === 0 ? "bg-primary-50 text-primary-700" : "bg-teal-50 text-teal-700"}`}>
                         <Icon size={20} />
                       </div>
-                      <div>
-                        <h3 className="text-base font-black leading-tight text-slate-950">{benefit.title}</h3>
-                        <p className="mt-1.5 text-sm leading-6 text-slate-600 break-normal">{benefit.text}</p>
-                      </div>
+                      <h3 className="mt-4 text-base font-black leading-tight text-slate-950">{benefit.title}</h3>
+                      <p className="mt-2 text-sm leading-6 text-slate-600 break-normal">{benefit.text}</p>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            <div className="flex h-full min-h-[180px] flex-col rounded-2xl border border-primary-100 bg-primary-50 p-5 text-center shadow-[0_10px_28px_rgba(15,23,42,0.05)] sm:text-start lg:col-span-2">
-              <div>
+            <div className="flex flex-col gap-5 rounded-3xl border border-primary-100 bg-gradient-to-br from-primary-50 to-teal-50 p-5 text-center shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-7 sm:text-start">
+              <div className="max-w-2xl">
                 <h2 className="text-xl font-black leading-tight text-slate-950">{page.suggestTitle}</h2>
                 <p className="mx-auto mt-2.5 text-sm leading-7 text-slate-600 break-normal sm:mx-0">{page.suggestText}</p>
               </div>
               <Link
                 to="/contact"
-                className="mt-auto inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-black text-white shadow-glow transition hover:bg-primary-700 sm:w-auto sm:min-w-[170px]"
+                className="inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white shadow-glow transition hover:bg-primary-700 sm:w-auto sm:min-w-[180px]"
               >
                 <PlusCircle size={17} />
                 {page.suggestButton}

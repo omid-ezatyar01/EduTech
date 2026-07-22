@@ -141,12 +141,22 @@ function getSeoConfig(pathname, language) {
     },
     {
       match: /^\/blog\/?$/,
-      title: isFa
-        ? "نقشه‌های راه یادگیری | ایجوتک آکادمی"
-        : "Learning Roadmaps | EduTech Academy",
+      title: isFa ? "وبلاگ آموزشی | ایجوتک آکادمی" : "Learning Blog | EduTech Academy",
       description: isFa
-        ? "نقشه‌های راه ایجوتک به شما کمک می‌کنند کورس‌ها را برای یادگیری هر مهارت به ترتیب درست انتخاب کنید."
-        : "EduTech learning roadmaps help you choose courses in the right order for each skill and goal.",
+        ? "مقاله‌ها، راهنماهای عملی و نکته‌های آموزشی ایجوتک را برای یادگیری بهتر مطالعه کنید."
+        : "Read practical guides, learning strategies, and educational insights from EduTech.",
+      keywords: ["learning blog", "education articles", "وبلاگ آموزشی", "مقالات آموزشی"],
+    },
+    {
+      match: /^\/blog\/[^/]+\/?$/,
+      title: isFa ? "مقاله آموزشی | ایجوتک آکادمی" : "Learning Article | EduTech Academy",
+      description: isFa ? "این مقاله آموزشی را در وبلاگ ایجوتک بخوانید." : "Read this educational article on the EduTech blog.",
+      keywords: ["EduTech article", "learning guide", "مقاله ایجوتک"],
+    },
+    {
+      match: /^\/roadmaps\/?$/,
+      title: isFa ? "نقشه‌های راه یادگیری | ایجوتک آکادمی" : "Learning Roadmaps | EduTech Academy",
+      description: isFa ? "نقشه‌های راه ایجوتک به شما کمک می‌کنند کورس‌ها را برای یادگیری هر مهارت به ترتیب درست انتخاب کنید." : "EduTech learning roadmaps help you choose courses in the right order for each skill and goal.",
       keywords: ["learning roadmaps", "course path", "نقشه راه یادگیری", "مسیر کورس"],
     },
     {
@@ -158,7 +168,7 @@ function getSeoConfig(pathname, language) {
       keywords: ["learning videos", "educational videos", "ویدیو آموزشی", "آموزش ویدیویی"],
     },
     {
-      match: /^\/blog\/english\/?$/,
+      match: /^\/roadmaps\/english\/?$/,
       title: isFa
         ? "نقشه راه یادگیری انگلیسی | ایجوتک آکادمی"
         : "English Learning Roadmap | EduTech Academy",

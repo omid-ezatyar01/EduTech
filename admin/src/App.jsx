@@ -11,6 +11,7 @@ import AdminLayout from "./layouts/AdminLayout";
 import { enableAdminPushNotifications } from "../services/pushNotifications.js";
 import { useAdminI18n } from "./i18n/AdminI18nContext.jsx";
 import AdminPageLoader from "./components/common/AdminPageLoader.jsx";
+import { applyEduTechLogoFallback } from "./utils/imageFallback.js";
 
 const loadAdminLoginPage = () => import("./pages/AdminLoginPage");
 const loadAdminDashboardPage = () => import("./pages/AdminDashboardPage");
@@ -20,6 +21,7 @@ const loadAdminCertificatesPage = () => import("./pages/AdminCertificatesPage");
 const loadAdminCoursesPage = () => import("./pages/AdminCoursesPage");
 const loadAdminCategoriesPage = () => import("./pages/AdminCategoriesPage");
 const loadAdminVideosPage = () => import("./pages/AdminVideosPage");
+const loadAdminArticlesPage = () => import("./pages/AdminArticlesPage");
 const loadAdminPaymentsPage = () => import("./pages/AdminPaymentsPage");
 const loadAdminTeacherIncomePage = () => import("./pages/AdminTeacherIncomePage");
 const loadAdminCouponsPage = () => import("./pages/AdminCouponsPage");
@@ -35,6 +37,7 @@ const AdminCertificatesPage = lazy(loadAdminCertificatesPage);
 const AdminCoursesPage = lazy(loadAdminCoursesPage);
 const AdminCategoriesPage = lazy(loadAdminCategoriesPage);
 const AdminVideosPage = lazy(loadAdminVideosPage);
+const AdminArticlesPage = lazy(loadAdminArticlesPage);
 const AdminPaymentsPage = lazy(loadAdminPaymentsPage);
 const AdminTeacherIncomePage = lazy(loadAdminTeacherIncomePage);
 const AdminCouponsPage = lazy(loadAdminCouponsPage);
@@ -52,6 +55,7 @@ const preloadRoutes = [
   { key: "courses", test: (path) => path === "/courses", load: loadAdminCoursesPage },
   { key: "categories", test: (path) => path === "/categories", load: loadAdminCategoriesPage },
   { key: "videos", test: (path) => path === "/videos", load: loadAdminVideosPage },
+  { key: "articles", test: (path) => path === "/articles", load: loadAdminArticlesPage },
   { key: "payments", test: (path) => path === "/payments", load: loadAdminPaymentsPage },
   { key: "teacher-income", test: (path) => path === "/teacher-income", load: loadAdminTeacherIncomePage },
   { key: "coupons", test: (path) => path === "/coupons", load: loadAdminCouponsPage },
@@ -75,6 +79,7 @@ const KNOWN_ADMIN_ROUTE_SUFFIXES = [
   "/courses",
   "/categories",
   "/videos",
+  "/articles",
   "/payments",
   "/teacher-income",
   "/coupons",
@@ -222,7 +227,7 @@ function AppContent() {
   };
 
   return (
-    <div className="font-sans" onPointerEnterCapture={handleRouteIntent} onFocusCapture={handleRouteIntent}>
+    <div className="font-sans" onErrorCapture={applyEduTechLogoFallback} onPointerEnterCapture={handleRouteIntent} onFocusCapture={handleRouteIntent}>
       <Suspense
         fallback={
           shouldShowSuspenseFallback ? (
@@ -247,6 +252,7 @@ function AppContent() {
             <Route path="/courses" element={<AdminCoursesPage />} />
             <Route path="/categories" element={<AdminCategoriesPage />} />
             <Route path="/videos" element={<AdminVideosPage />} />
+            <Route path="/articles" element={<AdminArticlesPage />} />
             <Route path="/payments" element={<AdminPaymentsPage />} />
             <Route path="/teacher-income" element={<AdminTeacherIncomePage />} />
             <Route path="/coupons" element={<AdminCouponsPage />} />

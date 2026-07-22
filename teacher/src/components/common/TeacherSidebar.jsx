@@ -11,6 +11,7 @@ import {
   Video,
   DollarSign,
   UserCheck,
+  Newspaper,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
@@ -23,6 +24,7 @@ const menuItems = [
   { key: "assignments", labelFa: "تمرین‌ها", labelEn: "Assignments", path: "/teacher/assignments", icon: ClipboardList },
   { key: "resources", labelFa: "منابع درسی", labelEn: "Resources", path: "/teacher/resources", icon: FolderOpen },
   { key: "videos", labelFa: "ویدیوهای من", labelEn: "My Videos", path: "/teacher/videos", icon: Video },
+  { key: "articles", labelFa: "مقاله‌های من", labelEn: "My Articles", path: "/teacher/articles", icon: Newspaper },
   { key: "reports", labelFa: "گزارش‌ها", labelEn: "Reports", path: "/teacher/reports", icon: BarChart3 },
   { key: "income", labelFa: "درآمد", labelEn: "Income", path: "/teacher/income", icon: DollarSign },
   { key: "profile", labelFa: "پروفایل", labelEn: "Profile", path: "/teacher/profile", icon: User },
