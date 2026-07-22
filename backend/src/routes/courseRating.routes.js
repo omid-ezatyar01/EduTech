@@ -20,6 +20,7 @@ import {
   getStudentTeacherRatings,
   submitStudentTeacherRating,
   updateStudentTeacherRating,
+  getMonthlyPlatformFeedbackStatus,
 } from "../controllers/courseRatingController.js";
 
 const router = express.Router();
@@ -45,6 +46,7 @@ router.get("/student/teacher-ratings", protect, authorizeRoles("student"), getSt
 router.post("/student/teacher-ratings", protect, authorizeRoles("student"), submitStudentTeacherRating);
 router.patch("/student/teacher-ratings/:id", protect, authorizeRoles("student"), updateStudentTeacherRating);
 router.post("/student/platform-feedback", protect, authorizeRoles("student"), submitPlatformFeedback);
+router.get("/student/platform-feedback/monthly-status", protect, authorizeRoles("student"), getMonthlyPlatformFeedbackStatus);
 router.get("/teacher/feedback", protect, authorizeRoles("teacher"), getTeacherRatingInsights);
 router.patch("/teacher/feedback/:id/reply", protect, authorizeRoles("teacher"), replyToTeacherRating);
 router.patch("/teacher/feedback/:id/visibility", protect, authorizeRoles("teacher"), setTeacherRatingVisibility);

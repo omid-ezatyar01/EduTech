@@ -32,6 +32,7 @@ import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import {
   fetchPublicTeacherById,
   getCachedPublicTeacherById,
+  invalidatePublicTeacherCaches,
 } from "../../services/teacherService.js";
 import { fetchPendingTeacherRatings, fetchStudentEnrollments, fetchStudentTeacherRatings } from "../../services/courseService.js";
 import { buildCoursePath, buildTeacherPath, extractRouteIdentifier } from "../utils/routePaths.js";
@@ -1214,6 +1215,28 @@ export default function TeacherDetails({ language = "fa" }) {
     };
   }, [teacher, baseData, isFa, teacherIdParam]);
 
+  const publicTeacherReviews = Array.isArray(data.sections.reviews)
+    ? data.sections.reviews
+    : [];
+  const currentTeacherId = String(teacher?._id || "");
+  const ownTeacherReview = ratingAccess.submitted.find(
+    (item) => String(item.teacherId) === currentTeacherId,
+  );
+  const ownTeacherReviewIsPublic = ownTeacherReview && publicTeacherReviews.some(
+    (item) => String(item?._id || "") === String(ownTeacherReview?._id || ""),
+  );
+  const displayedTeacherReviews = ownTeacherReview && !ownTeacherReviewIsPublic
+    ? [{
+        ...ownTeacherReview,
+        name: ownTeacherReview.studentName,
+        course: ownTeacherReview.eligibilityCourseTitle || ownTeacherReview.courseTitle,
+        text: ownTeacherReview.comment,
+        rating: Number(ownTeacherReview.teacherRating || ownTeacherReview.rating || 0),
+        verifiedLearner: true,
+        isOwnReview: true,
+      }, ...publicTeacherReviews]
+    : publicTeacherReviews;
+
   useEffect(() => {
     const panelCount = Array.isArray(data.tabs) ? data.tabs.length : 0;
     if (activeTab > panelCount - 1) {
@@ -1772,10 +1795,10 @@ export default function TeacherDetails({ language = "fa" }) {
         </section>
 
         <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-3"><h2 className="text-2xl font-black text-slate-950">{data.sections.reviewsTitle}</h2><span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">{Number(teacher?.ratingCount || data.sections.reviews?.length || 0)}</span></div><p className="mt-2 text-sm font-semibold text-slate-500">{isFa ? "نظرهای شاگردانی که واقعاً در کورس فعال این استاد ثبت‌نام کرده‌اند." : "Reviews from learners enrolled in this teacher's active courses."}</p></div>{(() => { const teacherId = String(teacher?._id || ""); const eligible = ratingAccess.pending.filter((item) => String(item.teacherId) === teacherId); const editable = ratingAccess.submitted.filter((item) => String(item.teacherId) === teacherId && item.canEdit); if (eligible.length || editable.length) return <button type="button" onClick={() => setRatingModalOpen(true)} className="rounded-xl bg-primary-600 px-4 py-3 text-sm font-black text-white">{isFa ? "ثبت یا ویرایش نظر من" : "Write or edit my review"}</button>; if (getToken() && !ratingAccess.loading) return <span className="max-w-xs text-sm font-bold text-slate-500">{isFa ? "برای ثبت نظر باید در یک کورس فعال و پایان‌نیافته این استاد ثبت‌نام باشید." : "To review this teacher, you must be enrolled in one of their active, non-ended courses."}</span>; return null; })()}</div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-3"><h2 className="text-2xl font-black text-slate-950">{data.sections.reviewsTitle}</h2><span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">{Math.max(Number(teacher?.ratingCount || 0), displayedTeacherReviews.length)}</span></div><p className="mt-2 text-sm font-semibold text-slate-500">{isFa ? "نظرهای شاگردانی که واقعاً در کورس فعال این استاد ثبت‌نام کرده‌اند." : "Reviews from learners enrolled in this teacher's active courses."}</p></div>{(() => { const teacherId = String(teacher?._id || ""); const eligible = ratingAccess.pending.filter((item) => String(item.teacherId) === teacherId); const editable = ratingAccess.submitted.filter((item) => String(item.teacherId) === teacherId && item.canEdit); if (eligible.length || editable.length) return <button type="button" onClick={() => setRatingModalOpen(true)} className="rounded-xl bg-primary-600 px-4 py-3 text-sm font-black text-white">{isFa ? "ثبت یا ویرایش نظر من" : "Write or edit my review"}</button>; if (getToken() && !ratingAccess.loading) return <span className="max-w-xs text-sm font-bold text-slate-500">{isFa ? "برای ثبت نظر باید در یک کورس فعال و پایان‌نیافته این استاد ثبت‌نام باشید." : "To review this teacher, you must be enrolled in one of their active, non-ended courses."}</span>; return null; })()}</div>
           {Number(teacher?.ratingCount || 0) > 0 ? <div className="mt-5 grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-[150px_1fr]"><div className="text-center"><p className="text-4xl font-black">{Number(teacher.rating || 0).toFixed(1)}</p><p className="mt-1 text-sm font-black text-amber-500">★★★★★</p><p className="text-xs font-bold text-slate-500">{teacher.ratingCount} {isFa ? "نظر" : "reviews"}</p></div><div className="space-y-1.5">{[5,4,3,2,1].map((score) => { const count = Number(teacher?.ratingDistribution?.[score] || 0); const percent = Math.round((count / Number(teacher.ratingCount || 1)) * 100); return <div key={score} className="flex items-center gap-2 text-xs font-bold text-slate-600"><span>{score}</span><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-amber-400" style={{width:`${percent}%`}}/></div><span>{percent}%</span></div>; })}</div></div> : null}
-          {data.sections.reviews?.length ? <div className="mt-6 grid gap-4 lg:grid-cols-2">{data.sections.reviews.map((review, index) => <ReviewCard key={review._id || index} review={{ ...review, isFa }}/>)}</div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">{isFa ? "هنوز نظری برای این استاد ثبت نشده است." : "No reviews have been posted for this teacher yet."}</p>}
-          <InlineRatingModal open={ratingModalOpen} onClose={() => setRatingModalOpen(false)} courses={ratingAccess.pending.filter((item) => String(item.teacherId) === String(teacher?._id || ""))} existingRatings={ratingAccess.submitted.filter((item) => String(item.teacherId) === String(teacher?._id || ""))} initialTeacherId={String(teacher?._id || "")} reviewType="teacher" language={isFa ? "fa" : "en"} onSaved={async () => { await refreshRatingAccess(); const fresh = await fetchPublicTeacherById(teacherIdParam); if (fresh) setTeacher(fresh); }}/>
+          {displayedTeacherReviews.length ? <div className="mt-6 grid gap-4 lg:grid-cols-2">{displayedTeacherReviews.map((review, index) => <ReviewCard key={review._id || index} review={{ ...review, isFa }}/>)}</div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">{isFa ? "هنوز نظری برای این استاد ثبت نشده است." : "No reviews have been posted for this teacher yet."}</p>}
+          <InlineRatingModal open={ratingModalOpen} onClose={() => setRatingModalOpen(false)} courses={ratingAccess.pending.filter((item) => String(item.teacherId) === String(teacher?._id || ""))} existingRatings={ratingAccess.submitted.filter((item) => String(item.teacherId) === String(teacher?._id || ""))} initialTeacherId={String(teacher?._id || "")} reviewType="teacher" language={isFa ? "fa" : "en"} onSaved={async () => { await refreshRatingAccess(); invalidatePublicTeacherCaches(); const fresh = await fetchPublicTeacherById(teacherIdParam, { force: true }); if (fresh) setTeacher(fresh); }}/>
         </section>
 
         {data.sections.endedCourses?.length ? <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">

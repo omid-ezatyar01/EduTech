@@ -273,8 +273,12 @@ export const fetchPublishedCourses = async (query = {}) => {
   }, getApiCacheTtl({ publicTtl: PUBLIC_LIST_CACHE_TTL_MS }));
 };
 
-export const fetchPublishedCourseBySlug = async (slug) => {
+export const fetchPublishedCourseBySlug = async (slug, { force = false } = {}) => {
   const cacheKey = buildPublicCacheKey("published-course-detail", slug);
+  if (force) {
+    publicCourseDetailCache.delete(cacheKey);
+    invalidateApiCache((key) => key.includes(`/courses/${encodeURIComponent(slug)}`));
+  }
   const cached = readPublicCache(publicCourseDetailCache, cacheKey);
   if (cached) return cached;
 
@@ -286,7 +290,7 @@ export const fetchPublishedCourseBySlug = async (slug) => {
   const data = await fetchJsonWithCache(
     `${getApiBase()}/courses/${encodeURIComponent(slug)}`,
     {},
-    { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_DETAIL_CACHE_TTL_MS }) },
+    { ttlMs: force ? 0 : getApiCacheTtl({ publicTtl: PUBLIC_DETAIL_CACHE_TTL_MS }) },
   );
   const row = data?.data || null;
   if (!row) return null;
@@ -432,6 +436,8 @@ export const submitCourseRating = async (payload = {}) => {
     key.includes("/teachers") ||
     key.includes("/student/ratings/pending"),
   );
+  publicCourseDetailCache.clear();
+  publicCourseListCache.clear();
   return data?.data || null;
 };
 
@@ -448,6 +454,8 @@ export const updateStudentRating = async (ratingId, payload = {}) => {
   });
   const data = await parseJsonResponse(response);
   invalidateApiCache((key) => key.includes("/ratings") || key.includes("/courses") || key.includes("/teachers"));
+  publicCourseDetailCache.clear();
+  publicCourseListCache.clear();
   return data?.data || null;
 };
 
@@ -483,6 +491,11 @@ export const submitPlatformFeedback = async (payload = {}) => {
   });
   const data = await parseJsonResponse(response);
   return data?.data || null;
+};
+
+export const fetchMonthlyPlatformFeedbackStatus = async () => {
+  const data = await fetchJsonWithCache(`${getApiBase()}/student/platform-feedback/monthly-status`, { headers: buildAuthHeaders() }, { ttlMs: 0 });
+  return data?.data || { canSubmit: true };
 };
 
 export const toggleReviewHelpful = async (ratingId) => {

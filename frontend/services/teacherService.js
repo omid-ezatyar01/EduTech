@@ -2,6 +2,7 @@ import {
   fetchJsonWithCache,
   getApiBase,
   getApiCacheTtl,
+  invalidateApiCache,
 } from "./http";
 import { resolveAvatarUrl } from "../src/utils/avatar";
 import {
@@ -210,8 +211,12 @@ export const fetchPublicTeachers = async (query = {}) => {
   }, getApiCacheTtl({ publicTtl: PUBLIC_TEACHER_LIST_CACHE_TTL_MS }));
 };
 
-export const fetchPublicTeacherById = async (id) => {
+export const fetchPublicTeacherById = async (id, { force = false } = {}) => {
   const cacheKey = buildPublicCacheKey("public-teacher-detail", id);
+  if (force) {
+    publicTeacherDetailCache.delete(cacheKey);
+    invalidateApiCache((key) => key.includes(`/teachers/${encodeURIComponent(id)}`));
+  }
   const cached = readPublicCache(publicTeacherDetailCache, cacheKey);
   if (cached) return cached;
 
@@ -223,7 +228,7 @@ export const fetchPublicTeacherById = async (id) => {
   const data = await fetchJsonWithCache(
     `${getApiBase()}/teachers/${encodeURIComponent(id)}`,
     {},
-    { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_TEACHER_DETAIL_CACHE_TTL_MS }) },
+    { ttlMs: force ? 0 : getApiCacheTtl({ publicTtl: PUBLIC_TEACHER_DETAIL_CACHE_TTL_MS }) },
   );
   const row = data?.data || null;
   if (!row) return null;
@@ -237,3 +242,9 @@ export const getCachedPublicTeachers = (query = {}) =>
 
 export const getCachedPublicTeacherById = (id) =>
   readPublicCache(publicTeacherDetailCache, buildPublicCacheKey("public-teacher-detail", id));
+
+export const invalidatePublicTeacherCaches = () => {
+  publicTeacherDetailCache.clear();
+  publicTeacherListCache.clear();
+  invalidateApiCache((key) => key.includes("/teachers"));
+};

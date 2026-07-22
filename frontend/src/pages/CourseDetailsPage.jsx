@@ -956,7 +956,22 @@ export default function CourseDetailsPage({ t }) {
   const previewVideos = normalizePreviewVideoLinks(course);
   const isSpecialCourse = course?.courseType === "special";
   const courseReviews = Array.isArray(course?.reviews) ? course.reviews : [];
-  const sortedCourseReviews = [...courseReviews].sort((left, right) => reviewSort === "helpful"
+  const currentCourseId = String(course?._id || course?.id || "");
+  const ownCourseReview = ratingAccess.submitted.find(
+    (item) => String(item.courseId) === currentCourseId,
+  );
+  const ownCourseReviewIsPublic = ownCourseReview && courseReviews.some(
+    (item) => String(item?._id || "") === String(ownCourseReview?._id || ""),
+  );
+  const displayedCourseReviews = ownCourseReview && !ownCourseReviewIsPublic
+    ? [{
+        ...ownCourseReview,
+        rating: Number(ownCourseReview.courseRating || 0),
+        verifiedLearner: true,
+        isOwnReview: true,
+      }, ...courseReviews]
+    : courseReviews;
+  const sortedCourseReviews = [...displayedCourseReviews].sort((left, right) => reviewSort === "helpful"
     ? Number(right.helpfulCount || 0) - Number(left.helpfulCount || 0)
     : new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
   const quickFacts = []
@@ -1501,7 +1516,7 @@ export default function CourseDetailsPage({ t }) {
                   {language === "fa" ? "نظریات شاگردان درباره کورس" : "Student Reviews About This Course"}
                 </h2>
                 <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
-                  {Number(course?.ratingCount || courseReviews.length)}
+                  {Math.max(Number(course?.ratingCount || 0), displayedCourseReviews.length)}
                 </span>
               </div>
               {(() => {
@@ -1515,9 +1530,9 @@ export default function CourseDetailsPage({ t }) {
                 if (getToken() && !ratingAccess.loading) return <p className="mt-4 text-sm font-bold text-slate-500">{language === "fa" ? "فقط شاگردان ثبت‌نام‌شده در این کورس فعال می‌توانند نظر و امتیاز ثبت کنند." : "Only students enrolled in this active course can submit a rating and review."}</p>;
                 return null;
               })()}
-              {courseReviews.length > 1 ? <select value={reviewSort} onChange={(event) => setReviewSort(event.target.value)} className="mt-4 ms-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700"><option value="newest">{language === "fa" ? "تازه‌ترین" : "Newest"}</option><option value="helpful">{language === "fa" ? "مفیدترین" : "Most helpful"}</option></select> : null}
+              {displayedCourseReviews.length > 1 ? <select value={reviewSort} onChange={(event) => setReviewSort(event.target.value)} className="mt-4 ms-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700"><option value="newest">{language === "fa" ? "تازه‌ترین" : "Newest"}</option><option value="helpful">{language === "fa" ? "مفیدترین" : "Most helpful"}</option></select> : null}
               {Number(course?.ratingCount || 0) > 0 ? <div className="mt-5 grid gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-[150px_1fr]"><div className="text-center"><p className="text-4xl font-black text-slate-950">{Number(course.rating || 0).toFixed(1)}</p><p className="mt-1 text-sm font-black text-amber-500">★★★★★</p><p className="mt-1 text-xs font-bold text-slate-500">{course.ratingCount} {language === "fa" ? "نظر تأییدشده" : "verified reviews"}</p></div><div className="space-y-1.5">{[5,4,3,2,1].map((score) => { const count = Number(course?.ratingDistribution?.[score] || 0); const percent = Math.round((count / Number(course.ratingCount || 1)) * 100); return <div key={score} className="flex items-center gap-2 text-xs font-bold text-slate-600"><span className="w-5">{score}</span><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-amber-400" style={{width:`${percent}%`}}/></div><span className="w-9 text-end">{percent}%</span></div>; })}</div></div> : null}
-              {courseReviews.length ? (
+              {displayedCourseReviews.length ? (
                 <div className="mt-5 grid gap-4 lg:grid-cols-2">
                   {sortedCourseReviews.map((review, index) => (
                     <ReviewCard key={review._id || `${review.name}-${index}`} review={{ ...review, isFa: language === "fa" }} />
@@ -1530,7 +1545,7 @@ export default function CourseDetailsPage({ t }) {
                     : "No reviews have been posted for this course yet."}
                 </p>
               )}
-              <InlineRatingModal open={ratingModalOpen} onClose={() => setRatingModalOpen(false)} courses={ratingAccess.pending.filter((item) => String(item.courseId) === String(course?._id || course?.id || ""))} existingRatings={ratingAccess.submitted.filter((item) => String(item.courseId) === String(course?._id || course?.id || ""))} initialCourseId={String(course?._id || course?.id || "")} language={language} onSaved={async () => { await refreshRatingAccess(); const fresh = await fetchPublishedCourseBySlug(courseIdentifier); if (fresh) setCourse(fresh); }}/>
+              <InlineRatingModal open={ratingModalOpen} onClose={() => setRatingModalOpen(false)} courses={ratingAccess.pending.filter((item) => String(item.courseId) === String(course?._id || course?.id || ""))} existingRatings={ratingAccess.submitted.filter((item) => String(item.courseId) === String(course?._id || course?.id || ""))} initialCourseId={String(course?._id || course?.id || "")} language={language} onSaved={async () => { await refreshRatingAccess(); const fresh = await fetchPublishedCourseBySlug(courseIdentifier, { force: true }); if (fresh) setCourse(fresh); }}/>
             </div>
 
           </div>

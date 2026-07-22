@@ -1,7 +1,7 @@
 import Course from "../models/Course.js";
 import User from "../models/User.js";
 import Enrollment from "../models/Enrollment.js";
-import CourseRating from "../models/CourseRating.js";
+import PlatformFeedback from "../models/PlatformFeedback.js";
 import mongoose from "mongoose";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
@@ -377,9 +377,11 @@ export const getPublicPlatformStats = asyncHandler(async (_req, res) => {
 
   const [registeredStudents, ratingSummary] = await Promise.all([
     User.countDocuments({ role: "student" }),
-    CourseRating.aggregate([
-      { $match: { moderationStatus: { $ne: "hidden" } } },
-      { $group: { _id: null, average: { $avg: "$courseRating" }, total: { $sum: 1 } } },
+    PlatformFeedback.aggregate([
+      { $match: { score: { $gte: 1, $lte: 5 } } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: "$userId", score: { $first: "$score" } } },
+      { $group: { _id: null, average: { $avg: "$score" }, total: { $sum: 1 } } },
     ]),
   ]);
 

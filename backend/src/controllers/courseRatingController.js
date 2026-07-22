@@ -10,6 +10,7 @@ import {
   getEligibleTeacherRatingPrompts,
 } from "../utils/courseRatings.js";
 import PlatformFeedback from "../models/PlatformFeedback.js";
+import { DateTime } from "luxon";
 
 const normalizeRating = (value, fieldName) => {
   const rating = Number(value);
@@ -161,15 +162,32 @@ export const updateStudentTeacherRating = asyncHandler(async (req, res) => {
 });
 
 export const submitPlatformFeedback = asyncHandler(async (req, res) => {
+  const now = DateTime.now().setZone("Asia/Kabul");
+  const feedbackMonth = now.toFormat("yyyy-MM");
+  const monthStart = now.startOf("month").toUTC().toJSDate();
+  const nextMonthStart = now.plus({ months: 1 }).startOf("month").toUTC().toJSDate();
+  const existing = await PlatformFeedback.findOne({ userId: req.user._id, $or: [{ feedbackMonth }, { feedbackMonth: { $exists: false }, createdAt: { $gte: monthStart, $lt: nextMonthStart } }] }).select("_id createdAt score").lean();
+  if (existing) throw new ApiError(409, "You have already submitted your EduTech satisfaction rating this month");
   const score = normalizeRating(req.body?.score, "score");
   const feedback = await PlatformFeedback.create({
     userId: req.user._id,
+    feedbackMonth,
     type: ["feedback", "suggestion", "complaint", "bug"].includes(req.body?.type) ? req.body.type : "feedback",
     score,
     message: String(req.body?.message || "").trim().slice(0, 2000),
     page: String(req.body?.page || "").trim().slice(0, 200),
-  });
+  }).catch((error) => { if (error?.code === 11000) throw new ApiError(409, "You have already submitted your EduTech satisfaction rating this month"); throw error; });
   return res.status(201).json(new ApiResponse({ statusCode: 201, message: "Feedback submitted successfully", data: feedback }));
+});
+
+export const getMonthlyPlatformFeedbackStatus = asyncHandler(async (req, res) => {
+  const now = DateTime.now().setZone("Asia/Kabul");
+  const feedbackMonth = now.toFormat("yyyy-MM");
+  const monthStart = now.startOf("month").toUTC().toJSDate();
+  const nextMonthStart = now.plus({ months: 1 }).startOf("month").toUTC().toJSDate();
+  const existing = await PlatformFeedback.findOne({ userId: req.user._id, $or: [{ feedbackMonth }, { feedbackMonth: { $exists: false }, createdAt: { $gte: monthStart, $lt: nextMonthStart } }] }).select("score createdAt").lean();
+  const nextAvailableAt = now.plus({ months: 1 }).startOf("month").toUTC().toISO();
+  return res.json(new ApiResponse({ message: "Monthly feedback status fetched successfully", data: { canSubmit: !existing, feedbackMonth, nextAvailableAt, submittedAt: existing?.createdAt || null, score: Number(existing?.score || 0) } }));
 });
 
 export const getTeacherRatingInsights = asyncHandler(async (req, res) => {
