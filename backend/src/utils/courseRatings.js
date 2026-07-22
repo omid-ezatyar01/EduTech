@@ -129,6 +129,11 @@ export const getCourseRatingAggregates = async (courseIds = []) => {
         rating: { $avg: "$courseRating" },
         teacherRating: { $avg: "$teacherRating" },
         ratingCount: { $sum: 1 },
+        oneStar: { $sum: { $cond: [{ $eq: ["$courseRating", 1] }, 1, 0] } },
+        twoStar: { $sum: { $cond: [{ $eq: ["$courseRating", 2] }, 1, 0] } },
+        threeStar: { $sum: { $cond: [{ $eq: ["$courseRating", 3] }, 1, 0] } },
+        fourStar: { $sum: { $cond: [{ $eq: ["$courseRating", 4] }, 1, 0] } },
+        fiveStar: { $sum: { $cond: [{ $eq: ["$courseRating", 5] }, 1, 0] } },
       },
     },
   ]);
@@ -140,6 +145,7 @@ export const getCourseRatingAggregates = async (courseIds = []) => {
         rating: roundRating(row.rating),
         teacherRating: roundRating(row.teacherRating),
         ratingCount: Number(row.ratingCount || 0),
+        ratingDistribution: { 1: row.oneStar, 2: row.twoStar, 3: row.threeStar, 4: row.fourStar, 5: row.fiveStar },
       },
     ]),
   );
@@ -156,6 +162,11 @@ export const getTeacherRatingAggregates = async (teacherIds = []) => {
         _id: "$teacherId",
         rating: { $avg: "$teacherRating" },
         ratingCount: { $sum: 1 },
+        oneStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 1] }, 1, 0] } },
+        twoStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 2] }, 1, 0] } },
+        threeStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 3] }, 1, 0] } },
+        fourStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 4] }, 1, 0] } },
+        fiveStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 5] }, 1, 0] } },
       },
     },
   ]);
@@ -166,13 +177,16 @@ export const getTeacherRatingAggregates = async (teacherIds = []) => {
       {
         rating: roundRating(row.rating),
         ratingCount: Number(row.ratingCount || 0),
+        ratingDistribution: { 1: row.oneStar, 2: row.twoStar, 3: row.threeStar, 4: row.fourStar, 5: row.fiveStar },
       },
     ]),
   );
 };
 
 const mapPublicReviewRow = (rating = {}, { mode = "course" } = {}) => {
-  const studentName = String(rating?.studentId?.name || "Student").trim() || "Student";
+  const studentName = rating?.displayName === false
+    ? "Anonymous learner"
+    : String(rating?.studentId?.name || "Student").trim() || "Student";
   const courseTitle = String(rating?.courseId?.title || "Course").trim() || "Course";
 
   return {
@@ -186,6 +200,10 @@ const mapPublicReviewRow = (rating = {}, { mode = "course" } = {}) => {
       ? Number(rating?.teacherRating || 0)
       : Number(rating?.courseRating || 0),
     createdAt: rating?.createdAt || null,
+    tags: Array.isArray(rating?.tags) ? rating.tags : [],
+    verifiedLearner: true,
+    teacherReply: String(rating?.teacherReply || "").trim(),
+    helpfulCount: Array.isArray(rating?.helpfulBy) ? rating.helpfulBy.length : 0,
   };
 };
 
@@ -196,6 +214,7 @@ export const getPublicCourseReviews = async (courseId, { limit = 6 } = {}) => {
   const rows = await CourseRating.find({
     courseId: courseObjectId,
     comment: { $type: "string", $ne: "" },
+    moderationStatus: { $nin: ["hidden", "pending"] },
   })
     .populate("studentId", "name")
     .populate("courseId", "title")
@@ -213,10 +232,11 @@ export const getPublicTeacherReviews = async (teacherId, { limit = 10 } = {}) =>
   const rows = await CourseRating.find({
     teacherId: teacherObjectId,
     comment: { $type: "string", $ne: "" },
+    moderationStatus: { $nin: ["hidden", "pending"] },
   })
     .populate("studentId", "name")
     .populate("courseId", "title")
-    .sort({ teacherRating: -1, createdAt: -1 })
+    .sort({ createdAt: -1 })
     .limit(Math.max(1, Math.min(10, Number(limit) || 10)))
     .lean();
 

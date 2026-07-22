@@ -38,6 +38,32 @@ const courseRatingSchema = new mongoose.Schema(
       maxlength: 500,
       default: "",
     },
+    tags: [{ type: String, trim: true, maxlength: 60 }],
+    displayName: {
+      type: Boolean,
+      default: true,
+    },
+    moderationStatus: {
+      type: String,
+      enum: ["pending", "published", "hidden"],
+      default: "pending",
+      index: true,
+    },
+    teacherReply: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: "",
+    },
+    teacherRepliedAt: Date,
+    moderatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    moderatedAt: Date,
+    helpfulBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    reports: [{
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      reason: { type: String, trim: true, maxlength: 300, default: "" },
+      createdAt: { type: Date, default: Date.now },
+    }],
   },
   { timestamps: true },
 );
@@ -45,6 +71,7 @@ const courseRatingSchema = new mongoose.Schema(
 courseRatingSchema.index({ studentId: 1, courseId: 1 }, { unique: true });
 courseRatingSchema.index({ courseId: 1, createdAt: -1 });
 courseRatingSchema.index({ teacherId: 1, createdAt: -1 });
+courseRatingSchema.index({ moderationStatus: 1, createdAt: -1 });
 
 const CourseRating = mongoose.model("CourseRating", courseRatingSchema);
 

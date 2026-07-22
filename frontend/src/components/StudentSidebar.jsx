@@ -16,6 +16,7 @@ import {
   LogOut,
   X,
   UserCheck,
+  MessageSquareHeart,
 } from "lucide-react";
 
 const menuItems = {
@@ -29,6 +30,7 @@ const menuItems = {
     { path: "/student/resources", name: "منابع درسی", icon: FolderOpen },
     { path: "/student/payments", name: "پرداخت‌ها", icon: CreditCard },
     { path: "/student/certificates", name: "سرتیفیکیت‌ها", icon: Award },
+    { path: "/student/feedback", name: "نظرات و بازخورد", icon: MessageSquareHeart },
     { path: "/student/profile", name: "پروفایل", icon: User },
     { path: "/student/settings", name: "تنظیمات", icon: Settings },
   ],
@@ -42,6 +44,7 @@ const menuItems = {
     { path: "/student/resources", name: "Resources", icon: FolderOpen },
     { path: "/student/payments", name: "Payments", icon: CreditCard },
     { path: "/student/certificates", name: "Certificates", icon: Award },
+    { path: "/student/feedback", name: "Reviews & Feedback", icon: MessageSquareHeart },
     { path: "/student/profile", name: "Profile", icon: User },
     { path: "/student/settings", name: "Settings", icon: Settings },
   ],

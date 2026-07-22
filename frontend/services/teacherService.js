@@ -82,6 +82,10 @@ const normalizeReviews = (rows = []) =>
       text: normalizeText(item?.comment || ""),
       rating: Math.max(1, Math.min(5, Math.round(Number(item?.rating || item?.teacherRating || 0) || 0))),
       createdAt: item?.createdAt || null,
+      tags: Array.isArray(item?.tags) ? item.tags : [],
+      verifiedLearner: Boolean(item?.verifiedLearner),
+      teacherReply: String(item?.teacherReply || ""),
+      helpfulCount: Number(item?.helpfulCount || 0),
     }))
     .filter((item) => item.text);
 
@@ -149,6 +153,7 @@ const mapTeacher = (teacher = {}) => ({
   totalStudents: Number(teacher.totalStudents || 0),
   rating: Number(teacher.rating || 0),
   ratingCount: Math.max(0, Number(teacher.ratingCount || 0)),
+  ratingDistribution: teacher?.ratingDistribution || {},
   tags: Array.isArray(teacher.tags) ? teacher.tags : [],
   reviews: normalizeReviews(teacher.reviews || []),
   teacherApplication: {

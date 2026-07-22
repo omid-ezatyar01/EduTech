@@ -3,6 +3,16 @@ import { protect } from "../middlewares/authMiddleware.js";
 import authorizeRoles from "../middlewares/authorizeRoles.js";
 import {
   getPendingStudentCourseRatings,
+  getStudentRatings,
+  updateStudentRating,
+  submitPlatformFeedback,
+  getTeacherRatingInsights,
+  replyToTeacherRating,
+  getAdminFeedback,
+  moderateAdminRating,
+  updateAdminPlatformFeedback,
+  toggleRatingHelpful,
+  reportRating,
   submitStudentCourseRating,
 } from "../controllers/courseRatingController.js";
 
@@ -21,5 +31,16 @@ router.post(
   authorizeRoles("student"),
   submitStudentCourseRating,
 );
+
+router.get("/student/ratings", protect, authorizeRoles("student"), getStudentRatings);
+router.patch("/student/ratings/:id", protect, authorizeRoles("student"), updateStudentRating);
+router.post("/student/platform-feedback", protect, authorizeRoles("student"), submitPlatformFeedback);
+router.get("/teacher/feedback", protect, authorizeRoles("teacher"), getTeacherRatingInsights);
+router.patch("/teacher/feedback/:id/reply", protect, authorizeRoles("teacher"), replyToTeacherRating);
+router.get("/admin/feedback", protect, authorizeRoles("admin"), getAdminFeedback);
+router.patch("/admin/feedback/ratings/:id", protect, authorizeRoles("admin"), moderateAdminRating);
+router.patch("/admin/feedback/platform/:id", protect, authorizeRoles("admin"), updateAdminPlatformFeedback);
+router.post("/ratings/:id/helpful", protect, authorizeRoles("student"), toggleRatingHelpful);
+router.post("/ratings/:id/report", protect, authorizeRoles("student"), reportRating);
 
 export default router;

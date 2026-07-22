@@ -26,6 +26,7 @@ import SkillBadge from "../components/SkillBadge.jsx";
 import ProgressSkill from "../components/ProgressSkill.jsx";
 import TeacherScheduleTable from "../components/TeacherScheduleTable.jsx";
 import FAQAccordion from "../components/FAQAccordion.jsx";
+import ReviewCard from "../components/ReviewCard.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import {
   fetchPublicTeacherById,
@@ -1744,6 +1745,12 @@ export default function TeacherDetails({ language = "fa" }) {
               ) : null}
             </div>
           )}
+        </section>
+
+        <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-black text-slate-950">{data.sections.reviewsTitle}</h2><p className="mt-2 text-sm font-semibold text-slate-500">{isFa ? "نظرهای شاگردانی که واقعاً در کورس شرکت کرده‌اند." : "Reviews from learners who actually attended a course."}</p></div>{getToken() ? <Link to="/student/feedback" className="rounded-xl bg-primary-600 px-4 py-3 text-sm font-black text-white">{isFa ? "ثبت نظر من" : "Write my review"}</Link> : null}</div>
+          {Number(teacher?.ratingCount || 0) > 0 ? <div className="mt-5 grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-[150px_1fr]"><div className="text-center"><p className="text-4xl font-black">{Number(teacher.rating || 0).toFixed(1)}</p><p className="mt-1 text-sm font-black text-amber-500">★★★★★</p><p className="text-xs font-bold text-slate-500">{teacher.ratingCount} {isFa ? "نظر" : "reviews"}</p></div><div className="space-y-1.5">{[5,4,3,2,1].map((score) => { const count = Number(teacher?.ratingDistribution?.[score] || 0); const percent = Math.round((count / Number(teacher.ratingCount || 1)) * 100); return <div key={score} className="flex items-center gap-2 text-xs font-bold text-slate-600"><span>{score}</span><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-amber-400" style={{width:`${percent}%`}}/></div><span>{percent}%</span></div>; })}</div></div> : null}
+          {data.sections.reviews?.length ? <div className="mt-6 grid gap-4 lg:grid-cols-2">{data.sections.reviews.map((review, index) => <ReviewCard key={review._id || index} review={{ ...review, isFa }}/>)}</div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">{isFa ? "هنوز نظری برای این استاد ثبت نشده است." : "No reviews have been posted for this teacher yet."}</p>}
         </section>
 
         {data.sections.endedCourses?.length ? <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">

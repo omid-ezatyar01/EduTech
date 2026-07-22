@@ -257,8 +257,8 @@ export default function LiveClass({ language = "fa" }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [ratingPrompt, setRatingPrompt] = useState(null);
   const [ratingValues, setRatingValues] = useState({
-    courseRating: 5,
-    teacherRating: 5,
+    courseRating: 0,
+    teacherRating: 0,
     comment: "",
   });
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
@@ -343,7 +343,7 @@ export default function LiveClass({ language = "fa" }) {
           if (!mounted) return;
           if (!ratingPrompt && prompts[0]) {
             setRatingPrompt(prompts[0]);
-            setRatingValues({ courseRating: 5, teacherRating: 5, comment: "" });
+            setRatingValues({ courseRating: 0, teacherRating: 0, comment: "" });
             setRatingError("");
           }
         } catch {
@@ -461,7 +461,7 @@ export default function LiveClass({ language = "fa" }) {
       const target = joined?.meetingLink || liveLinkState?.meetLink || session.meetLink;
       if (joined?.ratingPrompt) {
         setRatingPrompt(joined.ratingPrompt);
-        setRatingValues({ courseRating: 5, teacherRating: 5, comment: "" });
+        setRatingValues({ courseRating: 0, teacherRating: 0, comment: "" });
         setRatingError("");
       }
       setRefreshSeed((prev) => prev + 1);
@@ -485,6 +485,10 @@ export default function LiveClass({ language = "fa" }) {
 
   const handleSubmitRating = async () => {
     if (!ratingPrompt?.courseId || ratingSubmitting) return;
+    if (!ratingValues.courseRating || !ratingValues.teacherRating) {
+      setRatingError(language === "fa" ? "برای کورس و استاد امتیاز انتخاب کنید." : "Select ratings for both course and teacher.");
+      return;
+    }
     try {
       setRatingSubmitting(true);
       setRatingError("");
@@ -495,7 +499,7 @@ export default function LiveClass({ language = "fa" }) {
         comment: ratingValues.comment,
       });
       setRatingPrompt(null);
-      setRatingValues({ courseRating: 5, teacherRating: 5, comment: "" });
+      setRatingValues({ courseRating: 0, teacherRating: 0, comment: "" });
       setRefreshSeed((prev) => prev + 1);
       window.dispatchEvent(new Event("edutech_data_changed"));
     } catch (err) {

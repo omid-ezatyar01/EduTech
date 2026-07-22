@@ -374,6 +374,7 @@ export default function CourseDetailsPage({ t }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [expandedDescriptionSlug, setExpandedDescriptionSlug] = useState("");
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [reviewSort, setReviewSort] = useState("newest");
   const quotedPriceLabel = useRegionalCoursePrice(Number(course?.price || 0), language);
   const cryptoAmountLabel = useCryptoUsdtQuoteLabel(Number(course?.price || 0), language);
 
@@ -931,6 +932,9 @@ export default function CourseDetailsPage({ t }) {
   const previewVideos = normalizePreviewVideoLinks(course);
   const isSpecialCourse = course?.courseType === "special";
   const courseReviews = Array.isArray(course?.reviews) ? course.reviews : [];
+  const sortedCourseReviews = [...courseReviews].sort((left, right) => reviewSort === "helpful"
+    ? Number(right.helpfulCount || 0) - Number(left.helpfulCount || 0)
+    : new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
   const quickFacts = []
     .concat(
       teacherName
@@ -1476,10 +1480,13 @@ export default function CourseDetailsPage({ t }) {
                   {courseReviews.length}
                 </span>
               </div>
+              {isEnrolled ? <Link to="/student/feedback" className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-primary-600 px-4 text-sm font-black text-white">{language === "fa" ? "ثبت یا مدیریت نظر من" : "Write or manage my review"}</Link> : null}
+              {courseReviews.length > 1 ? <select value={reviewSort} onChange={(event) => setReviewSort(event.target.value)} className="mt-4 ms-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700"><option value="newest">{language === "fa" ? "تازه‌ترین" : "Newest"}</option><option value="helpful">{language === "fa" ? "مفیدترین" : "Most helpful"}</option></select> : null}
+              {Number(course?.ratingCount || 0) > 0 ? <div className="mt-5 grid gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-[150px_1fr]"><div className="text-center"><p className="text-4xl font-black text-slate-950">{Number(course.rating || 0).toFixed(1)}</p><p className="mt-1 text-sm font-black text-amber-500">★★★★★</p><p className="mt-1 text-xs font-bold text-slate-500">{course.ratingCount} {language === "fa" ? "نظر تأییدشده" : "verified reviews"}</p></div><div className="space-y-1.5">{[5,4,3,2,1].map((score) => { const count = Number(course?.ratingDistribution?.[score] || 0); const percent = Math.round((count / Number(course.ratingCount || 1)) * 100); return <div key={score} className="flex items-center gap-2 text-xs font-bold text-slate-600"><span className="w-5">{score}</span><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-amber-400" style={{width:`${percent}%`}}/></div><span className="w-9 text-end">{percent}%</span></div>; })}</div></div> : null}
               {courseReviews.length ? (
                 <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                  {courseReviews.map((review, index) => (
-                    <ReviewCard key={review._id || `${review.name}-${index}`} review={review} />
+                  {sortedCourseReviews.map((review, index) => (
+                    <ReviewCard key={review._id || `${review.name}-${index}`} review={{ ...review, isFa: language === "fa" }} />
                   ))}
                 </div>
               ) : (

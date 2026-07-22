@@ -125,6 +125,7 @@ const mapTeacherRow = ({
     totalStudents,
     rating: ratingStats.rating,
     ratingCount: ratingStats.ratingCount,
+    ratingDistribution: ratingStats.ratingDistribution || {},
     followerCount: Number(followerCount || 0),
     tags,
   };

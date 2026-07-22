@@ -1,6 +1,7 @@
 import Course from "../models/Course.js";
 import User from "../models/User.js";
 import Enrollment from "../models/Enrollment.js";
+import CourseRating from "../models/CourseRating.js";
 import mongoose from "mongoose";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
@@ -340,6 +341,7 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
     enrolledStudentsCount: enrollmentCounts.get(String(courseId)) || 0,
     rating: ratingStats.rating,
     ratingCount: ratingStats.ratingCount,
+    ratingDistribution: ratingStats.ratingDistribution || {},
     reviews,
   };
 
@@ -352,10 +354,6 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
 });
 
 export const getPublicPlatformStats = asyncHandler(async (_req, res) => {
-  const enrollmentResolvedFilter = {
-    enrollmentStatus: { $in: ["active", "completed", "cancelled"] },
-  };
-
   const approvedTeacherIds = await User.find({
     role: "teacher",
     status: "active",
@@ -377,29 +375,16 @@ export const getPublicPlatformStats = asyncHandler(async (_req, res) => {
     ? await Course.find(activeCourseFilter).distinct("_id")
     : [];
 
-  const [
-    registeredStudents,
-    successfulEnrollments,
-    resolvedEnrollments,
-  ] = await Promise.all([
+  const [registeredStudents, ratingSummary] = await Promise.all([
     User.countDocuments({ role: "student" }),
-    activeCourseIds.length
-      ? Enrollment.countDocuments({
-          ...activeEnrollmentFilter(),
-          courseId: { $in: activeCourseIds },
-        })
-      : 0,
-    activeCourseIds.length
-      ? Enrollment.countDocuments({
-          ...enrollmentResolvedFilter,
-          courseId: { $in: activeCourseIds },
-        })
-      : 0,
+    CourseRating.aggregate([
+      { $match: { moderationStatus: { $ne: "hidden" } } },
+      { $group: { _id: null, average: { $avg: "$courseRating" }, total: { $sum: 1 } } },
+    ]),
   ]);
 
-  const satisfactionRate = resolvedEnrollments
-    ? Math.round((successfulEnrollments / resolvedEnrollments) * 100)
-    : 0;
+  const averageRating = Number(ratingSummary?.[0]?.average || 0);
+  const satisfactionRate = averageRating > 0 ? Math.round((averageRating / 5) * 100) : 0;
 
   return res.json(
     new ApiResponse({

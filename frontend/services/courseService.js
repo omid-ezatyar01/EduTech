@@ -143,6 +143,10 @@ const normalizeReviews = (rows = []) =>
       text: String(item?.comment || "").trim(),
       rating: Math.max(1, Math.min(5, Math.round(Number(item?.rating || item?.courseRating || 0) || 0))),
       createdAt: item?.createdAt || null,
+      tags: Array.isArray(item?.tags) ? item.tags : [],
+      verifiedLearner: Boolean(item?.verifiedLearner),
+      teacherReply: String(item?.teacherReply || ""),
+      helpfulCount: Number(item?.helpfulCount || 0),
     }))
     .filter((item) => item.text);
 
@@ -219,6 +223,7 @@ const mapCourse = (course = {}) => {
     isFree: Boolean(course.isFree),
     rating: Number(course?.rating || 0),
     ratingCount: Math.max(0, Number(course?.ratingCount || 0)),
+    ratingDistribution: course?.ratingDistribution || {},
     reviews: normalizeReviews(course?.reviews || []),
     enrolledStudentsCount: Number.isFinite(enrolledStudentsCount)
       ? Math.max(0, enrolledStudentsCount)
@@ -416,6 +421,8 @@ export const submitCourseRating = async (payload = {}) => {
       courseRating: payload.courseRating,
       teacherRating: payload.teacherRating,
       comment: payload.comment || "",
+      tags: payload.tags || [],
+      displayName: payload.displayName !== false,
     }),
   });
 
@@ -426,6 +433,44 @@ export const submitCourseRating = async (payload = {}) => {
     key.includes("/student/ratings/pending"),
   );
   return data?.data || null;
+};
+
+export const fetchStudentRatings = async () => {
+  const data = await fetchJsonWithCache(`${getApiBase()}/student/ratings`, { headers: buildAuthHeaders() }, { ttlMs: 0 });
+  return Array.isArray(data?.data) ? data.data : [];
+};
+
+export const updateStudentRating = async (ratingId, payload = {}) => {
+  const response = await fetch(`${getApiBase()}/student/ratings/${encodeURIComponent(ratingId)}`, {
+    method: "PATCH",
+    headers: buildAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const data = await parseJsonResponse(response);
+  invalidateApiCache((key) => key.includes("/ratings") || key.includes("/courses") || key.includes("/teachers"));
+  return data?.data || null;
+};
+
+export const submitPlatformFeedback = async (payload = {}) => {
+  const response = await fetch(`${getApiBase()}/student/platform-feedback`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const data = await parseJsonResponse(response);
+  return data?.data || null;
+};
+
+export const toggleReviewHelpful = async (ratingId) => {
+  const response = await fetch(`${getApiBase()}/ratings/${encodeURIComponent(ratingId)}/helpful`, { method: "POST", headers: buildAuthHeaders() });
+  const data = await parseJsonResponse(response);
+  return data?.data || {};
+};
+
+export const reportReview = async (ratingId, reason = "") => {
+  const response = await fetch(`${getApiBase()}/ratings/${encodeURIComponent(ratingId)}/report`, { method: "POST", headers: buildAuthHeaders(), body: JSON.stringify({ reason }) });
+  const data = await parseJsonResponse(response);
+  return data?.data || {};
 };
 
 export const fetchStudentLiveSessionLink = async (sessionId) => {

@@ -61,6 +61,16 @@ export const createPublicContactMessage = asyncHandler(async (req, res) => {
     );
   });
 
+  const message = await ContactMessage.create({
+    name: user.name,
+    contact: user.email,
+    subject: payload.subject,
+    message: payload.message,
+    source: "student_contact_form",
+    ipAddress: req.ip || "",
+    userAgent: String(req.get("user-agent") || "").slice(0, 500),
+  });
+
   user.lastContactMessageAt = new Date();
   await user.save();
 
@@ -69,6 +79,7 @@ export const createPublicContactMessage = asyncHandler(async (req, res) => {
       message: "Message sent successfully",
       data: {
         status: "sent",
+        id: String(message._id),
       },
     }),
   );
