@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import CourseRating from "../models/CourseRating.js";
+import TeacherRating from "../models/TeacherRating.js";
 import Enrollment from "../models/Enrollment.js";
 
 const activeEnrollmentFilter = (now = new Date()) => ({
@@ -40,10 +41,11 @@ export const getEligibleCourseRatingPrompts = async (
   const enrollments = await Enrollment.find(filter)
     .populate({
       path: "courseId",
-      select: "title thumbnail teacher teacherId status isPublished classEndedAt classCancelledAt",
+      select: "title thumbnail teacher teacherId createdBy status isPublished classEndedAt classCancelledAt",
       populate: [
         { path: "teacher", select: "name avatar" },
         { path: "teacherId", select: "name avatar" },
+        { path: "createdBy", select: "name avatar" },
       ],
     })
     .sort({ updatedAt: -1 })
@@ -67,17 +69,12 @@ export const getEligibleCourseRatingPrompts = async (
     });
     if (existingRating) continue;
 
-    const teacher = course.teacherId || course.teacher || null;
+    const teacher = course.teacherId || course.teacher || course.createdBy || null;
     const teacherId =
       typeof teacher === "object" && teacher?._id
         ? teacher._id
-        : course.teacherId || course.teacher;
+        : teacher;
     if (!teacherId) continue;
-
-    const existingTeacherRating = await CourseRating.findOne({
-      studentId: studentObjectId,
-      teacherId,
-    }).select("teacherRating").lean();
 
     prompts.push({
       courseId: String(course._id),
@@ -92,8 +89,6 @@ export const getEligibleCourseRatingPrompts = async (
         typeof teacher === "object" && teacher?.avatar
           ? teacher.avatar
           : "",
-      teacherAlreadyRated: Boolean(existingTeacherRating),
-      existingTeacherRating: Number(existingTeacherRating?.teacherRating || 0),
     });
   }
 
@@ -104,6 +99,31 @@ export const assertStudentCanRateCourse = async (studentId, courseId) => {
   const prompts = await getEligibleCourseRatingPrompts(studentId, { courseId, limit: 1 });
   return prompts[0] || null;
 };
+
+export const getEligibleTeacherRatingPrompts = async (studentId, { teacherId = null, limit = 10 } = {}) => {
+  const studentObjectId = toObjectId(studentId);
+  const teacherObjectId = teacherId ? toObjectId(teacherId) : null;
+  if (!studentObjectId || (teacherId && !teacherObjectId)) return [];
+  const enrollments = await Enrollment.find({ studentId: studentObjectId, ...activeEnrollmentFilter() })
+    .populate({ path: "courseId", select: "title teacher teacherId createdBy status isPublished classEndedAt classCancelledAt", populate: [{ path: "teacher", select: "name avatar" }, { path: "teacherId", select: "name avatar" }, { path: "createdBy", select: "name avatar" }] })
+    .sort({ updatedAt: -1 }).limit(50);
+  const prompts = [];
+  const seen = new Set();
+  for (const enrollment of enrollments) {
+    const course = enrollment?.courseId;
+    if (!course?._id || course.status !== "published" || course.isPublished !== true || course.classEndedAt || course.classCancelledAt) continue;
+    const teacher = course.teacherId || course.teacher || course.createdBy;
+    const resolvedTeacherId = toObjectId(teacher?._id || teacher);
+    if (!resolvedTeacherId || (teacherObjectId && String(resolvedTeacherId) !== String(teacherObjectId)) || seen.has(String(resolvedTeacherId))) continue;
+    if (await TeacherRating.exists({ studentId: studentObjectId, teacherId: resolvedTeacherId })) continue;
+    seen.add(String(resolvedTeacherId));
+    prompts.push({ teacherId: String(resolvedTeacherId), teacherName: teacher?.name || "Teacher", teacherAvatar: teacher?.avatar || "", eligibilityCourseId: String(course._id), eligibilityCourseTitle: course.title || "Course" });
+    if (prompts.length >= Math.max(1, Math.min(20, Number(limit) || 10))) break;
+  }
+  return prompts;
+};
+
+export const assertStudentCanRateTeacher = async (studentId, teacherId) => (await getEligibleTeacherRatingPrompts(studentId, { teacherId, limit: 1 }))[0] || null;
 
 export const getCourseRatingAggregates = async (courseIds = []) => {
   const ids = courseIds.map(toObjectId).filter(Boolean);
@@ -143,25 +163,14 @@ export const getTeacherRatingAggregates = async (teacherIds = []) => {
   const ids = teacherIds.map(toObjectId).filter(Boolean);
   if (!ids.length) return new Map();
 
-  const rows = await CourseRating.aggregate([
+  const rows = await TeacherRating.aggregate([
     { $match: { teacherId: { $in: ids }, moderationStatus: "published" } },
-    { $sort: { createdAt: 1 } },
     {
       $group: {
-        _id: { teacherId: "$teacherId", studentId: "$studentId" },
-        teacherRating: { $first: "$teacherRating" },
-      },
-    },
-    {
-      $group: {
-        _id: "$_id.teacherId",
-        rating: { $avg: "$teacherRating" },
+        _id: "$teacherId",
+        rating: { $avg: "$rating" },
         ratingCount: { $sum: 1 },
-        oneStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 1] }, 1, 0] } },
-        twoStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 2] }, 1, 0] } },
-        threeStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 3] }, 1, 0] } },
-        fourStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 4] }, 1, 0] } },
-        fiveStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 5] }, 1, 0] } },
+        oneStar: { $sum: { $cond: [{ $eq: ["$rating", 1] }, 1, 0] } }, twoStar: { $sum: { $cond: [{ $eq: ["$rating", 2] }, 1, 0] } }, threeStar: { $sum: { $cond: [{ $eq: ["$rating", 3] }, 1, 0] } }, fourStar: { $sum: { $cond: [{ $eq: ["$rating", 4] }, 1, 0] } }, fiveStar: { $sum: { $cond: [{ $eq: ["$rating", 5] }, 1, 0] } },
       },
     },
   ]);
@@ -223,21 +232,15 @@ export const getPublicTeacherReviews = async (teacherId, { limit = 10 } = {}) =>
   const teacherObjectId = toObjectId(teacherId);
   if (!teacherObjectId) return [];
 
-  const rows = await CourseRating.find({
+  const rows = await TeacherRating.find({
     teacherId: teacherObjectId,
     moderationStatus: "published",
   })
     .populate("studentId", "name")
-    .populate("courseId", "title")
+    .populate("eligibilityCourseId", "title")
     .sort({ createdAt: -1 })
     .limit(Math.max(1, Math.min(10, Number(limit) || 10)))
     .lean();
 
-  const seenStudents = new Set();
-  return rows.filter((row) => {
-    const studentId = String(row?.studentId?._id || row?.studentId || "");
-    if (!studentId || seenStudents.has(studentId)) return false;
-    seenStudents.add(studentId);
-    return true;
-  }).map((row) => mapPublicReviewRow(row, { mode: "teacher" }));
+  return rows.map((row) => ({ ...mapPublicReviewRow({ ...row, teacherRating: row.rating, courseId: row.eligibilityCourseId }, { mode: "teacher" }), teacherRating: Number(row.rating || 0), rating: Number(row.rating || 0) }));
 };

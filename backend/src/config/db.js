@@ -3,6 +3,31 @@ import bcrypt from "bcryptjs";
 
 const SEVENTY_TWO_HOURS_IN_MILLISECONDS = 72 * 60 * 60 * 1000;
 
+const migrateLegacyTeacherRatings = async () => {
+  try {
+    const legacy = mongoose.connection.collection("courseratings");
+    const teacherRatings = mongoose.connection.collection("teacherratings");
+    const cursor = legacy.aggregate([
+      { $match: { teacherRating: { $gte: 1, $lte: 5 } } },
+      { $sort: { updatedAt: -1 } },
+      { $group: { _id: { studentId: "$studentId", teacherId: "$teacherId" }, row: { $first: "$$ROOT" } } },
+    ]);
+    let migrated = 0;
+    for await (const entry of cursor) {
+      const row = entry.row;
+      const result = await teacherRatings.updateOne(
+        { studentId: row.studentId, teacherId: row.teacherId },
+        { $setOnInsert: { studentId: row.studentId, teacherId: row.teacherId, eligibilityCourseId: row.courseId, rating: row.teacherRating, comment: row.comment || "", tags: row.tags || [], displayName: row.displayName !== false, moderationStatus: row.moderationStatus || "pending", teacherReply: row.teacherReply || "", teacherRepliedAt: row.teacherRepliedAt || null, moderatedBy: row.moderatedBy || null, moderatedAt: row.moderatedAt || null, helpfulBy: [], reports: [], createdAt: row.createdAt || new Date(), updatedAt: row.updatedAt || new Date() } },
+        { upsert: true },
+      );
+      migrated += Number(result.upsertedCount || 0);
+    }
+    if (migrated) console.log(`Migrated ${migrated} legacy teacher review(s) into separate records`);
+  } catch (error) {
+    console.warn(`Could not migrate legacy teacher ratings: ${error.message}`);
+  }
+};
+
 const dropLegacyUniqueUsernameIndex = async () => {
   try {
     const usersCollection = mongoose.connection.collection("users");
@@ -220,6 +245,7 @@ export const connectDB = async () => {
     await ensureCourseTextSearchIndex();
     await ensurePendingStatusForUnverifiedStudents();
     await ensureAdminCreatedTeacherDefaultPasswords();
+    await migrateLegacyTeacherRatings();
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     console.error(`Error: ${error.message}`);

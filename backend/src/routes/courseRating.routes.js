@@ -16,6 +16,10 @@ import {
   toggleRatingHelpful,
   reportRating,
   submitStudentCourseRating,
+  getPendingStudentTeacherRatings,
+  getStudentTeacherRatings,
+  submitStudentTeacherRating,
+  updateStudentTeacherRating,
 } from "../controllers/courseRatingController.js";
 
 const router = express.Router();
@@ -36,6 +40,10 @@ router.post(
 
 router.get("/student/ratings", protect, authorizeRoles("student"), getStudentRatings);
 router.patch("/student/ratings/:id", protect, authorizeRoles("student"), updateStudentRating);
+router.get("/student/teacher-ratings/pending", protect, authorizeRoles("student"), getPendingStudentTeacherRatings);
+router.get("/student/teacher-ratings", protect, authorizeRoles("student"), getStudentTeacherRatings);
+router.post("/student/teacher-ratings", protect, authorizeRoles("student"), submitStudentTeacherRating);
+router.patch("/student/teacher-ratings/:id", protect, authorizeRoles("student"), updateStudentTeacherRating);
 router.post("/student/platform-feedback", protect, authorizeRoles("student"), submitPlatformFeedback);
 router.get("/teacher/feedback", protect, authorizeRoles("teacher"), getTeacherRatingInsights);
 router.patch("/teacher/feedback/:id/reply", protect, authorizeRoles("teacher"), replyToTeacherRating);

@@ -484,6 +484,7 @@ export const getPublicTeacherById = asyncHandler(async (req, res) => {
         totalStudents,
         rating: teacherRatingStats.rating,
         ratingCount: teacherRatingStats.ratingCount,
+        ratingDistribution: teacherRatingStats.ratingDistribution || {},
         followerCount,
         tags,
         reviews,

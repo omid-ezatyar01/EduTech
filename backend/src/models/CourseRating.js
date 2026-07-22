@@ -30,7 +30,7 @@ const courseRatingSchema = new mongoose.Schema(
       type: Number,
       min: 1,
       max: 5,
-      required: true,
+      default: null,
     },
     comment: {
       type: String,
