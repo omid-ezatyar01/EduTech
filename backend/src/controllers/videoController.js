@@ -66,6 +66,7 @@ export const getPublicVideos = asyncHandler(async (req, res) => {
   const limit = Math.min(12, Math.max(1, Number(req.query.limit) || 6));
   const filter = {
     isPublished: true,
+    ...(req.query.teacherId ? { teacher: req.query.teacherId } : {}),
     ...(platform === "all" ? {} : { platform }),
   };
   const { videos, total } = await fetchVideoPage({ filter, page, limit, sort });

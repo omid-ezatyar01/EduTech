@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, Clock3, Eye, Share2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Clock3, Eye, Share2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchArticleBySlug, fetchArticles, resolveArticleCoverUrl } from "../../services/articleService.js";
@@ -60,6 +60,7 @@ export default function BlogArticlePage({ language = "fa" }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [chunkProgress, setChunkProgress] = useState({ slug: "", count: 1 });
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const load = async () => {
     setLoading(true); setError("");
@@ -83,6 +84,12 @@ export default function BlogArticlePage({ language = "fa" }) {
   }, [article, locale]);
 
   useEffect(() => { window.scrollTo(0, 0); }, [slug]);
+  useEffect(() => {
+    const handleScroll = () => setShowScrollTop(window.scrollY > 520);
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
   const contentChunks = useMemo(
     () => splitArticleContent(article ? localized(article.content, locale) : ""),
     [article, locale],
@@ -114,5 +121,14 @@ export default function BlogArticlePage({ language = "fa" }) {
       ) : null}
     </div>
     {related.length > 0 && <section className="mx-auto max-w-[1180px] border-t border-slate-200 px-4 pt-10 sm:px-6 lg:px-8"><h2 className="text-2xl font-black">{page.related}</h2><div className="mt-6 grid gap-5 md:grid-cols-3">{related.map((item) => <Link key={item._id} to={`/blog/${item.slug}`} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="aspect-video bg-blue-50"><img src={resolveArticleCoverUrl(item.coverImage) || "/logo.png"} alt="" className={`h-full w-full ${item.coverImage ? "object-cover" : "object-contain p-6"}`}/></div><div className="p-4"><p className="line-clamp-2 font-black leading-6 text-slate-900">{localized(item.title, locale)}</p></div></Link>)}</div></section>}
+    <button
+      type="button"
+      onClick={() => window.scrollTo({ top: 0, left: 0, behavior: "smooth" })}
+      className={`fixed bottom-5 right-5 z-[90] grid h-12 w-12 place-items-center rounded-full border border-blue-500 bg-white text-blue-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 ${showScrollTop ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"}`}
+      aria-label={locale === "fa" ? "رفتن به بالای صفحه" : "Scroll to top"}
+      title={locale === "fa" ? "رفتن به بالای صفحه" : "Scroll to top"}
+    >
+      <ArrowUp size={20} />
+    </button>
   </article>;
 }

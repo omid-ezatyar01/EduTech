@@ -31,8 +31,9 @@ const getArticleVisitorId = () => {
   return memoryVisitorId;
 };
 
-export const fetchArticles = async ({ page = 1, limit = 9, category = "all", search = "", sort = "latest" } = {}) => {
+export const fetchArticles = async ({ page = 1, limit = 9, category = "all", search = "", sort = "latest", authorId = "" } = {}) => {
   const params = new URLSearchParams({ page: String(page), limit: String(limit), category, search, sort });
+  if (authorId) params.set("authorId", authorId);
   const response = await fetchJsonWithCache(
     `${getApiBase()}/articles?${params.toString()}`,
     { cache: "no-store" },

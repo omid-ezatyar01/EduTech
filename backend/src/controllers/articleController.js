@@ -79,6 +79,7 @@ export const getPublicArticles = asyncHandler(async (req, res) => {
   const filter = {
     status: "published",
     publishedAt: { $lte: new Date() },
+    ...(req.query.authorId ? { author: req.query.authorId } : {}),
     ...(category && category !== "all" ? { category } : {}),
     ...searchFilter(search),
   };

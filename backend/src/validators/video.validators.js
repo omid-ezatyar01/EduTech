@@ -24,6 +24,7 @@ export const publicVideoQuerySchema = Joi.object({
   sort: Joi.string().valid("popular", "newest", "trending").default("popular"),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(12).default(6),
+  teacherId: objectId,
 });
 
 export const studentVideoQuerySchema = publicVideoQuerySchema.keys({

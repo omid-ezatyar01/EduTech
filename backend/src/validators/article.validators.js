@@ -69,6 +69,7 @@ export const publicArticleQuerySchema = Joi.object({
   category: Joi.string().trim().lowercase().max(50).allow("", "all").default("all"),
   search: Joi.string().trim().max(100).allow("").default(""),
   sort: Joi.string().valid("latest", "popular").default("latest"),
+  authorId: objectId,
 });
 
 export const adminArticleQuerySchema = Joi.object({

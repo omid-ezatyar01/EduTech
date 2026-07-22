@@ -9,11 +9,14 @@ import {
   UsersRound,
   Smile,
   LineChart,
-  BadgeCheck,
   UserRound,
   Sparkles,
   CalendarDays,
   CircleHelp,
+  BookOpen,
+  Clock3,
+  Eye,
+  Video,
 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import TeacherHero from "../components/TeacherHero.jsx";
@@ -38,8 +41,24 @@ import { applySeo } from "../seo/useSeo.js";
 import { getToken } from "../../services/portal.js";
 import { fetchTeacherFollowStatus, followTeacher, unfollowTeacher } from "../../services/teacherSocialService.js";
 import { enableEduTechPushNotifications } from "../../services/pushNotifications.js";
+import { fetchPublicVideos } from "../../services/videoService.js";
+import { fetchArticles, resolveArticleCoverUrl } from "../../services/articleService.js";
 
 const PANEL_COLLAPSED_HEIGHT = 580;
+
+const localizedArticleText = (value, language) =>
+  value?.[language] || value?.[language === "fa" ? "en" : "fa"] || "";
+
+function formatContentDate(value, isFa) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(isFa ? "fa-AF" : "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
 
 function normalizeTeacherSeoText(value = "") {
   return String(value || "")
@@ -520,6 +539,8 @@ export default function TeacherDetails({ language = "fa" }) {
   const [following, setFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(null);
   const [followBusy, setFollowBusy] = useState(false);
+  const [teacherContent, setTeacherContent] = useState({ videos: [], articles: [], videoTotal: 0, articleTotal: 0 });
+  const [teacherContentLoading, setTeacherContentLoading] = useState(false);
   const panelRefs = useRef({});
   const sectionRowRefs = useRef({});
   const courseCardLabels = useMemo(
@@ -605,6 +626,36 @@ export default function TeacherDetails({ language = "fa" }) {
     }).catch(() => {});
     return () => { active = false; };
   }, [teacher?._id, teacher?.followerCount]);
+
+  useEffect(() => {
+    let active = true;
+    if (!teacher?._id) {
+      queueMicrotask(() => {
+        if (active) setTeacherContent({ videos: [], articles: [], videoTotal: 0, articleTotal: 0 });
+      });
+      return () => { active = false; };
+    }
+    queueMicrotask(() => {
+      if (active) setTeacherContentLoading(true);
+    });
+    Promise.all([
+      fetchPublicVideos({ teacherId: teacher._id, sort: "newest", page: 1, limit: 3 })
+        .catch(() => ({ videos: [], meta: {} })),
+      fetchArticles({ authorId: teacher._id, sort: "latest", page: 1, limit: 3 })
+        .catch(() => ({ articles: [], meta: {} })),
+    ]).then(([videoResult, articleResult]) => {
+      if (!active) return;
+      setTeacherContent({
+        videos: videoResult.videos || [],
+        articles: articleResult.articles || [],
+        videoTotal: Number(videoResult.meta?.total || videoResult.videos?.length || 0),
+        articleTotal: Number(articleResult.meta?.total || articleResult.articles?.length || 0),
+      });
+    }).finally(() => {
+      if (active) setTeacherContentLoading(false);
+    });
+    return () => { active = false; };
+  }, [teacher?._id]);
 
   const handleToggleFollow = async () => {
     if (!getToken()) { navigate("/login"); return; }
@@ -1422,29 +1473,79 @@ export default function TeacherDetails({ language = "fa" }) {
         ) : null}
 
         <div className="mt-6">
-          <div className="min-w-0 space-y-6">
+          <div className="flex min-w-0 flex-col gap-6">
             <TeacherStats stats={data.stats} />
 
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <section className="order-3 overflow-hidden rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                  <p className="text-xs font-black text-teal-700">{isFa ? "پروفایل حرفه‌ای" : "Professional profile"}</p>
-                  <h2 className="mt-1 text-xl font-black text-slate-950">{isFa ? "معلومات استاد در یک نگاه" : "Teacher at a glance"}</h2>
+                  <p className="text-xs font-black text-teal-700">{isFa ? "آموزش و تجربه" : "Teaching and insights"}</p>
+                  <h2 className="mt-1 text-xl font-black text-slate-950 sm:text-2xl">{isFa ? "محتوای منتشرشده استاد" : "Published by this teacher"}</h2>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-7 text-slate-500">
+                    {isFa ? "تازه‌ترین ویدیوها و مقاله‌هایی که این استاد در ایجوتک منتشر کرده است." : "The latest videos and articles this teacher has published on EduTech."}
+                  </p>
                 </div>
-                <span className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-2 text-xs font-black text-teal-700"><BadgeCheck size={16} />{isFa ? "تأییدشده توسط ایجوتک" : "Verified by EduTech"}</span>
+                <div className="flex gap-2 text-xs font-black">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-2 text-rose-700"><Video size={14} />{pageNumberFormatter.format(teacherContent.videoTotal)} {isFa ? "ویدیو" : teacherContent.videoTotal === 1 ? "video" : "videos"}</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-3 py-2 text-primary-700"><BookOpen size={14} />{pageNumberFormatter.format(teacherContent.articleTotal)} {isFa ? "مقاله" : teacherContent.articleTotal === 1 ? "article" : "articles"}</span>
+                </div>
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {data.sidebar.quickInfo.map((item) => (
-                  <div key={item.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                    <p className="text-xs font-bold text-slate-400">{item.label}</p>
-                    <p className="mt-2 break-words text-sm font-black leading-6 text-slate-800">{item.value}</p>
-                  </div>
-                ))}
-              </div>
+
+              {teacherContentLoading ? (
+                <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {[1, 2, 3].map((item) => <div key={item} className="overflow-hidden rounded-2xl border border-slate-100"><div className="aspect-video animate-pulse bg-slate-100" /><div className="space-y-2 p-4"><div className="h-4 w-2/3 animate-pulse rounded bg-slate-200" /><div className="h-3 w-1/3 animate-pulse rounded bg-slate-100" /></div></div>)}
+                </div>
+              ) : teacherContent.videos.length || teacherContent.articles.length ? (
+                <div className="mt-6 space-y-7">
+                  {teacherContent.videos.length ? (
+                    <div>
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="inline-flex items-center gap-2 text-base font-black text-slate-950"><span className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-600"><Video size={18} /></span>{isFa ? "ویدیوهای استاد" : "Teacher videos"}</h3>
+                        <Link to="/videos" className="inline-flex items-center gap-1 text-xs font-black text-primary-700 transition hover:text-primary-600">{isFa ? "صفحه ویدیوها" : "Video library"}{isFa ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}</Link>
+                      </div>
+                      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {teacherContent.videos.map((video) => (
+                          <Link key={video._id} to={`/videos?video=${encodeURIComponent(video._id)}`} className="group overflow-hidden rounded-2xl border border-slate-200 bg-white transition hover:-translate-y-1 hover:border-primary-200 hover:shadow-lg">
+                            <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-white via-blue-50 to-cyan-50">
+                              <img src={video.thumbnailUrl || "/logo.png"} alt={video.title} loading="lazy" onError={(event) => { event.currentTarget.src = "/logo.png"; event.currentTarget.className = "h-full w-full object-contain p-8"; }} className={`h-full w-full transition duration-500 group-hover:scale-[1.03] ${video.thumbnailUrl ? "object-cover" : "object-contain p-8"}`} />
+                              <span className="absolute inset-0 grid place-items-center bg-slate-950/10 transition group-hover:bg-slate-950/20"><span className="grid h-12 w-12 place-items-center rounded-full bg-white/95 text-primary-700 shadow-lg"><PlayCircle size={24} /></span></span>
+                              <span className={`absolute start-3 top-3 rounded-full px-2.5 py-1 text-[10px] font-black text-white ${video.platform === "instagram" ? "bg-fuchsia-600" : "bg-rose-600"}`}>{video.platform === "instagram" ? "Instagram" : "YouTube"}</span>
+                            </div>
+                            <div className="p-4"><h4 className="line-clamp-2 text-sm font-black leading-6 text-slate-950">{video.title}</h4><div className="mt-3 flex items-center justify-between text-[11px] font-bold text-slate-400"><span>{formatContentDate(video.createdAt, isFa)}</span><span>{pageNumberFormatter.format(Number(video.likeCount || 0))} {isFa ? "پسند" : "likes"}</span></div></div>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {teacherContent.articles.length ? (
+                    <div className={teacherContent.videos.length ? "border-t border-slate-100 pt-7" : ""}>
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="inline-flex items-center gap-2 text-base font-black text-slate-950"><span className="grid h-9 w-9 place-items-center rounded-xl bg-primary-50 text-primary-700"><BookOpen size={18} /></span>{isFa ? "مقاله‌های استاد" : "Teacher articles"}</h3>
+                        <Link to="/blog" className="inline-flex items-center gap-1 text-xs font-black text-primary-700 transition hover:text-primary-600">{isFa ? "صفحه مقاله‌ها" : "Article library"}{isFa ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}</Link>
+                      </div>
+                      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {teacherContent.articles.map((article) => {
+                          const articleTitle = localizedArticleText(article.title, isFa ? "fa" : "en");
+                          const coverImage = resolveArticleCoverUrl(article.coverImage);
+                          return (
+                            <Link key={article._id} to={`/blog/${article.slug}`} className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition hover:-translate-y-1 hover:border-primary-200 hover:shadow-lg">
+                              <div className="aspect-video overflow-hidden bg-gradient-to-br from-blue-50 to-cyan-50"><img src={coverImage || "/logo.png"} alt={articleTitle} loading="lazy" onError={(event) => { event.currentTarget.src = "/logo.png"; event.currentTarget.className = "h-full w-full object-contain p-8"; }} className={`h-full w-full transition duration-500 group-hover:scale-[1.03] ${coverImage ? "object-cover" : "object-contain p-8"}`} /></div>
+                              <div className="flex flex-1 flex-col p-4"><h4 className="line-clamp-2 text-sm font-black leading-6 text-slate-950">{articleTitle}</h4><div className="mt-auto flex flex-wrap items-center gap-3 pt-3 text-[11px] font-bold text-slate-400"><span className="inline-flex items-center gap-1"><Clock3 size={13} />{pageNumberFormatter.format(Number(article.estimatedReadMinutes || 1))} {isFa ? "دقیقه" : "min"}</span><span className="inline-flex items-center gap-1"><Eye size={13} />{pageNumberFormatter.format(Number(article.viewCount || 0))}</span></div></div>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center"><BookOpen className="mx-auto text-slate-300" size={36} /><p className="mt-3 text-sm font-bold text-slate-500">{isFa ? "این استاد هنوز ویدیو یا مقاله‌ای منتشر نکرده است." : "This teacher has not published any videos or articles yet."}</p></div>
+              )}
             </section>
 
             {/* Tabs */}
-            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+            <div className="order-1 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
               <div className="flex gap-2 overflow-x-auto px-4 border-b border-slate-100 scrollbar-hide">
                 {data.tabs.map((tab, idx) => {
                   const TabIcon = tabIcons[idx] || UserRound;
@@ -1468,6 +1569,7 @@ export default function TeacherDetails({ language = "fa" }) {
             </div>
 
             {/* Tab Contents */}
+            <div className="order-2">
             {activeTab === 0 && (
               renderPanel(0, (
                 <>
@@ -1568,6 +1670,7 @@ export default function TeacherDetails({ language = "fa" }) {
                 </>
               ))
             )}
+            </div>
           </div>
 
         </div>
