@@ -23,10 +23,15 @@ const errorHandler = (err, _req, res, _next) => {
       : isUploadValidationError(err)
         ? 400
         : 500;
-  const message =
-    err?.name === "MulterError" && String(err?.code || "") === "LIMIT_FILE_SIZE"
-      ? "Proof image size must be smaller than 300 KB"
-      : err.message || "Internal server error";
+  const isFileSizeError =
+    err?.name === "MulterError" && String(err?.code || "") === "LIMIT_FILE_SIZE";
+  const message = isFileSizeError
+    ? err?.field === "cover"
+      ? "Article cover image size must be 300 KB or less"
+      : err?.field === "proof"
+        ? "Proof image size must be 300 KB or less"
+        : "The selected file is too large"
+    : err.message || "Internal server error";
 
   if (statusCode >= 500) {
     console.error("Server error:", err);

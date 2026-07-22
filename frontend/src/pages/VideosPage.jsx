@@ -77,7 +77,7 @@ const MobileVideoViewer = ({ busyKey, hasMore, item, isLiked, isSaved, loadedCou
       <button type="button" onClick={onClose} aria-label={text.close} className="grid h-10 w-10 place-items-center rounded-full bg-white/10"><X size={20}/></button>
     </div>
     <div className="relative flex min-h-0 flex-1 items-center justify-center px-2">
-      <div className="aspect-[4/3] w-full overflow-hidden rounded-2xl bg-white shadow-2xl">
+      <div className={`overflow-hidden rounded-2xl bg-white shadow-2xl ${item.platform === "instagram" ? "aspect-[9/16] h-full max-h-[calc(100dvh-15rem)] w-auto max-w-full" : "aspect-video w-full"}`}>
         <VideoPreview key={`viewer:${item._id}`} active embedUrl={embedUrl} playLabel={text.watch} thumbnailUrl={item.thumbnailUrl} title={item.title}/>
       </div>
       <div className="absolute end-4 top-1/2 flex -translate-y-1/2 flex-col gap-3">
@@ -349,7 +349,7 @@ export default function VideosPage({ language = "fa" }) {
               const isSaved = savedIds.has(item._id);
               const isFollowing = Boolean(followingByTeacher[teacherId]);
               return <article key={item._id} className="group flex h-full min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.06)] transition duration-300 hover:-translate-y-1.5 hover:border-blue-200 hover:shadow-[0_22px_50px_rgba(37,99,235,0.14)]">
-                <div className="relative aspect-[4/3] shrink-0 overflow-hidden bg-slate-950">
+                <div className={`relative shrink-0 overflow-hidden bg-slate-950 ${isYoutube ? "aspect-video" : "aspect-[4/3] sm:aspect-[9/16] sm:max-h-[640px]"}`}>
                   <VideoPreview key={`${item._id}:${activeVideoId === item._id ? "active" : "cover"}`} active={activeVideoId === item._id && !viewerVideoId} embedUrl={embedUrl} onActivate={() => openVideo(item)} playLabel={text.watch} thumbnailUrl={item.thumbnailUrl} title={item.title}/>
                 </div>
                 <div className="flex flex-1 flex-col p-5 sm:p-6">

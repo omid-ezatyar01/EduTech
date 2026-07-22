@@ -1,6 +1,6 @@
 import multer from "multer";
 
-const ARTICLE_COVER_MAX_SIZE = 5 * 1024 * 1024;
+const ARTICLE_COVER_MAX_SIZE = 300 * 1024;
 const allowedMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 const articleCoverUpload = multer({

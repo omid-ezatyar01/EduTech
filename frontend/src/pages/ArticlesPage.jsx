@@ -27,14 +27,14 @@ function ArticleCard({ article, locale, page, featured = false }) {
   const Arrow = locale === "fa" ? ArrowLeft : ArrowRight;
   const title = localized(article.title, locale);
   return <article className={`group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:border-blue-200 hover:shadow-xl ${featured ? "grid lg:grid-cols-[1.08fr_0.92fr]" : "flex h-full flex-col"}`}>
-    <Link to={`/blog/${article.slug}`} className={`relative block overflow-hidden bg-gradient-to-br from-blue-50 to-cyan-50 ${featured ? "min-h-64 lg:min-h-[390px]" : "aspect-[16/10]"}`}>
-      <img src={resolveArticleCoverUrl(article.coverImage) || "/logo.png"} alt={title} loading="lazy" onError={(event) => { event.currentTarget.src = "/logo.png"; event.currentTarget.className = "h-full w-full object-contain p-10"; }} className={`h-full w-full transition duration-500 group-hover:scale-[1.03] ${article.coverImage ? "object-cover" : "object-contain p-10"}`}/>
+    <Link to={`/blog/${article.slug}`} className={`relative block overflow-hidden bg-gradient-to-br from-blue-50 to-cyan-50 ${featured ? "aspect-video min-h-64 lg:aspect-auto lg:min-h-[430px]" : "aspect-video"}`}>
+      <img src={resolveArticleCoverUrl(article.coverImage) || "/logo.png"} alt={title} loading="lazy" onError={(event) => { event.currentTarget.src = "/logo.png"; event.currentTarget.className = "absolute inset-0 h-full w-full object-contain p-10"; }} className={`absolute inset-0 h-full w-full transition duration-500 group-hover:scale-[1.03] ${article.coverImage ? "object-cover" : "object-contain p-10"}`}/>
       {article.featured && <span className="absolute start-4 top-4 rounded-full bg-slate-950/85 px-3 py-1.5 text-xs font-black text-white backdrop-blur"><Sparkles size={13} className="me-1 inline"/>{page.featured}</span>}
     </Link>
     <div className="flex flex-1 flex-col p-5 sm:p-7">
       <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-400"><span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-700">{categoryNames[locale][article.category] || article.category}</span><span>{formatDate(article.publishedAt, locale)}</span></div>
       <h2 className={`${featured ? "mt-5 text-2xl sm:text-3xl" : "mt-4 text-xl"} font-black leading-tight text-slate-950`}><Link to={`/blog/${article.slug}`}>{title}</Link></h2>
-      <p className="mt-3 line-clamp-3 text-sm font-medium leading-7 text-slate-600">{localized(article.excerpt, locale)}</p>
+      <p className="mt-3 whitespace-pre-wrap break-words text-justify text-sm font-medium leading-7 text-slate-600">{localized(article.excerpt, locale)}</p>
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-slate-100 pt-5 text-xs font-bold text-slate-400">
         <span className="flex flex-wrap gap-3"><span className="inline-flex items-center gap-1"><Clock3 size={14}/>{article.estimatedReadMinutes} {page.minutes}</span><span className="inline-flex items-center gap-1"><Eye size={14}/>{Number(article.viewCount || 0).toLocaleString(locale === "fa" ? "fa-AF" : "en-US")}</span></span>
         <Link to={`/blog/${article.slug}`} aria-label={`${page.read}: ${title}`} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-blue-600 text-white transition group-hover:bg-teal-500"><Arrow size={17}/></Link>
