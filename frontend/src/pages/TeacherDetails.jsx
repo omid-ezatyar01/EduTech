@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,6 +9,11 @@ import {
   UsersRound,
   Smile,
   LineChart,
+  BadgeCheck,
+  UserRound,
+  Sparkles,
+  CalendarDays,
+  CircleHelp,
 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import TeacherHero from "../components/TeacherHero.jsx";
@@ -525,6 +530,7 @@ export default function TeacherDetails({ language = "fa" }) {
     () => new Intl.NumberFormat(isFa ? "fa-AF" : "en-US"),
     [isFa],
   );
+  const tabIcons = [UserRound, Sparkles, CalendarDays, CircleHelp];
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -1165,7 +1171,7 @@ export default function TeacherDetails({ language = "fa" }) {
         rows.findIndex((row) => row.embedUrl === video.embedUrl) === index,
     )
     .slice(0, 8);
-  const getRowNavState = (rowElement) => {
+  const getRowNavState = useCallback((rowElement) => {
     if (!rowElement) return { canPrev: false, canNext: false };
     const maxScroll = Math.max(0, rowElement.scrollWidth - rowElement.clientWidth);
     if (dir === "rtl") {
@@ -1181,8 +1187,8 @@ export default function TeacherDetails({ language = "fa" }) {
       canPrev: progress > 8,
       canNext: progress < maxScroll - 8,
     };
-  };
-  const updateSectionRowNav = (key, rowElement) => {
+  }, [dir]);
+  const updateSectionRowNav = useCallback((key, rowElement) => {
     const nextState = getRowNavState(rowElement);
     setSectionRowNav((previous) => {
       const current = previous[key];
@@ -1191,7 +1197,7 @@ export default function TeacherDetails({ language = "fa" }) {
       }
       return { ...previous, [key]: nextState };
     });
-  };
+  }, [getRowNavState]);
   const scrollRowForward = (key) => {
     const rowElement = sectionRowRefs.current[key];
     if (!rowElement) return;
@@ -1218,7 +1224,7 @@ export default function TeacherDetails({ language = "fa" }) {
         updateSectionRowNav(key, element);
       }
     });
-  }, [data.sections.courses, data.sections.endedCourses, dir]);
+  }, [data.sections.courses, data.sections.endedCourses, dir, updateSectionRowNav]);
 
   const renderPanel = (panelKey, content) => {
     const isExpanded = Boolean(expandedPanels[panelKey]);
@@ -1419,22 +1425,45 @@ export default function TeacherDetails({ language = "fa" }) {
           <div className="min-w-0 space-y-6">
             <TeacherStats stats={data.stats} />
 
+            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-teal-700">{isFa ? "پروفایل حرفه‌ای" : "Professional profile"}</p>
+                  <h2 className="mt-1 text-xl font-black text-slate-950">{isFa ? "معلومات استاد در یک نگاه" : "Teacher at a glance"}</h2>
+                </div>
+                <span className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-2 text-xs font-black text-teal-700"><BadgeCheck size={16} />{isFa ? "تأییدشده توسط ایجوتک" : "Verified by EduTech"}</span>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {data.sidebar.quickInfo.map((item) => (
+                  <div key={item.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-xs font-bold text-slate-400">{item.label}</p>
+                    <p className="mt-2 break-words text-sm font-black leading-6 text-slate-800">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
             {/* Tabs */}
             <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
               <div className="flex gap-2 overflow-x-auto px-4 border-b border-slate-100 scrollbar-hide">
-                {data.tabs.map((tab, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setActiveTab(idx)}
-                    className={`shrink-0 px-5 py-4 text-sm font-black transition-colors ${
-                      activeTab === idx
-                        ? "border-b-2 border-primary-600 text-primary-700"
-                        : "text-slate-600 hover:text-primary-700"
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
+                {data.tabs.map((tab, idx) => {
+                  const TabIcon = tabIcons[idx] || UserRound;
+                  return (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(idx)}
+                      aria-current={activeTab === idx ? "page" : undefined}
+                      className={`inline-flex shrink-0 items-center gap-2 px-5 py-4 text-sm font-black transition-colors ${
+                        activeTab === idx
+                          ? "border-b-2 border-primary-600 text-primary-700"
+                          : "text-slate-600 hover:text-primary-700"
+                      }`}
+                    >
+                      <TabIcon size={16} />
+                      {tab}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1505,13 +1534,13 @@ export default function TeacherDetails({ language = "fa" }) {
               ))
             )}
 
-            {activeTab === 2 && data.sections.schedule.length > 0 && (
+            {activeTab === 2 && (
               renderPanel(3, (
                 <>
                 <h2 className="text-2xl font-black text-slate-950">
                   {data.sections.scheduleTitle}
                 </h2>
-                <div className="mt-6">
+                {data.sections.schedule.length > 0 ? <><div className="mt-6">
                   <TeacherScheduleTable
                     labels={data.sections.scheduleLabels}
                     schedule={data.sections.schedule}
@@ -1520,7 +1549,7 @@ export default function TeacherDetails({ language = "fa" }) {
                 <p className="mt-4 flex items-center gap-3 rounded-xl bg-primary-50 p-4 text-sm font-semibold leading-7 text-primary-800">
                   <Info className="shrink-0" size={18} />
                   {data.sections.scheduleNote}
-                </p>
+                </p></> : <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center"><CalendarDays className="mx-auto text-slate-300" size={38} /><p className="mt-3 text-sm font-bold text-slate-500">{isFa ? "تقسیم اوقات این استاد هنوز منتشر نشده است." : "This teacher has not published a schedule yet."}</p></div>}
                 </>
               ))
             )}
@@ -1543,9 +1572,9 @@ export default function TeacherDetails({ language = "fa" }) {
 
         </div>
 
-        <section className="mt-6 rounded-[24px] border border-primary-100 bg-primary-50 p-6 shadow-[0_12px_35px_rgba(15,23,42,0.05)] md:p-8">
+        <section id="teacher-courses" className="mt-6 scroll-mt-24 rounded-[24px] border border-primary-100 bg-primary-50 p-6 shadow-[0_12px_35px_rgba(15,23,42,0.05)] md:p-8">
           <h2 className="text-2xl font-black text-slate-950">
-            {data.sidebar.featuredTitle}
+            {data.sections.coursesTitle}
           </h2>
 
           {!data.sections.courses?.length ? (
@@ -1603,7 +1632,7 @@ export default function TeacherDetails({ language = "fa" }) {
           )}
         </section>
 
-        <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+        {data.sections.endedCourses?.length ? <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-2xl font-black text-slate-950">
               {data.sections.endedCoursesTitle}
@@ -1731,7 +1760,7 @@ export default function TeacherDetails({ language = "fa" }) {
               ) : null}
             </div>
           )}
-        </section>
+        </section> : null}
       </div>
     </div>
   );

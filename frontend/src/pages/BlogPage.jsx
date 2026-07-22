@@ -166,8 +166,8 @@ export default function BlogPage({ language = "fa" }) {
                 <Route size={17} />
                 {page.eyebrow}
               </p>
-              <h1 className={`mt-5 font-black leading-[1.3] tracking-tight ${locale === "fa" ? "whitespace-nowrap text-[clamp(1.3rem,6.5vw,3rem)]" : "mx-auto max-w-2xl text-3xl sm:text-5xl"}`}>{page.title}</h1>
-              <p className="mt-4 max-w-2xl text-sm font-medium leading-7 text-slate-600 sm:text-base sm:leading-8">{page.intro}</p>
+              <h1 className={`mx-auto mt-5 w-full text-center font-black leading-[1.3] tracking-tight ${locale === "fa" ? "whitespace-nowrap text-[clamp(1.3rem,6.5vw,3rem)]" : "max-w-2xl text-3xl sm:text-5xl"}`}>{page.title}</h1>
+              <p className="mx-auto mt-4 max-w-2xl text-center text-sm font-medium leading-7 text-slate-600 sm:text-base sm:leading-8">{page.intro}</p>
               <div className="mx-auto mt-7 grid max-w-2xl grid-cols-3 gap-2 sm:gap-3">
                 {[
                   [numberFormatter.format(roadmaps.length), page.publishedCount],

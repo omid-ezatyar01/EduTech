@@ -5,6 +5,8 @@ import {
   Share2,
   Bell,
   BellRing,
+  BadgeCheck,
+  BookOpen,
 } from "lucide-react";
 import SocialBrandIcon from "./SocialBrandIcon.jsx";
 import { resolveAvatarUrl } from "../utils/avatar";
@@ -75,25 +77,41 @@ export default function TeacherHero({ data, dir, following = false, followerCoun
     .filter((item) => item.href);
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-primary-100 bg-gradient-to-br from-primary-50 via-white to-teal-50 p-6 shadow-[0_20px_45px_rgba(15,23,42,0.08)] md:p-8">
+    <div className="relative overflow-hidden rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_20px_45px_rgba(15,23,42,0.08)] md:p-8 lg:p-10">
+      <div className="pointer-events-none absolute -start-24 -top-24 h-64 w-64 rounded-full bg-primary-100/80 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 end-0 h-64 w-64 rounded-full bg-teal-100/80 blur-3xl" />
       <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-10">
         <div
-          className={`order-2 min-w-0 lg:order-1 ${
+          className={`relative order-2 min-w-0 lg:order-1 ${
             isRtl ? "text-center lg:text-right" : "text-center lg:text-left"
           }`}
         >
-          <h1 className="break-words text-3xl font-black text-slate-950 md:text-4xl">
+          <div className="flex flex-wrap items-center justify-center gap-2 lg:justify-start">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-black text-teal-700">
+              <BadgeCheck size={15} />
+              {isRtl ? "مدرس تأییدشده ایجوتک" : "Verified EduTech teacher"}
+            </span>
+          </div>
+          <h1 className="mt-4 break-words text-3xl font-black text-slate-950 md:text-4xl">
             {data.name}
           </h1>
+          <p className="mt-2 text-base font-black text-primary-700 sm:text-lg">{data.role}</p>
           <p className="mt-4 break-words text-justify font-medium leading-8 text-slate-600">
             {data.bio}
           </p>
           <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
+            <a
+              href="#teacher-courses"
+              className="order-2 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-primary-700 sm:order-none sm:w-auto"
+            >
+              <BookOpen size={17} />
+              {data.btnViewCourses}
+            </a>
             <button
               type="button"
               onClick={onToggleFollow}
               disabled={followBusy}
-              className={`order-2 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-black shadow-sm transition sm:order-none sm:w-auto ${following ? "border border-primary-200 bg-white text-primary-700 hover:bg-primary-50" : "bg-primary-600 text-white hover:bg-primary-700"} disabled:opacity-60`}
+              className={`order-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-black shadow-sm transition sm:order-none sm:w-auto ${following ? "border border-primary-200 bg-white text-primary-700 hover:bg-primary-50" : "border border-slate-200 bg-white text-slate-800 hover:border-primary-200 hover:text-primary-700"} disabled:opacity-60`}
             >
               {following ? <BellRing size={17}/> : <Bell size={17}/>}
               {following ? (isRtl ? "دنبال می‌کنید" : "Following") : (isRtl ? "دنبال کردن" : "Follow")}
@@ -144,7 +162,7 @@ export default function TeacherHero({ data, dir, following = false, followerCoun
               }}
               aria-label={isRtl ? "اشتراک‌گذاری پروفایل" : "Share profile"}
               title={isRtl ? "اشتراک‌گذاری پروفایل" : "Share profile"}
-              className="order-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-primary-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 sm:order-none sm:w-auto"
+              className="order-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-primary-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 sm:order-none sm:w-auto"
             >
               <Share2 size={16} />
               {isRtl ? "اشتراک‌گذاری" : "Share"}
@@ -152,7 +170,7 @@ export default function TeacherHero({ data, dir, following = false, followerCoun
           </div>
         </div>
 
-        <div className="order-1 mx-auto w-fit shrink-0 lg:order-2">
+        <div className="relative order-1 mx-auto w-fit shrink-0 lg:order-2">
           {hasAvatar ? (
             <img
               src={teacherAvatar}
@@ -166,6 +184,7 @@ export default function TeacherHero({ data, dir, following = false, followerCoun
               {getInitials(data?.name)}
             </div>
           )}
+          <span className="absolute -bottom-2 end-2 grid h-11 w-11 place-items-center rounded-full border-4 border-white bg-teal-500 text-white shadow-lg" title={isRtl ? "تأییدشده" : "Verified"}><BadgeCheck size={21} /></span>
         </div>
       </div>
     </div>

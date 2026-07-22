@@ -64,7 +64,7 @@ const MobileVideoViewer = ({ busyKey, hasMore, item, isLiked, isSaved, loadedCou
   if (!item) return null;
 
   return <div
-    className="fixed inset-0 z-[100] flex flex-col bg-slate-950 text-white sm:hidden"
+    className="fixed inset-0 z-[100] flex flex-col bg-slate-950 text-white"
     onTouchStart={(event) => { touchStartY.current = event.touches[0]?.clientY || 0; }}
     onTouchEnd={(event) => {
       const endY = event.changedTouches[0]?.clientY || 0;
@@ -296,7 +296,9 @@ export default function VideosPage({ language = "fa" }) {
 
   const openVideo = (item) => {
     setActiveVideoId(item._id);
-    if (window.matchMedia("(max-width: 639px)").matches) setViewerVideoId(item._id);
+    if (item.platform === "instagram" || window.matchMedia("(max-width: 639px)").matches) {
+      setViewerVideoId(item._id);
+    }
   };
 
   const viewerPosition = Math.max(0, visible.findIndex((item) => item._id === viewerVideoId));
@@ -349,7 +351,7 @@ export default function VideosPage({ language = "fa" }) {
               const isSaved = savedIds.has(item._id);
               const isFollowing = Boolean(followingByTeacher[teacherId]);
               return <article key={item._id} className="group flex h-full min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.06)] transition duration-300 hover:-translate-y-1.5 hover:border-blue-200 hover:shadow-[0_22px_50px_rgba(37,99,235,0.14)]">
-                <div className={`relative shrink-0 overflow-hidden bg-slate-950 ${isYoutube ? "aspect-video" : "aspect-[4/3] sm:aspect-[9/16] sm:max-h-[640px]"}`}>
+                <div className="relative aspect-video shrink-0 overflow-hidden bg-slate-950">
                   <VideoPreview key={`${item._id}:${activeVideoId === item._id ? "active" : "cover"}`} active={activeVideoId === item._id && !viewerVideoId} embedUrl={embedUrl} onActivate={() => openVideo(item)} playLabel={text.watch} thumbnailUrl={item.thumbnailUrl} title={item.title}/>
                 </div>
                 <div className="flex flex-1 flex-col p-5 sm:p-6">
