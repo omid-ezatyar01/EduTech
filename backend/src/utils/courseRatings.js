@@ -208,7 +208,6 @@ export const getPublicCourseReviews = async (courseId, { limit = 6 } = {}) => {
 
   const rows = await CourseRating.find({
     courseId: courseObjectId,
-    comment: { $type: "string", $ne: "" },
     moderationStatus: "published",
   })
     .populate("studentId", "name")
@@ -226,7 +225,6 @@ export const getPublicTeacherReviews = async (teacherId, { limit = 10 } = {}) =>
 
   const rows = await CourseRating.find({
     teacherId: teacherObjectId,
-    comment: { $type: "string", $ne: "" },
     moderationStatus: "published",
   })
     .populate("studentId", "name")

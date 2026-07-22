@@ -1501,7 +1501,7 @@ export default function CourseDetailsPage({ t }) {
                   {language === "fa" ? "نظریات شاگردان درباره کورس" : "Student Reviews About This Course"}
                 </h2>
                 <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
-                  {courseReviews.length}
+                  {Number(course?.ratingCount || courseReviews.length)}
                 </span>
               </div>
               {(() => {

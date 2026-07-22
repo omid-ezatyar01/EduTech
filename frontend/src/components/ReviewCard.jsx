@@ -5,6 +5,9 @@ import { getToken } from "../../services/portal.js";
 
 export default function ReviewCard({ review }) {
   const rating = Math.max(0, Math.min(5, Math.round(Number(review?.rating || 0))));
+  const learnerName = review?.name || review?.studentName || (review?.isFa ? "شاگرد" : "Learner");
+  const courseTitle = review?.course || review?.courseTitle || "";
+  const reviewText = String(review?.text || review?.comment || "").trim();
   const [helpfulCount, setHelpfulCount] = useState(Number(review?.helpfulCount || 0));
   const [helpful, setHelpful] = useState(false);
   const [reported, setReported] = useState(false);
@@ -18,12 +21,12 @@ export default function ReviewCard({ review }) {
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
       <div className="flex items-center gap-4">
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-100 text-lg font-black text-primary-700">
-          {String(review.name || "L").charAt(0)}
+          {String(learnerName).charAt(0)}
         </div>
         <div>
-          <h4 className="font-black text-slate-950">{review.name || "Learner"}</h4>
+          <h4 className="font-black text-slate-950">{learnerName}</h4>
           <p className="mt-0.5 text-xs font-bold text-slate-500">
-            {review.course}
+            {courseTitle}
           </p>
         </div>
         <div className="ms-auto flex text-amber-400">
@@ -37,8 +40,8 @@ export default function ReviewCard({ review }) {
           ))}
         </div>
       </div>
-      <p className="mt-5 font-medium leading-7 text-slate-600">
-        “{review.text}”
+      <p className={`mt-5 font-medium leading-7 ${reviewText ? "text-slate-600" : "italic text-slate-400"}`}>
+        {reviewText ? `“${reviewText}”` : review.isFa ? "این شاگرد امتیاز ثبت کرده، اما نظر نوشتاری اضافه نکرده است." : "This learner submitted a rating without a written comment."}
       </p>
       {review.verifiedLearner ? <p className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-emerald-700"><BadgeCheck size={15}/>{review.isFa ? "شاگرد تأییدشده" : "Verified learner"}</p> : null}
       {Array.isArray(review.tags) && review.tags.length ? <div className="mt-3 flex flex-wrap gap-2">{review.tags.map((tag) => <span key={tag} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-600">{tag}</span>)}</div> : null}
