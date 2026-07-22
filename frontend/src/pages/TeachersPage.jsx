@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   BriefcaseBusiness,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Headphones,
   MessageCircle,
   Rocket,
@@ -164,6 +166,8 @@ export default function TeachersPage({ t }) {
   const [error, setError] = useState("");
   const [retrySeed, setRetrySeed] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [teacherRowNav, setTeacherRowNav] = useState({});
+  const teacherRowRefs = useRef([]);
   const [platformStats, setPlatformStats] = useState({
     activeCourses: 0,
     expertTeachers: 0,
@@ -449,6 +453,39 @@ export default function TeachersPage({ t }) {
     () => chunkTeacherRows(filteredTeachers),
     [filteredTeachers],
   );
+  const getTeacherRowNavState = useCallback((rowElement) => {
+    if (!rowElement) return { canPrev: false, canNext: false };
+    const maxScroll = Math.max(0, rowElement.scrollWidth - rowElement.clientWidth);
+    if (t.meta.dir === "rtl") {
+      const progress = Math.min(maxScroll, Math.abs(rowElement.scrollLeft || 0));
+      return { canPrev: progress > 8, canNext: progress < maxScroll - 8 };
+    }
+    const progress = rowElement.scrollLeft || 0;
+    return { canPrev: progress > 8, canNext: progress < maxScroll - 8 };
+  }, [t.meta.dir]);
+  const updateTeacherRowNav = useCallback((rowIndex, rowElement) => {
+    const nextState = getTeacherRowNavState(rowElement);
+    setTeacherRowNav((previous) => {
+      const current = previous[rowIndex];
+      if (current?.canPrev === nextState.canPrev && current?.canNext === nextState.canNext) return previous;
+      return { ...previous, [rowIndex]: nextState };
+    });
+  }, [getTeacherRowNavState]);
+  const scrollTeacherRow = useCallback((rowElement, forward) => {
+    if (!rowElement) return;
+    const amount = Math.max(280, Math.round(rowElement.clientWidth * 0.82));
+    const direction = t.meta.dir === "rtl" ? -1 : 1;
+    rowElement.scrollBy({
+      left: amount * direction * (forward ? 1 : -1),
+      behavior: "smooth",
+    });
+  }, [t.meta.dir]);
+
+  useEffect(() => {
+    mobileTeacherRows.forEach((_, rowIndex) => {
+      updateTeacherRowNav(rowIndex, teacherRowRefs.current[rowIndex]);
+    });
+  }, [mobileTeacherRows, updateTeacherRowNav]);
   const scrollPageToTop = () => {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   };
@@ -709,21 +746,47 @@ export default function TeachersPage({ t }) {
                 {mobileTeacherRows.map((row, rowIndex) => (
                   <div
                     key={`teacher-row-${rowIndex + 1}`}
-                    className="edutech-scrollbar flex snap-x snap-mandatory items-stretch gap-3 overflow-x-auto px-1 pb-2"
-                    dir={isFa ? "rtl" : "ltr"}
+                    className="relative"
                   >
-                    {row.map((teacher, itemIndex) => (
-                      <div
-                        key={teacher._id || teacher.name}
-                        className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
+                    <div
+                      ref={(element) => { teacherRowRefs.current[rowIndex] = element; }}
+                      onScroll={(event) => updateTeacherRowNav(rowIndex, event.currentTarget)}
+                      className="edutech-scrollbar flex snap-x snap-mandatory items-stretch gap-3 overflow-x-auto px-1 pb-2"
+                      dir={isFa ? "rtl" : "ltr"}
+                    >
+                      {row.map((teacher, itemIndex) => (
+                        <div
+                          key={teacher._id || teacher.name}
+                          className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
+                        >
+                          <TeacherCard
+                            labels={page}
+                            teacher={teacher}
+                            index={(rowIndex * TEACHERS_PAGE_SIZE) + itemIndex}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    {teacherRowNav[rowIndex]?.canPrev ? (
+                      <button
+                        type="button"
+                        onClick={() => scrollTeacherRow(teacherRowRefs.current[rowIndex], false)}
+                        className="absolute start-2 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.16)] backdrop-blur transition hover:border-primary-200 hover:text-primary-700"
+                        aria-label={isFa ? "نمایش مدرسان قبلی" : "Show previous teachers"}
                       >
-                        <TeacherCard
-                          labels={page}
-                          teacher={teacher}
-                          index={(rowIndex * TEACHERS_PAGE_SIZE) + itemIndex}
-                        />
-                      </div>
-                    ))}
+                        <ChevronLeft size={19} className={isFa ? "rotate-180" : ""} />
+                      </button>
+                    ) : null}
+                    {teacherRowNav[rowIndex]?.canNext ? (
+                      <button
+                        type="button"
+                        onClick={() => scrollTeacherRow(teacherRowRefs.current[rowIndex], true)}
+                        className="absolute end-2 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.16)] backdrop-blur transition hover:border-primary-200 hover:text-primary-700"
+                        aria-label={isFa ? "نمایش مدرسان بعدی" : "Show next teachers"}
+                      >
+                        <ChevronRight size={19} className={isFa ? "rotate-180" : ""} />
+                      </button>
+                    ) : null}
                   </div>
                 ))}
               </div>
