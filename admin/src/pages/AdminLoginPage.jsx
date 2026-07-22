@@ -10,10 +10,12 @@ import {
   EyeOff,
   BookOpen,
   CreditCard,
+  KeyRound,
   LogIn,
 } from "lucide-react";
 import { PORTAL_CONFIG, saveAuth, clearAuth } from "../../services/portal.js";
 import { getApiBase } from "../../services/http.js";
+import AdminPasswordRecoveryModal from "../components/AdminPasswordRecoveryModal.jsx";
 
 const pageData = {
   en: {
@@ -54,6 +56,7 @@ export default function AdminLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [passwordRecoveryOpen, setPasswordRecoveryOpen] = useState(false);
 
   const dir = "ltr";
   const data = pageData.en;
@@ -123,19 +126,19 @@ export default function AdminLoginPage() {
 
   return (
     <div
-      className="flex min-h-screen items-center justify-center bg-slate-50 p-4 sm:p-6 lg:p-8 font-sans"
+      className="flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-slate-50 p-3 font-sans sm:p-4 lg:h-screen lg:overflow-hidden lg:p-5"
       dir={dir}
     >
-      <div className="flex w-full max-w-[1200px] flex-col overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] lg:flex-row">
+      <div className="flex w-full max-w-[1200px] flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] sm:rounded-[32px] lg:max-h-[calc(100dvh-2.5rem)] lg:flex-row">
         {/* Form Section */}
-        <div className="flex w-full flex-col justify-center p-8 sm:p-12 lg:w-1/2 xl:p-16">
+        <div className="flex w-full flex-col justify-center px-5 py-6 sm:px-8 sm:py-7 lg:w-1/2 lg:overflow-y-auto lg:px-10 lg:py-8 xl:px-14">
           <div className="mx-auto w-full max-w-md">
             {/* Logo & Badge */}
-            <div className="mb-8 flex flex-col items-start gap-4">
+            <div className="mb-5 flex items-center justify-between gap-4">
               <img
                 src={adminLogoSrc}
                 alt="EduTech Logo"
-                className="h-10 w-auto object-contain"
+                className="h-8 w-auto object-contain sm:h-9"
               />
               <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700">
                 <ShieldCheck className="h-3.5 w-3.5" />
@@ -144,13 +147,13 @@ export default function AdminLoginPage() {
             </div>
 
             {/* Titles */}
-            <h1 className="text-3xl font-black text-slate-900">{data.title}</h1>
-            <p className="mt-3 text-sm font-semibold leading-relaxed text-slate-500">
+            <h1 className="text-center text-2xl font-black text-slate-900">{data.title}</h1>
+            <p className="mt-2 text-center text-sm font-semibold leading-6 text-slate-500">
               {data.subtitle}
             </p>
 
             {/* Form */}
-            <form className="mt-10 space-y-5" onSubmit={handleLogin}>
+            <form className="mt-6 space-y-4" onSubmit={handleLogin}>
               {error && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-600">
                   {error}
@@ -170,7 +173,7 @@ export default function AdminLoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="block w-full rounded-xl border border-slate-200 bg-slate-50 p-4 ps-11 text-sm font-semibold text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-500/10"
+                    className="block h-[52px] w-full rounded-xl border border-slate-200 bg-slate-50 px-4 ps-11 text-sm font-semibold text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-500/10"
                     placeholder={data.placeholders.email}
                     dir="ltr"
                   />
@@ -190,7 +193,7 @@ export default function AdminLoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="block w-full rounded-xl border border-slate-200 bg-slate-50 p-4 ps-11 pe-11 text-sm font-semibold text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-500/10"
+                    className="block h-[52px] w-full rounded-xl border border-slate-200 bg-slate-50 px-4 ps-11 pe-11 text-sm font-semibold text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-500/10"
                     placeholder={data.placeholders.password}
                     dir="ltr"
                   />
@@ -204,7 +207,7 @@ export default function AdminLoginPage() {
                 </div>
               </div>
 
-              <div className="flex items-center pt-2">
+              <div className="flex items-center justify-between gap-3 pt-2">
                 <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
                   <input
                     type="checkbox"
@@ -212,12 +215,20 @@ export default function AdminLoginPage() {
                   />
                   {data.remember}
                 </label>
+                <button
+                  type="button"
+                  onClick={() => setPasswordRecoveryOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-sm font-black text-violet-700 transition hover:text-violet-900"
+                >
+                  <KeyRound size={15} />
+                  Forgot password?
+                </button>
               </div>
 
               <button
                 type="submit"
                 disabled={isLoading}
-                className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 text-base font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-violet-500/30 disabled:pointer-events-none disabled:opacity-70"
+                className="mt-3 flex h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 text-sm font-black text-white shadow-lg shadow-violet-500/25 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-violet-500/30 disabled:pointer-events-none disabled:opacity-70"
               >
                 {isLoading ? (
                   <span>{data.loading}</span>
@@ -230,14 +241,14 @@ export default function AdminLoginPage() {
               </button>
             </form>
 
-            <p className="mt-10 text-center text-xs font-bold text-slate-400">
+            <p className="mt-6 text-center text-xs font-bold text-slate-400">
               {data.footerInfo}
             </p>
           </div>
         </div>
 
         {/* Illustration Section (Hidden on Mobile) */}
-        <div className="relative hidden w-1/2 overflow-hidden bg-slate-900 lg:flex lg:flex-col lg:justify-center p-12 xl:p-16">
+        <div className="relative hidden w-1/2 overflow-hidden bg-slate-900 p-10 lg:flex lg:flex-col lg:justify-center xl:p-12">
           {/* Background Gradients */}
           <div className="absolute -left-20 -top-20 h-96 w-96 rounded-full bg-violet-600/30 blur-[100px]" />
           <div className="absolute -bottom-20 -right-20 h-96 w-96 rounded-full bg-cyan-500/20 blur-[100px]" />
@@ -245,30 +256,30 @@ export default function AdminLoginPage() {
 
           <div className="relative z-10">
             {/* Abstract Icons Art */}
-            <div className="relative mx-auto mb-16 h-48 w-full max-w-sm">
-              <div className="absolute left-1/2 top-1/2 flex h-24 w-24 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[2rem] bg-gradient-to-tr from-violet-500 to-cyan-400 shadow-2xl shadow-cyan-500/20">
-                <ShieldCheck size={48} className="text-white" />
+            <div className="relative mx-auto mb-8 h-32 w-full max-w-sm">
+              <div className="absolute left-1/2 top-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-3xl bg-gradient-to-tr from-violet-500 to-cyan-400 shadow-2xl shadow-cyan-500/20">
+                <ShieldCheck size={38} className="text-white" />
               </div>
-              <div className="absolute left-[15%] top-[10%] flex animate-[bounce_3s_infinite] items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-md">
-                <Users size={28} className="text-cyan-300" />
+              <div className="absolute left-[18%] top-[8%] flex animate-[bounce_3s_infinite] items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-md">
+                <Users size={23} className="text-cyan-300" />
               </div>
-              <div className="absolute bottom-[10%] right-[15%] flex animate-[bounce_4s_infinite] items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-md">
-                <BarChart3 size={28} className="text-violet-300" />
+              <div className="absolute bottom-[8%] right-[18%] flex animate-[bounce_4s_infinite] items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-md">
+                <BarChart3 size={23} className="text-violet-300" />
               </div>
               <div className="absolute bottom-[20%] left-[20%] flex animate-[pulse_3s_infinite] items-center justify-center rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur-md">
                 <Settings size={20} className="text-slate-300" />
               </div>
             </div>
 
-            <h2 className="text-4xl font-black leading-tight text-white">
+            <h2 className="text-3xl font-black leading-tight text-white">
               {data.illustration.title}
             </h2>
-            <p className="mt-4 text-lg font-medium leading-relaxed text-slate-300">
+            <p className="mt-3 text-sm font-medium leading-6 text-slate-300">
               {data.illustration.subtitle}
             </p>
 
             {/* Features Grid */}
-            <div className="mt-10 grid grid-cols-2 gap-4">
+            <div className="mt-6 grid grid-cols-2 gap-3">
               {[
                 {
                   icon: Users,
@@ -293,13 +304,13 @@ export default function AdminLoginPage() {
               ].map((feature, idx) => (
                 <div
                   key={idx}
-                  className="rounded-2xl border border-white/5 bg-white/5 p-5 backdrop-blur-sm transition hover:bg-white/10"
+                  className="rounded-2xl border border-white/5 bg-white/5 p-4 backdrop-blur-sm transition hover:bg-white/10"
                 >
                   <feature.icon
-                    className={`h-8 w-8 ${feature.color}`}
+                    className={`h-6 w-6 ${feature.color}`}
                     strokeWidth={1.5}
                   />
-                  <h3 className="mt-4 text-base font-bold text-white">
+                  <h3 className="mt-3 text-sm font-bold text-white">
                     {feature.title}
                   </h3>
                 </div>
@@ -308,6 +319,12 @@ export default function AdminLoginPage() {
           </div>
         </div>
       </div>
+      {passwordRecoveryOpen ? (
+        <AdminPasswordRecoveryModal
+          initialEmail={email}
+          onClose={() => setPasswordRecoveryOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

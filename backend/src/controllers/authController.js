@@ -1545,8 +1545,10 @@ export const resendRegisterOtp = async (req, res) => {
 };
 
 export const requestTeacherPasswordReset = async (req, res) => {
+  const resetRole = req.passwordResetRole === "admin" ? "admin" : "teacher";
+  const roleLabel = resetRole === "admin" ? "admin" : "teacher";
   const successResponse = {
-    message: "A password reset code has been sent to the teacher email.",
+    message: `A password reset code has been sent to the ${roleLabel} email.`,
     expiresInSeconds: 600,
     resendAfterSeconds: 120,
   };
@@ -1559,14 +1561,14 @@ export const requestTeacherPasswordReset = async (req, res) => {
 
     const user = await User.findOne({
       email: value.email,
-      role: "teacher",
+      role: resetRole,
       status: { $ne: "blocked" },
     });
 
     if (!user) {
       return res.status(404).json({
-        code: "TEACHER_EMAIL_NOT_FOUND",
-        message: "This email is not registered as a teacher account.",
+        code: `${resetRole.toUpperCase()}_EMAIL_NOT_FOUND`,
+        message: `This email is not registered as ${resetRole === "admin" ? "an" : "a"} ${roleLabel} account.`,
       });
     }
 
@@ -1585,14 +1587,15 @@ export const requestTeacherPasswordReset = async (req, res) => {
       });
     }
 
-    console.warn(`Teacher password reset OTP error: ${error.message}`);
+    console.warn(`${roleLabel} password reset OTP error: ${error.message}`);
     return res.status(400).json({
-      message: "Unable to send a reset code to this teacher email.",
+      message: `Unable to send a reset code to this ${roleLabel} email.`,
     });
   }
 };
 
 export const verifyTeacherPasswordResetOtp = async (req, res) => {
+  const resetRole = req.passwordResetRole === "admin" ? "admin" : "teacher";
   try {
     const { error, value } = passwordResetVerifySchema.validate(req.body);
     if (error) {
@@ -1601,7 +1604,7 @@ export const verifyTeacherPasswordResetOtp = async (req, res) => {
 
     const user = await User.findOne({
       email: value.email,
-      role: "teacher",
+      role: resetRole,
       status: { $ne: "blocked" },
     });
     if (!user) {
@@ -1695,6 +1698,7 @@ export const verifyTeacherPasswordResetOtp = async (req, res) => {
 };
 
 export const resetTeacherPassword = async (req, res) => {
+  const resetRole = req.passwordResetRole === "admin" ? "admin" : "teacher";
   try {
     const { error, value } = passwordResetSchema.validate(req.body);
     if (error) {
@@ -1723,7 +1727,7 @@ export const resetTeacherPassword = async (req, res) => {
     const user = await User.findOne({
       _id: resetRecord.userId,
       email: value.email,
-      role: "teacher",
+      role: resetRole,
       status: { $ne: "blocked" },
     });
     if (!user) {

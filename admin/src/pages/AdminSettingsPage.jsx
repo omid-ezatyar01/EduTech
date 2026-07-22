@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ChevronLeft,
+  KeyRound,
+  Loader2,
   Percent,
   RefreshCw,
   Save,
@@ -10,7 +12,12 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { getToken } from "../../services/portal.js";
+import {
+  buildAdminPath,
+  clearAuth,
+  getToken,
+  PORTAL_CONFIG,
+} from "../../services/portal.js";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http.js";
 import {
   fetchAdminTelegramSettings,
@@ -52,6 +59,28 @@ const PAGE_TEXT = {
   "Telegram publishing settings": "تنظیمات نشر تلگرام",
   "Manage automatic channel announcements and confirm the live Telegram connection.":
     "اعلان‌های خودکار کانال را مدیریت کنید و اتصال فعال تلگرام را بررسی نمایید.",
+  "Admin account security": "امنیت حساب مدیر",
+  "Change your administrator password and protect access to the control panel.":
+    "رمز عبور مدیر را تغییر دهید و دسترسی به پنل کنترل را محافظت کنید.",
+  "Current password": "رمز عبور فعلی",
+  "New password": "رمز عبور جدید",
+  "Confirm new password": "تأیید رمز عبور جدید",
+  "Enter your current password": "رمز عبور فعلی را وارد کنید",
+  "Enter a strong new password": "یک رمز عبور جدید و قوی وارد کنید",
+  "Enter the new password again": "رمز عبور جدید را دوباره وارد کنید",
+  "Use at least 8 characters with uppercase, lowercase, and a number.":
+    "حداقل ۸ نویسه شامل حرف بزرگ، حرف کوچک و عدد استفاده کنید.",
+  "Change password": "تغییر رمز عبور",
+  "Changing password": "در حال تغییر رمز عبور",
+  "Password changed successfully. Please sign in again.":
+    "رمز عبور با موفقیت تغییر کرد. لطفاً دوباره وارد شوید.",
+  "All password fields are required.": "تکمیل همه فیلدهای رمز عبور الزامی است.",
+  "New password must be at least 8 characters and include uppercase, lowercase, and a number.":
+    "رمز جدید باید حداقل ۸ نویسه و شامل حرف بزرگ، حرف کوچک و عدد باشد.",
+  "New password and confirmation do not match.": "رمز جدید و تأیید آن یکسان نیستند.",
+  "New password must be different from current password.": "رمز جدید باید با رمز فعلی متفاوت باشد.",
+  "Current password is incorrect": "رمز عبور فعلی نادرست است.",
+  "Failed to change password.": "تغییر رمز عبور ناموفق بود.",
   "Teacher deduction percentage per paid student": "درصد کسر سهم برای هر شاگرد پرداخت‌کننده",
   "This value is applied to teacher income calculation for every paid student registration.":
     "این مقدار برای محاسبه درآمد مدرس در هر ثبت‌نام پرداختی اعمال می‌شود.",
@@ -152,6 +181,12 @@ export default function AdminSettingsPage() {
   const [loadingTelegram, setLoadingTelegram] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [savingTelegram, setSavingTelegram] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -249,8 +284,11 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    loadPlatformSettings();
-    loadTelegramSettings();
+    const timer = window.setTimeout(() => {
+      loadPlatformSettings();
+      loadTelegramSettings();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadPlatformSettings, loadTelegramSettings]);
 
   useEffect(() => {
@@ -392,6 +430,51 @@ export default function AdminSettingsPage() {
       setError(err?.message || pageTr("Failed to send Telegram test post."));
     } finally {
       setTestingTelegram(false);
+    }
+  };
+
+  const handleChangePassword = async (event) => {
+    event.preventDefault();
+    setError("");
+    setToast("");
+
+    const { currentPassword, newPassword, confirmPassword } = passwordForm;
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError(pageTr("All password fields are required."));
+      return;
+    }
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/.test(newPassword)) {
+      setError(pageTr("New password must be at least 8 characters and include uppercase, lowercase, and a number."));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError(pageTr("New password and confirmation do not match."));
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setError(pageTr("New password must be different from current password."));
+      return;
+    }
+
+    try {
+      setSavingPassword(true);
+      const response = await fetch(`${getApiBase()}/auth/change-password`, {
+        method: "POST",
+        headers: buildAuthHeaders(),
+        body: JSON.stringify(passwordForm),
+      });
+      await parseJsonResponse(response);
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      setToast(pageTr("Password changed successfully. Please sign in again."));
+      window.setTimeout(() => {
+        clearAuth();
+        window.location.replace(buildAdminPath(PORTAL_CONFIG.loginPath));
+      }, 1400);
+    } catch (err) {
+      const requestMessage = String(err?.response?.data?.message || err?.message || "");
+      setError(pageTr(requestMessage || "Failed to change password."));
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -556,6 +639,83 @@ export default function AdminSettingsPage() {
               {pageTr("Refresh")}
             </button>
           </div>
+        </form>
+
+        <form onSubmit={handleChangePassword} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-50 text-violet-700">
+              <KeyRound size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-800">{pageTr("Admin account security")}</h2>
+              <p className="mt-1 text-sm font-normal text-slate-600">
+                {pageTr("Change your administrator password and protect access to the control panel.")}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <div className="space-y-2">
+              <label htmlFor="adminCurrentPassword" className="text-sm font-bold text-slate-700">
+                {pageTr("Current password")}
+              </label>
+              <input
+                id="adminCurrentPassword"
+                type="password"
+                autoComplete="current-password"
+                value={passwordForm.currentPassword}
+                onChange={(event) => setPasswordForm((previous) => ({ ...previous, currentPassword: event.target.value }))}
+                placeholder={pageTr("Enter your current password")}
+                disabled={savingPassword}
+                className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-500/10"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="adminNewPassword" className="text-sm font-bold text-slate-700">
+                {pageTr("New password")}
+              </label>
+              <input
+                id="adminNewPassword"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={128}
+                value={passwordForm.newPassword}
+                onChange={(event) => setPasswordForm((previous) => ({ ...previous, newPassword: event.target.value }))}
+                placeholder={pageTr("Enter a strong new password")}
+                disabled={savingPassword}
+                className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-500/10"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="adminConfirmPassword" className="text-sm font-bold text-slate-700">
+                {pageTr("Confirm new password")}
+              </label>
+              <input
+                id="adminConfirmPassword"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={128}
+                value={passwordForm.confirmPassword}
+                onChange={(event) => setPasswordForm((previous) => ({ ...previous, confirmPassword: event.target.value }))}
+                placeholder={pageTr("Enter the new password again")}
+                disabled={savingPassword}
+                className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-500/10"
+              />
+            </div>
+          </div>
+          <p className="mt-3 text-xs font-semibold leading-6 text-slate-500">
+            {pageTr("Use at least 8 characters with uppercase, lowercase, and a number.")}
+          </p>
+          <button
+            type="submit"
+            disabled={savingPassword || !passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
+            className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-violet-700 px-5 py-2.5 text-sm font-black text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {savingPassword ? <Loader2 size={17} className="animate-spin" /> : <ShieldCheck size={17} />}
+            {savingPassword ? pageTr("Changing password") : pageTr("Change password")}
+          </button>
         </form>
 
         <form onSubmit={handleSaveTelegramSettings} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">

@@ -80,6 +80,11 @@ const loginAs = (role) => {
   };
 };
 
+const passwordResetAs = (role) => (req, _res, next) => {
+  req.passwordResetRole = role;
+  next();
+};
+
 router.post("/register", otpRequestLimiter, registerUser);
 router.post("/verify-register-otp", verifyRegisterOtp);
 router.get("/register-otp-status", otpRequestLimiter, getRegisterOtpStatus);
@@ -95,16 +100,37 @@ router.post("/admin/login", loginLimiter, loginAs("admin"), loginUser);
 router.post(
   "/teacher/password-reset/request",
   passwordResetRequestLimiter,
+  passwordResetAs("teacher"),
   requestTeacherPasswordReset,
 );
 router.post(
   "/teacher/password-reset/verify",
   passwordResetVerifyLimiter,
+  passwordResetAs("teacher"),
   verifyTeacherPasswordResetOtp,
 );
 router.post(
   "/teacher/password-reset/reset",
   passwordResetCompleteLimiter,
+  passwordResetAs("teacher"),
+  resetTeacherPassword,
+);
+router.post(
+  "/admin/password-reset/request",
+  passwordResetRequestLimiter,
+  passwordResetAs("admin"),
+  requestTeacherPasswordReset,
+);
+router.post(
+  "/admin/password-reset/verify",
+  passwordResetVerifyLimiter,
+  passwordResetAs("admin"),
+  verifyTeacherPasswordResetOtp,
+);
+router.post(
+  "/admin/password-reset/reset",
+  passwordResetCompleteLimiter,
+  passwordResetAs("admin"),
   resetTeacherPassword,
 );
 
