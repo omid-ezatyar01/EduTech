@@ -281,7 +281,7 @@ function VideoCard({ video, page, numberFormatter, rank }) {
         <h3 className="line-clamp-2 min-h-14 text-lg font-black leading-7 text-slate-950 group-hover:text-primary-700">{video.title}</h3>
         <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
           <div className="flex min-w-0 items-center gap-2">
-            <img src={resolveAvatarUrl(video?.teacher?.avatar) || "/logo.png"} alt="" loading="lazy" onError={(event) => { event.currentTarget.src = "/logo.png"; }} className="h-8 w-8 shrink-0 rounded-full bg-slate-50 object-cover" />
+            {video?.teacher ? <img src={resolveAvatarUrl(video.teacher.avatar) || "/logo.png"} alt="" loading="lazy" onError={(event) => { event.currentTarget.src = "/logo.png"; }} className="h-8 w-8 shrink-0 rounded-full bg-slate-50 object-cover" /> : null}
             <span className="truncate text-xs font-black text-slate-600">{video?.teacher?.name || "EduTech"}</span>
           </div>
           <span className="inline-flex shrink-0 items-center gap-1 text-xs font-black text-rose-600"><Heart size={14} />{numberFormatter.format(Number(video.likeCount || 0))} {page.likes}</span>

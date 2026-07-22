@@ -25,6 +25,14 @@ import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 const benefitIcons = [BriefcaseBusiness, MessageCircle, Headphones, Rocket];
 const TEACHERS_PAGE_SIZE = 20;
 
+const chunkTeacherRows = (items = []) => {
+  const rows = [];
+  for (let index = 0; index < items.length; index += TEACHERS_PAGE_SIZE) {
+    rows.push(items.slice(index, index + TEACHERS_PAGE_SIZE));
+  }
+  return rows;
+};
+
 function TeacherGridSkeleton() {
   return <div className="edutech-scrollbar flex snap-x snap-mandatory items-stretch gap-4 overflow-x-auto px-1 pb-3 sm:grid sm:snap-none sm:grid-cols-2 sm:gap-5 sm:overflow-visible lg:grid-cols-3 xl:grid-cols-4" aria-hidden="true">{Array.from({ length: 8 }, (_, index) => <div key={index} className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start rounded-3xl border border-slate-200 bg-white p-5 sm:w-auto sm:min-w-0"><div className="mx-auto h-24 w-24 animate-pulse rounded-2xl bg-slate-200"/><div className="mx-auto mt-5 h-5 w-2/3 animate-pulse rounded bg-slate-200"/><div className="mx-auto mt-3 h-4 w-1/2 animate-pulse rounded bg-slate-100"/><div className="mt-5 grid grid-cols-3 gap-2">{[0, 1, 2].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100"/>)}</div><div className="mt-4 h-11 animate-pulse rounded-xl bg-slate-100"/></div>)}</div>;
 }
@@ -437,6 +445,10 @@ export default function TeachersPage({ t }) {
 
     return rows;
   }, [teachers, experienceFilter]);
+  const mobileTeacherRows = useMemo(
+    () => chunkTeacherRows(filteredTeachers),
+    [filteredTeachers],
+  );
   const scrollPageToTop = () => {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   };
@@ -692,8 +704,36 @@ export default function TeachersPage({ t }) {
 
             {loading && filteredTeachers.length === 0 ? <div className="mt-5"><TeacherGridSkeleton /></div> : null}
 
-            <div id="teacher-results" className="edutech-scrollbar mt-5 flex snap-x snap-mandatory items-stretch gap-4 overflow-x-auto px-1 pb-3 sm:grid sm:snap-none sm:grid-cols-2 sm:gap-5 sm:overflow-visible lg:grid-cols-3 xl:grid-cols-4">
-              {filteredTeachers.map((teacher, index) => <div key={teacher._id || teacher.name} className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start sm:w-auto sm:min-w-0"><TeacherCard labels={page} teacher={teacher} index={index} /></div>)}
+            <div id="teacher-results" className="mt-5">
+              <div className="space-y-4 sm:hidden">
+                {mobileTeacherRows.map((row, rowIndex) => (
+                  <div
+                    key={`teacher-row-${rowIndex + 1}`}
+                    className="edutech-scrollbar flex snap-x snap-mandatory items-stretch gap-3 overflow-x-auto px-1 pb-2"
+                    dir={isFa ? "rtl" : "ltr"}
+                  >
+                    {row.map((teacher, itemIndex) => (
+                      <div
+                        key={teacher._id || teacher.name}
+                        className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
+                      >
+                        <TeacherCard
+                          labels={page}
+                          teacher={teacher}
+                          index={(rowIndex * TEACHERS_PAGE_SIZE) + itemIndex}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div className="hidden items-stretch gap-5 sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {filteredTeachers.map((teacher, index) => (
+                  <div key={teacher._id || teacher.name} className="min-w-0">
+                    <TeacherCard labels={page} teacher={teacher} index={index} />
+                  </div>
+                ))}
+              </div>
             </div>
 
             {!loading && !error && !filteredTeachers.length ? <div className="mt-5 rounded-3xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm"><span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-primary-50 text-primary-700"><UserSearch size={30} /></span><h2 className="mt-5 text-xl font-black text-slate-950">{activeFilterCount > 0 ? (isFa ? "مدرسی مطابق انتخاب شما پیدا نشد" : "No teachers match your selection") : (isFa ? "مدرسان تازه به‌زودی اضافه می‌شوند" : "New teachers are coming soon")}</h2><p className="mx-auto mt-3 max-w-xl text-sm font-medium leading-7 text-slate-600">{activeFilterCount > 0 ? (isFa ? "یک یا چند فیلتر را بردارید یا نام دیگری جستجو کنید." : "Remove one or more filters or search for another name.") : (isFa ? "پروفایل مدرسان پس از تأیید و انتشار در اینجا نمایش داده می‌شود." : "Approved teacher profiles will appear here once published.")}</p>{activeFilterCount > 0 ? <button type="button" onClick={resetTeacherFilters} className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white"><RotateCcw size={16} />{isFa ? "پاک‌کردن فیلترها" : "Clear filters"}</button> : null}</div> : null}
