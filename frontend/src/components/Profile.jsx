@@ -3,9 +3,7 @@ import { User } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import StudentLayout from "./StudentLayout.jsx";
 import ProfileForm from "./ProfileForm.jsx";
-import AccountInfoCard from "./AccountInfoCard.jsx";
 import LearningStatsCard from "./LearningStatsCard.jsx";
-import AccountSecurityModal from "./AccountSecurityModal.jsx";
 import { clearAuth, getAuthUser, setAuthNotice } from "../../services/portal";
 import { isUnauthorizedError } from "../../services/http";
 import { fetchStudentLearningStats } from "../../services/courseService";
@@ -122,25 +120,13 @@ export default function Profile({ language = "fa" }) {
   );
   const [learningStats, setLearningStats] = useState(emptyProfileData.stats);
   const [isRedirecting, setIsRedirecting] = useState(false);
-  const [securitySuccessMsg, setSecuritySuccessMsg] = useState("");
   const [refreshSeed, setRefreshSeed] = useState(0);
-
-  const [isSecurityModalOpen, setSecurityModalOpen] = useState(false);
 
   const handleProfileUpdated = (updatedUser) => {
     const merged = { ...fullUser, ...updatedUser };
     setProfileUser(merged);
     localStorage.setItem("edutech_user", JSON.stringify(merged));
     window.dispatchEvent(new Event("auth_change"));
-  };
-
-  const handleSecurityUpdated = (securityUpdate) => {
-    handleProfileUpdated({
-      security: {
-        ...(fullUser.security || {}),
-        ...(securityUpdate || {}),
-      },
-    });
   };
 
   useEffect(() => {
@@ -214,35 +200,10 @@ export default function Profile({ language = "fa" }) {
       </div>
 
       <div className="mt-6">
-        <AccountInfoCard
-          user={fullUser}
-          onSecuritySettings={() => setSecurityModalOpen(true)}
-          language={language}
-        />
-      </div>
-
-      {securitySuccessMsg ? (
-        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-          {securitySuccessMsg}
-        </div>
-      ) : null}
-
-      <div className="mt-6">
         <LearningStatsCard stats={learningStats} language={language} />
       </div>
       <div className="h-8" aria-hidden="true" />
 
-      <AccountSecurityModal
-        key={`security-${isSecurityModalOpen}-${fullUser.security?.lastUpdatedAt || ""}`}
-        isOpen={isSecurityModalOpen}
-        onClose={() => setSecurityModalOpen(false)}
-        onSave={handleSecurityUpdated}
-        onSuccess={(message) => {
-          setSecuritySuccessMsg(message);
-          setTimeout(() => setSecuritySuccessMsg(""), 4000);
-        }}
-        language={language}
-      />
     </StudentLayout>
   );
 }

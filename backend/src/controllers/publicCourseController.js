@@ -274,11 +274,7 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
     "teacherApplication.status": "approved",
   }).distinct("_id");
 
-  if (!approvedTeacherIds.length) {
-    throw new ApiError(404, "Course not found");
-  }
-
-  const publishedFilter = {
+  const activePublishedFilter = {
     status: "published",
     isPublished: true,
     $or: [
@@ -287,15 +283,30 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
       { createdBy: { $in: approvedTeacherIds } },
     ],
   };
-  const lookupFilter = mongoose.isValidObjectId(identifier)
-    ? {
-        ...publishedFilter,
-        $or: [{ slug: identifier }, { _id: identifier }],
-      }
-    : {
-        ...publishedFilter,
-        slug: identifier,
-      };
+  const endedArchiveFilter = {
+    status: "published",
+    isPublished: true,
+    classEndedAt: { $exists: true, $ne: null },
+    $and: [
+      {
+        $or: [
+          { classCancelledAt: { $exists: false } },
+          { classCancelledAt: null },
+        ],
+      },
+    ],
+  };
+  const identifierFilter = mongoose.isValidObjectId(identifier)
+    ? { $or: [{ slug: identifier }, { _id: identifier }] }
+    : { slug: identifier };
+  const lookupFilter = {
+    $and: [
+      identifierFilter,
+      {
+        $or: [activePublishedFilter, endedArchiveFilter],
+      },
+    ],
+  };
 
   const course = await Course.findOne(lookupFilter)
     .populate("teacher", "name username avatar bio role bankPaymentInfo")

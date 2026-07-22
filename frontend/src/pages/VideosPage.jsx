@@ -38,8 +38,6 @@ const trustedEmbed = (value) => {
 };
 
 const VideoPreview = ({ active, embedUrl, onActivate, playLabel, thumbnailUrl, title }) => {
-  const [loaded, setLoaded] = useState(false);
-
   if (!active) {
     return <div className="relative h-full w-full bg-gradient-to-br from-white via-blue-50 to-cyan-50">
       <img src="/logo.png" alt="" className="absolute inset-0 m-auto w-[72%] max-w-sm object-contain"/>
@@ -51,10 +49,10 @@ const VideoPreview = ({ active, embedUrl, onActivate, playLabel, thumbnailUrl, t
   }
 
   return <div className="relative h-full w-full bg-white">
-    <div className={`pointer-events-none absolute inset-0 z-10 grid place-items-center bg-gradient-to-br from-white via-blue-50 to-cyan-50 transition-opacity duration-500 ${loaded ? "opacity-0" : "opacity-100"}`} aria-hidden="true">
+    <div className="pointer-events-none absolute inset-0 z-0 grid place-items-center bg-gradient-to-br from-white via-blue-50 to-cyan-50" aria-hidden="true">
       <img src="/logo.png" alt="" className="w-[72%] max-w-sm object-contain"/>
     </div>
-    {embedUrl ? <iframe onLoad={() => setLoaded(true)} src={embedUrl} title={title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen scrolling="no" className={`h-full w-full border-0 bg-white transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}/> : null}
+    {embedUrl ? <iframe src={embedUrl} title={title} loading="eager" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen scrolling="no" className="relative z-10 h-full w-full border-0 bg-transparent"/> : null}
   </div>;
 };
 

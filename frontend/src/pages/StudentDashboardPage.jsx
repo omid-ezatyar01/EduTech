@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
-  PenLine,
   CreditCard,
   CalendarDays,
   BellRing,
   Video,
   ClipboardList,
   FolderOpen,
+  ArrowLeft,
+  ArrowRight,
+  RefreshCw,
+  TrendingUp,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -16,16 +19,16 @@ import DashboardStatCard from "../components/DashboardStatCard.jsx";
 import TodayClassCard from "../components/TodayClassCard.jsx";
 import CourseProgressCard from "../components/CourseProgressCard.jsx";
 import NotificationCard from "../components/NotificationCard.jsx";
+import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import {
   fetchStudentEnrollments,
   fetchStudentLiveSessions,
 } from "../../services/courseService.js";
-import { getStudentPaymentHistory } from "../../services/paymentGateway.js";
+import { fetchTeacherNotifications } from "../../services/teacherSocialService.js";
 import { clearAuth, getAuthUser, setAuthNotice } from "../../services/portal.js";
 import { isUnauthorizedError } from "../../services/http.js";
 import { resolveStudentCourseProgressPercent } from "../utils/courseProgress.js";
 import { buildCoursePath } from "../utils/routePaths.js";
-import { formatUsd } from "../../services/purchaseService.js";
 import useLiveDataRefresh from "../hooks/useLiveDataRefresh.js";
 
 const STATUS_ORDER = {
@@ -402,19 +405,6 @@ function mapLiveSessionToUpcoming(session = {}, language = "fa") {
   };
 }
 
-function mapPayment(payment = {}) {
-  return {
-    id: payment._id,
-    reference: payment.paymentReference || payment.transactionId || payment._id,
-    courseTitle: payment.courseId?.title || "Course",
-    status: payment.status || payment.paymentStatus || "pending",
-    amount: Number(payment.amount) || 0,
-    currency: payment.currency || "USD",
-    createdAt: payment.createdAt || payment.paidAt || null,
-    expiresAt: payment.expiresAt || payment.paymentAttemptId?.expiresAt || null,
-  };
-}
-
 export default function StudentDashboardPage({ language = "fa" }) {
   const user = toUser(getAuthUser());
   const userName =
@@ -424,7 +414,8 @@ export default function StudentDashboardPage({ language = "fa" }) {
     user.username;
 
   const [enrollments, setEnrollments] = useState([]);
-  const [payments, setPayments] = useState([]);
+  const [notificationRows, setNotificationRows] = useState([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [upcomingSessionRows, setUpcomingSessionRows] = useState([]);
   const [todayCourse, setTodayCourse] = useState(null);
   const [upcomingWeekSessionCount, setUpcomingWeekSessionCount] = useState(0);
@@ -432,13 +423,7 @@ export default function StudentDashboardPage({ language = "fa" }) {
   const [error, setError] = useState("");
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [refreshSeed, setRefreshSeed] = useState(0);
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -447,20 +432,20 @@ export default function StudentDashboardPage({ language = "fa" }) {
       try {
         setLoading(true);
         setError("");
-        const [enrollmentResult, paymentResult, liveSessionResult] = await Promise.allSettled([
+        const [enrollmentResult, liveSessionResult, notificationResult] = await Promise.allSettled([
           fetchStudentEnrollments(),
-          getStudentPaymentHistory(),
           fetchStudentLiveSessions({ page: 1, limit: 100 }),
+          fetchTeacherNotifications(),
         ]);
 
         if (!mounted) return;
         const firstErrorReason =
           enrollmentResult.status === "rejected"
             ? enrollmentResult.reason
-            : paymentResult.status === "rejected"
-              ? paymentResult.reason
-              : liveSessionResult.status === "rejected"
+            : liveSessionResult.status === "rejected"
                 ? liveSessionResult.reason
+                : notificationResult.status === "rejected"
+                  ? notificationResult.reason
                 : null;
         if (isUnauthorizedError(firstErrorReason)) {
           setAuthNotice("Not authorized for this resource");
@@ -490,24 +475,6 @@ export default function StudentDashboardPage({ language = "fa" }) {
               "courses",
             ),
           );
-        }
-
-        if (paymentResult.status === "fulfilled") {
-          setPayments(
-            Array.isArray(paymentResult.value)
-              ? paymentResult.value.map(mapPayment)
-              : [],
-          );
-        } else {
-          setPayments([]);
-          setError((prev) => {
-            const msg = getRequestErrorMessage(
-              paymentResult.reason,
-              language,
-              "payments",
-            );
-            return prev ? `${prev} ${msg}` : msg;
-          });
         }
 
         if (liveSessionResult.status === "fulfilled") {
@@ -549,7 +516,7 @@ export default function StudentDashboardPage({ language = "fa" }) {
             .filter((session) => {
               const startAt = new Date(session.startAt);
               if (Number.isNaN(startAt.getTime())) return false;
-              if (startAt.getTime() < (nowMs || Date.now())) return false;
+              if (startAt.getTime() < now.getTime()) return false;
               return session.status === "live" || session.status === "scheduled";
             })
             .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
@@ -560,6 +527,15 @@ export default function StudentDashboardPage({ language = "fa" }) {
           setTodayCourse(null);
           setUpcomingWeekSessionCount(0);
           setUpcomingSessionRows([]);
+        }
+
+        if (notificationResult.status === "fulfilled") {
+          const payload = notificationResult.value || {};
+          setNotificationRows(Array.isArray(payload.notifications) ? payload.notifications : []);
+          setUnreadNotificationCount(Number(payload.unreadCount || 0));
+        } else {
+          setNotificationRows([]);
+          setUnreadNotificationCount(0);
         }
       } catch {
         if (!mounted) return;
@@ -581,16 +557,6 @@ export default function StudentDashboardPage({ language = "fa" }) {
   }, [language, navigate, refreshSeed]);
   
 
-  const visiblePayments = useMemo(
-    () =>
-      payments.filter((payment) => {
-        const isPending = String(payment.status || "").toLowerCase() === "pending";
-        const expiresAtMs = payment.expiresAt ? new Date(payment.expiresAt).getTime() : Number.NaN;
-        return !(isPending && Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs);
-      }),
-    [nowMs, payments],
-  );
-
   useLiveDataRefresh(
     () => setRefreshSeed((prev) => prev + 1),
     {
@@ -606,20 +572,10 @@ export default function StudentDashboardPage({ language = "fa" }) {
     const activeCourses = enrollments.filter(
       (row) => row.status === "active",
     ).length;
-    const completedCourses = enrollments.filter(
-      (row) => row.status === "completed",
-    ).length;
-    const paidStatuses = new Set(["paid", "success", "succeeded", "completed"]);
-    const paidRows = visiblePayments.filter((payment) =>
-      paidStatuses.has(String(payment?.status || "").toLowerCase()),
-    );
-    const totalPaid = paidRows.reduce(
-      (sum, payment) => sum + (Number(payment?.amount) || 0),
-      0,
-    );
-    const paidCurrency =
-      String(paidRows[0]?.currency || visiblePayments[0]?.currency || "USD").toUpperCase();
-    const totalPaidLabel = formatUsd(totalPaid, language, paidCurrency);
+    const progressRows = enrollments.filter((row) => row.status === "active" || row.status === "completed");
+    const averageProgress = progressRows.length
+      ? Math.round(progressRows.reduce((sum, row) => sum + Number(row.progress || 0), 0) / progressRows.length)
+      : 0;
 
     return [
       {
@@ -629,25 +585,25 @@ export default function StudentDashboardPage({ language = "fa" }) {
         colorClass: "bg-teal-50 text-teal-600",
       },
       {
-        title: language === "fa" ? "کورس‌های تکمیل‌شده" : "Completed Courses",
-        value: String(completedCourses),
-        icon: PenLine,
+        title: language === "fa" ? "میانگین پیشرفت" : "Average Progress",
+        value: `${averageProgress}%`,
+        icon: TrendingUp,
         colorClass: "bg-primary-50 text-primary-600",
-      },
-      {
-        title: language === "fa" ? "مجموع پرداختی" : "Total Paid",
-        value: totalPaidLabel,
-        icon: CreditCard,
-        colorClass: "bg-amber-50 text-amber-600",
       },
       {
         title: language === "fa" ? "جلسات ۷ روز آینده" : "Next 7 Days Classes",
         value: String(upcomingWeekSessionCount),
         icon: Video,
+        colorClass: "bg-amber-50 text-amber-600",
+      },
+      {
+        title: language === "fa" ? "اعلان خوانده‌نشده" : "Unread Notifications",
+        value: String(unreadNotificationCount),
+        icon: BellRing,
         colorClass: "bg-rose-50 text-rose-600",
       },
     ];
-  }, [enrollments, language, upcomingWeekSessionCount, visiblePayments]);
+  }, [enrollments, language, unreadNotificationCount, upcomingWeekSessionCount]);
 
   if (isRedirecting) return null;
 
@@ -664,45 +620,47 @@ export default function StudentDashboardPage({ language = "fa" }) {
         status: isUpcoming ? "upcoming" : "pending",
       };
     });
-  const dashboardCourses = enrollments.slice(0, 2);
+  const dashboardCourses = enrollments.slice(0, 3);
 
-  const notifications = [
-    ...enrollments.slice(0, 2).map((row) => ({
-      text:
-        language === "fa"
-          ? `وضعیت کورس ${row.title}: ${row.status === "active" ? "فعال" : row.status === "completed" ? "تکمیل‌شده" : row.status === "cancelled" ? "لغو شده" : "در انتظار تایید"}`
-          : `${row.title} status: ${row.status}`,
-      time: toRelativeTime(row.createdAt, language),
-      isNew: row.status === "pending",
-    })),
-    ...visiblePayments.slice(0, 2).map((payment) => ({
-      text:
-        language === "fa"
-          ? `پرداخت ${payment.reference}: ${payment.status === "paid" ? "تایید شد" : payment.status === "failed" ? "ناموفق" : "در انتظار"}`
-          : `Payment ${payment.reference}: ${payment.status}`,
-      time: toRelativeTime(payment.createdAt, language),
-      isNew: payment.status === "pending",
-    })),
-  ].slice(0, 4);
+  const notifications = notificationRows.slice(0, 4).map((item) => ({
+    text: item.body || item.title || (language === "fa" ? "اعلان جدید" : "New notification"),
+    title: item.title || "",
+    time: toRelativeTime(item.createdAt, language),
+    isNew: !item.isRead,
+    to: item.url || "/student/notifications",
+  }));
+  const continueCourse = enrollments.find((course) => course.status === "active") || enrollments[0] || null;
+  const DirectionArrow = language === "fa" ? ArrowLeft : ArrowRight;
 
   return (
     <StudentLayout language={language} user={user}>
-      <section className="relative mb-8 overflow-hidden rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <section className="relative mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <div className="absolute -top-24 -start-16 h-64 w-64 rounded-full bg-primary-50 blur-3xl" />
         <div className="absolute -bottom-24 -end-16 h-64 w-64 rounded-full bg-teal-50 blur-3xl" />
 
-        <div className="relative z-10 grid gap-6 lg:grid-cols-[1fr_360px]">
+        <div className="relative z-10 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-center">
           <div>
             <h1 className="text-3xl font-black text-slate-950 sm:text-4xl">
               {language === "fa" ? `سلام، ${userName}!` : `Hello, ${userName}!`}
             </h1>
-            <p className="mt-3 max-w-3xl text-base font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
+            <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-slate-600 sm:text-base sm:leading-8">
               {language === "fa"
                 ? "این داشبورد، مرکز مدیریت کورس‌ها، صنف آنلاین، تمرین‌ها و پرداخت‌های شما است."
                 : "This dashboard is your control center for courses, live classes, assignments, and payments."}
             </p>
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
+              {continueCourse ? (
+                <Link to={continueCourse.courseLink} className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white shadow-lg shadow-primary-200 transition hover:bg-primary-700">
+                  {language === "fa" ? "ادامه یادگیری" : "Continue learning"}
+                  <DirectionArrow size={17} />
+                </Link>
+              ) : (
+                <Link to="/live-courses" className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white shadow-lg shadow-primary-200 transition hover:bg-primary-700">
+                  {language === "fa" ? "پیدا کردن کورس" : "Find a course"}
+                  <DirectionArrow size={17} />
+                </Link>
+              )}
               {user?.studentId ? (
                 <span className="inline-flex whitespace-nowrap rounded-xl border border-primary-100 bg-primary-50 px-3 py-2 text-xs font-black text-primary-700 sm:text-sm">
                   {language === "fa" ? (
@@ -772,31 +730,31 @@ export default function StudentDashboardPage({ language = "fa" }) {
         </div>
       </section>
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {!loading ? <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
         {stats.map((stat, idx) => (
           <DashboardStatCard key={idx} {...stat} />
         ))}
-      </div>
+      </div> : null}
 
-      {loading || error ? (
-        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
-          {loading ? (
-            <p className="text-sm font-bold text-slate-500">
-              {language === "fa"
-                ? "در حال بارگذاری داشبورد"
-                : "Loading dashboard"}
-            </p>
-          ) : null}
-          {error ? (
-            <p className="text-sm font-bold text-rose-600">{error}</p>
-          ) : null}
+      {loading ? <FrontendPageLoader className="mb-6" minHeight="min-h-[220px]" label={language === "fa" ? "در حال بارگذاری داشبورد" : "Loading dashboard"} /> : null}
+      {error && !loading ? <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"><span>{error}</span><button type="button" onClick={() => setRefreshSeed((value) => value + 1)} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2"><RefreshCw size={15} />{language === "fa" ? "تلاش دوباره" : "Try again"}</button></div> : null}
+
+      {!loading ? <div className="space-y-6">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
+          <TodayClassCard course={todayCourse} language={language} />
+
+          <section className="flex min-h-[320px] flex-col rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-600"><CalendarDays size={20} /></div><h2 className="text-lg font-black text-slate-950">{language === "fa" ? "برنامه آینده" : "Upcoming"}</h2></div>
+              <Link to="/student/schedule" className="text-xs font-black text-primary-600 hover:text-primary-700">{language === "fa" ? "برنامه کامل" : "Full schedule"}</Link>
+            </div>
+            <div className="min-h-0 flex-1 space-y-3">
+              {upcomingClasses.length === 0 ? <div className="flex min-h-52 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center"><CalendarDays size={28} className="text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">{language === "fa" ? "صنف آینده‌ای پیدا نشد." : "No upcoming class found."}</p></div> : upcomingClasses.map((item, idx) => <div key={`${item.title}-${idx}`} className="rounded-xl border border-slate-100 bg-slate-50/60 p-4"><div className="flex items-start justify-between gap-3"><p className="line-clamp-1 font-bold text-slate-900">{item.title}</p><span className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-black ${item.status === "upcoming" ? "bg-teal-50 text-teal-700" : "bg-amber-50 text-amber-700"}`}>{item.status === "upcoming" ? language === "fa" ? "پیش‌رو" : "Upcoming" : language === "fa" ? "در انتظار" : "Pending"}</span></div><p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{item.time}</p></div>)}
+            </div>
+          </section>
         </div>
-      ) : null}
 
-      <div className="space-y-6">
-        <TodayClassCard course={todayCourse} language={language} />
-
-        <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-xl font-black text-slate-950">
               {language === "fa" ? "کورس‌های من" : "My Courses"}
@@ -815,9 +773,10 @@ export default function StudentDashboardPage({ language = "fa" }) {
                   ? "هنوز کورسی برای شما ثبت نشده است."
                   : "No course is enrolled yet."}
               </p>
+              <Link to="/live-courses" className="mt-4 inline-flex rounded-xl bg-primary-600 px-5 py-2.5 text-sm font-black text-white">{language === "fa" ? "مشاهده کورس‌ها" : "Browse courses"}</Link>
             </div>
           ) : (
-            <div className="grid gap-5 sm:grid-cols-2">
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {dashboardCourses.map((course) => (
                 <CourseProgressCard
                   key={course.id}
@@ -829,68 +788,25 @@ export default function StudentDashboardPage({ language = "fa" }) {
           )}
         </section>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section className="flex h-[430px] flex-col rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
-                <CalendarDays size={20} />
-              </div>
-              <h2 className="text-lg font-black text-slate-950">
-                {language === "fa" ? "برنامه آینده" : "Upcoming"}
-              </h2>
-            </div>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pe-1">
-              {upcomingClasses.length === 0 ? (
-                <p className="text-sm font-semibold text-slate-500">
-                  {language === "fa"
-                    ? "صنف آینده‌ای پیدا نشد."
-                    : "No upcoming class found."}
-                </p>
-              ) : (
-                upcomingClasses.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between rounded-xl border border-slate-100 p-4"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-bold text-slate-900">{item.title}</p>
-                      <p className="mt-1 text-xs font-semibold text-slate-500">
-                        {item.time}
-                      </p>
-                    </div>
-                    <span
-                      className={`inline-flex rounded-md px-2 py-1 text-xs font-bold ${item.status === "upcoming" ? "bg-teal-50 text-teal-700" : "bg-amber-50 text-amber-700"}`}
-                    >
-                      {item.status === "upcoming"
-                        ? language === "fa"
-                          ? "پیش‌رو"
-                          : "Upcoming"
-                        : language === "fa"
-                          ? "در انتظار"
-                          : "Pending"}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="flex h-[430px] flex-col rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-center gap-3">
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
                 <BellRing size={20} />
               </div>
               <h2 className="text-lg font-black text-slate-950">
                 {language === "fa" ? "اعلانات" : "Notifications"}
               </h2>
+              </div>
+              <Link to="/student/notifications" className="text-xs font-black text-primary-600 hover:text-primary-700">{language === "fa" ? "مشاهده همه" : "View all"}</Link>
             </div>
-            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pe-1">
+            <div className="grid gap-2 md:grid-cols-2">
               {notifications.length === 0 ? (
-                <p className="text-sm font-semibold text-slate-500">
+                <div className="col-span-full rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm font-semibold text-slate-500">
                   {language === "fa"
                     ? "هنوز اعلانی وجود ندارد."
                     : "No notifications yet."}
-                </p>
+                </div>
               ) : (
                 notifications.map((item, idx) => (
                   <NotificationCard key={idx} {...item} />
@@ -898,8 +814,8 @@ export default function StudentDashboardPage({ language = "fa" }) {
               )}
             </div>
           </section>
-        </div>
       </div>
+      : null}
       <div className="h-8" aria-hidden="true" />
     </StudentLayout>
   );

@@ -69,18 +69,7 @@ export default function TodayClassCard({ course, language = "fa" }) {
       </div>
 
       <div className="mt-auto">
-        <a
-          href={hasLink ? course.meetLink : "#"}
-          target={hasLink ? "_blank" : "_self"}
-          className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-black transition-all ${
-            hasLink
-              ? "bg-gradient-to-r from-primary-600 to-teal-500 text-white shadow-md hover:opacity-90"
-              : "cursor-not-allowed bg-slate-100 text-slate-400"
-          }`}
-        >
-          <Video size={18} />
-          {language === "fa" ? "ورود به Google Meet" : "Join Google Meet"}
-        </a>
+        {hasLink ? <a href={course.meetLink} target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-teal-500 py-3.5 text-sm font-black text-white shadow-md transition-all hover:opacity-90"><Video size={18} />{language === "fa" ? "ورود به Google Meet" : "Join Google Meet"}</a> : <button type="button" disabled className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-100 py-3.5 text-sm font-black text-slate-400"><Video size={18} />{language === "fa" ? "هنوز قابل ورود نیست" : "Not available yet"}</button>}
         {hasLink && (
           <p className="mt-3 flex items-center justify-center gap-1.5 text-xs font-bold text-teal-600">
             <CheckCircle2 size={14} />

@@ -125,7 +125,9 @@ export default function TeacherReports() {
           fetchTeacherDashboard(),
           fetchTeacherStudents({ page: 1, limit: 200 }),
           fetchTeacherCourses({ page: 1, limit: 100 }),
-          fetchTeacherMessageConversations({ page: 1, limit: 5 }),
+          // Messaging can be disabled platform-wide. Reports must still load the
+          // independent course, student, and earnings data in that case.
+          fetchTeacherMessageConversations({ page: 1, limit: 5 }).catch(() => DEFAULT_REPORT.messages),
           fetchTeacherEarningsSummary(),
         ]);
 

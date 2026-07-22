@@ -15,8 +15,8 @@ export default function AccountSecurityModal({
       ? "تمام فیلدهای رمز عبور الزامی است."
       : "All password fields are required.",
     minLength: isFa
-      ? "رمز عبور باید حداقل 6 کاراکتر باشد."
-      : "Password must be at least 6 characters.",
+      ? "رمز عبور باید حداقل ۸ نویسه و شامل حرف بزرگ، حرف کوچک و عدد باشد."
+      : "Password must be at least 8 characters and include uppercase, lowercase, and a number.",
     mismatch: isFa
       ? "رمز عبور جدید و تایید آن مطابقت ندارند."
       : "New password and confirmation do not match.",
@@ -65,7 +65,12 @@ export default function AccountSecurityModal({
       setFeedback({ type: "error", text: t.required });
       return;
     }
-    if (form.newPassword.length < 6) {
+    if (
+      form.newPassword.length < 8 ||
+      !/[a-z]/.test(form.newPassword) ||
+      !/[A-Z]/.test(form.newPassword) ||
+      !/[0-9]/.test(form.newPassword)
+    ) {
       setFeedback({ type: "error", text: t.minLength });
       return;
     }

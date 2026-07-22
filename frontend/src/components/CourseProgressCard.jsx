@@ -1,9 +1,11 @@
-import { Clock } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export default function CourseProgressCard({ course, language = "fa" }) {
   const isActive = course.status === "active";
   const isCompleted = course.status === "completed";
   const isPending = !isActive && !isCompleted;
+  const Arrow = language === "fa" ? ArrowLeft : ArrowRight;
   const statusClass = isActive
     ? "bg-teal-50 text-teal-700"
     : isCompleted
@@ -64,6 +66,15 @@ export default function CourseProgressCard({ course, language = "fa" }) {
           </span>
         </div>
       </div>
+      <Link
+        to={course.courseLink || "/student/courses"}
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-primary-100 bg-primary-50 px-4 text-xs font-black text-primary-700 transition hover:border-primary-200 hover:bg-primary-100"
+      >
+        {isCompleted
+          ? language === "fa" ? "مشاهده کورس" : "View course"
+          : language === "fa" ? "ادامه یادگیری" : "Continue learning"}
+        <Arrow size={15} />
+      </Link>
     </div>
   );
 }

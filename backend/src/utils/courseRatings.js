@@ -211,7 +211,7 @@ const mapPublicReviewRow = (rating = {}, { mode = "course" } = {}) => {
   };
 };
 
-export const getPublicCourseReviews = async (courseId, { limit = 6 } = {}) => {
+export const getPublicCourseReviews = async (courseId, { limit = 20 } = {}) => {
   const courseObjectId = toObjectId(courseId);
   if (!courseObjectId) return [];
 
@@ -222,7 +222,7 @@ export const getPublicCourseReviews = async (courseId, { limit = 6 } = {}) => {
     .populate("studentId", "name")
     .populate("courseId", "title")
     .sort({ createdAt: -1 })
-    .limit(Math.max(1, Math.min(20, Number(limit) || 6)))
+    .limit(Math.max(1, Math.min(20, Number(limit) || 20)))
     .lean();
 
   return rows.map((row) => mapPublicReviewRow(row, { mode: "course" }));

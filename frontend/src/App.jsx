@@ -267,6 +267,12 @@ export default function App() {
 
   useEffect(() => {
     document.body.classList.add("app-ready");
+    const savedDisplayScale = window.localStorage.getItem("edutech-display-scale");
+    const displayScales = { compact: "0.85", comfortable: "0.9", large: "1" };
+    document.documentElement.style.setProperty(
+      "--app-scale",
+      displayScales[savedDisplayScale] || displayScales.comfortable,
+    );
     const loader = document.getElementById("app-boot-loader");
     if (!loader) return undefined;
     loader.classList.add("app-boot-loader--hidden");

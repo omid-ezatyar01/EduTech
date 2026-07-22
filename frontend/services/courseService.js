@@ -148,7 +148,7 @@ const normalizeReviews = (rows = []) =>
       teacherReply: String(item?.teacherReply || ""),
       helpfulCount: Number(item?.helpfulCount || 0),
     }))
-    .filter((item) => item.text);
+    .filter((item) => item._id && item.rating > 0);
 
 const mapCourse = (course = {}) => {
   const finalPrice = Number(course?.price || 0);

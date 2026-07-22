@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Archive,
   BookOpen,
   CalendarDays,
   CheckCircle2,
@@ -89,6 +90,14 @@ function getYouTubeEmbedUrl(value = "") {
   }
 }
 
+function getYouTubeThumbnailUrl(value = "") {
+  const embedUrl = getYouTubeEmbedUrl(value);
+  const videoId = embedUrl.split("/").filter(Boolean).at(-1) || "";
+  return videoId
+    ? `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`
+    : "";
+}
+
 function extractYouTubeUrls(value = "") {
   const matches = String(value || "").match(/https?:\/\/[^\s"'<>]+/gi) || [];
   return matches
@@ -133,6 +142,7 @@ function normalizePreviewVideoLinks(course = {}) {
     .map((url) => ({
       url,
       embedUrl: getYouTubeEmbedUrl(url),
+      thumbnailUrl: getYouTubeThumbnailUrl(url),
     }));
 }
 const COURSE_IMAGE_ASPECT_RATIO = "750 / 422";
@@ -379,6 +389,7 @@ export default function CourseDetailsPage({ t }) {
   const [expandedDescriptionSlug, setExpandedDescriptionSlug] = useState("");
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [reviewSort, setReviewSort] = useState("newest");
+  const [activePreviewIndex, setActivePreviewIndex] = useState(null);
   const [ratingModalOpen, setRatingModalOpen] = useState(false);
   const [ratingAccess, setRatingAccess] = useState({ pending: [], submitted: [], loading: false });
   const quotedPriceLabel = useRegionalCoursePrice(Number(course?.price || 0), language);
@@ -477,7 +488,15 @@ export default function CourseDetailsPage({ t }) {
         setError("");
         setNotFound(false);
 
-        const loadedCourse = initialCourse || await fetchPublishedCourseBySlug(courseIdentifier);
+        let loadedCourse = initialCourse;
+        try {
+          const freshCourse = await fetchPublishedCourseBySlug(courseIdentifier, {
+            force: Boolean(initialCourse),
+          });
+          if (freshCourse) loadedCourse = freshCourse;
+        } catch (refreshError) {
+          if (!initialCourse) throw refreshError;
+        }
         if (!loadedCourse) {
           throw new Error("Course not found");
         }
@@ -743,7 +762,7 @@ export default function CourseDetailsPage({ t }) {
   };
 
   const handlePurchase = () => {
-    if (!course || isStartingPayment) return;
+    if (!course || isStartingPayment || course?.classEndedAt) return;
 
     if (localStorage.getItem("edutech_auth") === "true") {
       if (course?.isFree) {
@@ -842,15 +861,7 @@ export default function CourseDetailsPage({ t }) {
       });
     });
 
-    return WEEK_DAY_ORDER.map((dayKey) => {
-      return (
-        byDay.get(dayKey) || {
-          day: dayKey,
-          startTime: "-",
-          endTime: "-",
-        }
-      );
-    });
+    return WEEK_DAY_ORDER.map((dayKey) => byDay.get(dayKey)).filter(Boolean);
   }, [course]);
 
   const seatInfo = useMemo(() => {
@@ -941,11 +952,7 @@ export default function CourseDetailsPage({ t }) {
     course?.whatYouWillLearn?.length ? course.whatYouWillLearn : [],
   );
   const syllabusItems = filterDisplayList(
-    course?.curriculumTopics?.length
-      ? course.curriculumTopics
-      : course?.requirements?.length
-        ? course.requirements
-        : [],
+    course?.curriculumTopics?.length ? course.curriculumTopics : [],
   );
   const suitableAudience = filterDisplayList(
     course?.targetAudience?.length ? course.targetAudience : [],
@@ -955,6 +962,7 @@ export default function CourseDetailsPage({ t }) {
   );
   const previewVideos = normalizePreviewVideoLinks(course);
   const isSpecialCourse = course?.courseType === "special";
+  const courseEnded = Boolean(course?.classEndedAt);
   const courseReviews = Array.isArray(course?.reviews) ? course.reviews : [];
   const currentCourseId = String(course?._id || course?.id || "");
   const ownCourseReview = ratingAccess.submitted.find(
@@ -974,6 +982,7 @@ export default function CourseDetailsPage({ t }) {
   const sortedCourseReviews = [...displayedCourseReviews].sort((left, right) => reviewSort === "helpful"
     ? Number(right.helpfulCount || 0) - Number(left.helpfulCount || 0)
     : new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+  const reviewCount = Math.max(Number(course?.ratingCount || 0), displayedCourseReviews.length);
   const quickFacts = []
     .concat(
       teacherName
@@ -1121,8 +1130,15 @@ export default function CourseDetailsPage({ t }) {
       ? "ثبت‌نام و پرداخت"
       : "Enroll & pay";
 
+  const sectionLinks = [
+    { href: "#course-overview", label: language === "fa" ? "معرفی کورس" : "Overview" },
+    { href: "#course-schedule", label: language === "fa" ? "تقسیم اوقات" : "Schedule" },
+    { href: "#course-syllabus", label: language === "fa" ? "سرفصل‌ها" : "Syllabus" },
+    { href: "#course-reviews", label: language === "fa" ? "نظریات شاگردان" : "Reviews" },
+  ];
+
   return (
-    <section className="overflow-x-hidden bg-slate-50 pb-24 pt-6 sm:pt-8" dir={dir}>
+    <section className={`overflow-x-hidden bg-slate-50 pt-6 sm:pt-8 ${!isEnrolled && !courseEnded ? "pb-24" : "pb-16"}`} dir={dir}>
       <div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-center gap-2 px-1 text-xs font-bold text-slate-500 sm:text-sm">
           <Link className="hover:text-primary-700" to="/">
@@ -1136,7 +1152,20 @@ export default function CourseDetailsPage({ t }) {
           <span className="max-w-full truncate text-slate-900">{course.title}</span>
         </div>
 
-        {!isEnrolled ? (
+        {courseEnded ? (
+          <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm font-semibold text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <Archive size={19} className="mt-0.5 shrink-0 text-amber-700" />
+              <div>
+                <p className="font-black">{language === "fa" ? "این کورس پایان یافته است" : "This course has ended"}</p>
+                <p className="mt-0.5 leading-6 text-amber-800">{language === "fa" ? "جزئیات، برنامه و نظریات شاگردان به‌عنوان آرشیف برای شما قابل مشاهده است." : "Its details, schedule, and student reviews remain available as an archive."}</p>
+              </div>
+            </div>
+            <a href="#course-reviews" className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl border border-amber-300 bg-white px-4 text-xs font-black text-amber-900 transition hover:bg-amber-100">
+              {language === "fa" ? "دیدن نظریات" : "Read reviews"}
+            </a>
+          </div>
+        ) : !isEnrolled ? (
           <div className="mb-5 flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900">
             <BookOpen size={18} className="shrink-0 text-sky-700" />
             {language === "fa"
@@ -1154,11 +1183,12 @@ export default function CourseDetailsPage({ t }) {
 
         <div
           className={`grid gap-6 ${
-            isEnrolled ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"
+            isEnrolled || courseEnded ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"
           }`}
         >
           <div className="flex flex-col gap-5">
             <div
+              id="course-overview"
               className="relative order-[-3] mx-auto w-full overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)]"
             >
               <div className="pointer-events-none absolute -start-20 -top-24 h-64 w-64 rounded-full bg-blue-100/60 blur-3xl" />
@@ -1172,6 +1202,18 @@ export default function CourseDetailsPage({ t }) {
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1.5 text-xs font-black text-white shadow-sm">
                           <Star size={13} fill="currentColor" />{language === "fa" ? "کورس ویژه" : "Special course"}
                         </span>
+                      ) : null}
+                      {courseEnded ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-800">
+                          <Archive size={13} />{language === "fa" ? "کورس پایان‌یافته" : "Ended course"}
+                        </span>
+                      ) : null}
+                      {Number(course?.ratingCount || 0) > 0 ? (
+                        <a href="#course-reviews" className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-black text-slate-800 transition hover:bg-amber-50">
+                          <Star size={13} className="text-amber-500" fill="currentColor" />
+                          <span dir="ltr">{Number(course?.rating || 0).toFixed(1)}</span>
+                          <span className="text-slate-500">({Number(course.ratingCount)})</span>
+                        </a>
                       ) : null}
                     </div>
                     <h1 className="mt-4 break-words whitespace-normal text-start text-2xl font-black leading-[1.35] text-slate-950 [overflow-wrap:anywhere] sm:text-3xl lg:text-4xl">
@@ -1226,7 +1268,7 @@ export default function CourseDetailsPage({ t }) {
                         </button>
                       </>
                     ) : null}
-                    {countdownText ? (
+                    {countdownText && !courseEnded ? (
                       <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-black text-sky-800">
                         <Clock3 size={16} />
                         <span>{countdownText}</span>
@@ -1242,8 +1284,18 @@ export default function CourseDetailsPage({ t }) {
               </div>
             </div>
 
+            <nav aria-label={language === "fa" ? "بخش‌های جزئیات کورس" : "Course detail sections"} className="sticky top-16 z-20 order-[-2] -mx-4 overflow-x-auto bg-slate-50/90 px-4 py-2 backdrop-blur [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
+              <div className="flex min-w-max gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:min-w-0 sm:grid sm:grid-cols-4">
+                {sectionLinks.map((item) => (
+                  <a key={item.href} href={item.href} className="inline-flex min-h-10 items-center justify-center rounded-xl px-4 text-xs font-black text-slate-600 transition hover:bg-primary-50 hover:text-primary-700 sm:px-2">
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+            </nav>
+
             {quickFacts.length ? (
-              <div className="order-[-2] grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="order-[-1] grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {quickFacts.map((item) => {
                   const Icon = item.icon;
                   return (
@@ -1274,6 +1326,48 @@ export default function CourseDetailsPage({ t }) {
                     </div>
                   );
                 })}
+              </div>
+            ) : null}
+
+            {teacherName ? (
+              <div className="overflow-hidden rounded-3xl border border-primary-100 bg-white shadow-sm">
+                <div className="flex flex-col gap-4 bg-gradient-to-br from-primary-50 via-white to-teal-50 p-5 sm:flex-row sm:items-center sm:p-6">
+                  <img
+                    src={course?.teacherAvatar || COURSE_IMAGE_FALLBACK}
+                    alt={teacherName}
+                    className={`h-20 w-20 shrink-0 rounded-2xl border border-white bg-white shadow-sm ${course?.teacherAvatar ? "object-cover" : "object-contain p-3"}`}
+                    onError={(event) => {
+                      event.currentTarget.onerror = null;
+                      event.currentTarget.src = COURSE_IMAGE_FALLBACK;
+                      event.currentTarget.className = "h-20 w-20 shrink-0 rounded-2xl border border-white bg-white object-contain p-3 shadow-sm";
+                    }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-black text-primary-700">
+                      {language === "fa" ? "مدرس این کورس" : "Your instructor"}
+                    </p>
+                    <h2 className="mt-1 break-words text-xl font-black text-slate-950">
+                      {teacherName}
+                    </h2>
+                    {course?.teacherRole ? (
+                      <p className="mt-1 text-sm font-bold text-slate-600">{course.teacherRole}</p>
+                    ) : null}
+                    {course?.teacherBio ? (
+                      <p dir="auto" className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-slate-600">
+                        {course.teacherBio}
+                      </p>
+                    ) : null}
+                  </div>
+                  {teacherProfilePath ? (
+                    <Link
+                      to={teacherProfilePath}
+                      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-primary-700"
+                    >
+                      {language === "fa" ? "مشاهده پروفایل" : "View profile"}
+                      <ArrowIcon size={16} />
+                    </Link>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 
@@ -1309,15 +1403,33 @@ export default function CourseDetailsPage({ t }) {
                       key={`${videoItem.url}-${index}`}
                       className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950"
                     >
-                      <div className="aspect-video bg-slate-900">
-                        {videoItem.embedUrl ? (
+                      <div className="relative aspect-video bg-slate-900">
+                        {videoItem.embedUrl && activePreviewIndex === index ? (
                           <iframe
                             className="h-full w-full"
-                            src={videoItem.embedUrl}
+                            src={`${videoItem.embedUrl}?autoplay=1&rel=0`}
                             title={`${course.title} preview video ${index + 1}`}
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                             allowFullScreen
                           />
+                        ) : videoItem.thumbnailUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setActivePreviewIndex(index)}
+                            className="group relative block h-full w-full overflow-hidden"
+                            aria-label={language === "fa" ? `پخش ویدیوی ${index + 1}` : `Play preview ${index + 1}`}
+                          >
+                            <img
+                              src={videoItem.thumbnailUrl}
+                              alt=""
+                              loading="lazy"
+                              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                            />
+                            <span className="absolute inset-0 bg-slate-950/20 transition group-hover:bg-slate-950/30" />
+                            <span className="absolute start-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-red-600 text-white shadow-xl transition group-hover:scale-105">
+                              <PlayCircle size={34} fill="currentColor" />
+                            </span>
+                          </button>
                         ) : (
                           <div className="grid h-full place-items-center p-6 text-center text-sm font-bold text-white">
                             {language === "fa" ? "پیش‌نمایش مستقیم این لینک در دسترس نیست." : "Direct preview is not available for this link."}
@@ -1372,7 +1484,7 @@ export default function CourseDetailsPage({ t }) {
                 </div>
               </div>
 
-              <div className="-order-1 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div id="course-schedule" className="scroll-mt-24 -order-1 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <h2 className="text-xl font-black text-slate-950">
                   {detail.scheduleTitle}
                 </h2>
@@ -1421,8 +1533,14 @@ export default function CourseDetailsPage({ t }) {
                     </p>
                   </div>
                 ) : null}
-                <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                  {weeklyScheduleRows.map((row, idx) => (
+                {weeklyScheduleRows.length ? (
+                  <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-3 gap-2 bg-slate-100 px-3 py-2.5 text-[11px] font-black text-slate-500">
+                      <span>{language === "fa" ? "روز" : "Day"}</span>
+                      <span>{language === "fa" ? "شروع" : "Starts"}</span>
+                      <span>{language === "fa" ? "پایان" : "Ends"}</span>
+                    </div>
+                    {weeklyScheduleRows.map((row, idx) => (
                     <div
                       key={`${row.day}-${idx}`}
                       className="grid grid-cols-3 gap-2 border-b border-slate-100 px-3 py-3 text-xs font-semibold text-slate-700 last:border-b-0"
@@ -1431,8 +1549,13 @@ export default function CourseDetailsPage({ t }) {
                       <span className="truncate">{row.startTime || "-"}</span>
                       <span className="truncate text-teal-700">{row.endTime || "-"}</span>
                     </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+                    {language === "fa" ? "تقسیم اوقات این کورس هنوز ثبت نشده است." : "The schedule for this course has not been added yet."}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1482,7 +1605,7 @@ export default function CourseDetailsPage({ t }) {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div id="course-syllabus" className="scroll-mt-24 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <h2 className="text-xl font-black text-slate-950">{detail.tabs[1]}</h2>
               <div
                 className={`mt-3 max-h-[520px] space-y-2 overflow-y-auto pe-1 ${
@@ -1506,28 +1629,75 @@ export default function CourseDetailsPage({ t }) {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex items-center justify-between gap-3">
+            <div id="course-reviews" className="scroll-mt-24 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-xl font-black text-slate-950">
                   {language === "fa" ? "نظریات شاگردان درباره کورس" : "Student Reviews About This Course"}
                 </h2>
-                <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
-                  {Math.max(Number(course?.ratingCount || 0), displayedCourseReviews.length)}
-                </span>
+                <div className="flex items-center gap-2">
+                  {displayedCourseReviews.length > 1 ? (
+                    <select
+                      value={reviewSort}
+                      onChange={(event) => setReviewSort(event.target.value)}
+                      aria-label={language === "fa" ? "ترتیب نظریات" : "Sort reviews"}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700"
+                    >
+                      <option value="newest">{language === "fa" ? "تازه‌ترین" : "Newest"}</option>
+                      <option value="helpful">{language === "fa" ? "مفیدترین" : "Most helpful"}</option>
+                    </select>
+                  ) : null}
+                  <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
+                    {reviewCount}
+                  </span>
+                </div>
               </div>
               {(() => {
                 const courseId = String(course?._id || course?.id || "");
                 const prompt = ratingAccess.pending.find((item) => String(item.courseId) === courseId);
                 const existing = ratingAccess.submitted.find((item) => String(item.courseId) === courseId);
-                const ended = Boolean(course?.classEndedAt);
+                const ended = courseEnded;
                 if (ended && existing?.canEdit) return <div className="mt-4"><button type="button" onClick={() => setRatingModalOpen(true)} className="inline-flex min-h-11 items-center rounded-xl bg-primary-600 px-4 text-sm font-black text-white">{language === "fa" ? "ویرایش نظر من" : "Edit my review"}</button><p className="mt-2 text-sm font-bold text-slate-500">{language === "fa" ? "کورس پایان یافته است؛ نظر جدید پذیرفته نمی‌شود." : "The course has ended; new reviews are closed."}</p></div>;
                 if (ended) return <p className="mt-4 rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-600">{language === "fa" ? "این کورس پایان یافته است؛ نظرهای قبلی قابل مشاهده‌اند، اما نظر جدید پذیرفته نمی‌شود." : "This course has ended. Existing reviews remain visible, but new reviews are closed."}</p>;
                 if (prompt || existing?.canEdit) return <button type="button" onClick={() => setRatingModalOpen(true)} className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-primary-600 px-4 text-sm font-black text-white">{existing ? (language === "fa" ? "ویرایش نظر من" : "Edit my review") : (language === "fa" ? "ثبت نظر و امتیاز" : "Rate this course")}</button>;
                 if (getToken() && !ratingAccess.loading) return <p className="mt-4 text-sm font-bold text-slate-500">{language === "fa" ? "فقط شاگردان ثبت‌نام‌شده در این کورس فعال می‌توانند نظر و امتیاز ثبت کنند." : "Only students enrolled in this active course can submit a rating and review."}</p>;
                 return null;
               })()}
-              {displayedCourseReviews.length > 1 ? <select value={reviewSort} onChange={(event) => setReviewSort(event.target.value)} className="mt-4 ms-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700"><option value="newest">{language === "fa" ? "تازه‌ترین" : "Newest"}</option><option value="helpful">{language === "fa" ? "مفیدترین" : "Most helpful"}</option></select> : null}
-              {Number(course?.ratingCount || 0) > 0 ? <div className="mt-5 grid gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-[150px_1fr]"><div className="text-center"><p className="text-4xl font-black text-slate-950">{Number(course.rating || 0).toFixed(1)}</p><p className="mt-1 text-sm font-black text-amber-500">★★★★★</p><p className="mt-1 text-xs font-bold text-slate-500">{course.ratingCount} {language === "fa" ? "نظر تأییدشده" : "verified reviews"}</p></div><div className="space-y-1.5">{[5,4,3,2,1].map((score) => { const count = Number(course?.ratingDistribution?.[score] || 0); const percent = Math.round((count / Number(course.ratingCount || 1)) * 100); return <div key={score} className="flex items-center gap-2 text-xs font-bold text-slate-600"><span className="w-5">{score}</span><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-amber-400" style={{width:`${percent}%`}}/></div><span className="w-9 text-end">{percent}%</span></div>; })}</div></div> : null}
+              {Number(course?.ratingCount || 0) > 0 ? (
+                <div className="mt-5 grid gap-5 rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4 sm:grid-cols-[170px_1fr] sm:p-5">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <p className="text-4xl font-black text-slate-950">{Number(course.rating || 0).toFixed(1)}</p>
+                    <div className="mt-2 flex items-center gap-0.5" dir="ltr">
+                      {Array.from({ length: 5 }).map((_, index) => (
+                        <Star
+                          key={index}
+                          size={18}
+                          fill={index < Math.round(Number(course.rating || 0)) ? "currentColor" : "none"}
+                          className={index < Math.round(Number(course.rating || 0)) ? "text-amber-400" : "text-slate-300"}
+                        />
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs font-bold text-slate-500">
+                      {course.ratingCount} {language === "fa" ? "نظر تأییدشده" : "verified reviews"}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {[5, 4, 3, 2, 1].map((score) => {
+                      const count = Number(course?.ratingDistribution?.[score] || 0);
+                      const percent = Math.round((count / Number(course.ratingCount || 1)) * 100);
+                      return (
+                        <div key={score} className="flex items-center gap-2 text-xs font-bold text-slate-600" dir="ltr">
+                          <span className="w-3">{score}</span>
+                          <Star size={13} className="shrink-0 text-amber-400" fill="currentColor" />
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
+                            <div className="h-full rounded-full bg-amber-400" style={{ width: `${percent}%` }} />
+                          </div>
+                          <span className="w-9 text-end">{percent}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
               {displayedCourseReviews.length ? (
                 <div className="mt-5 grid gap-4 lg:grid-cols-2">
                   {sortedCourseReviews.map((review, index) => (
@@ -1546,7 +1716,7 @@ export default function CourseDetailsPage({ t }) {
 
           </div>
 
-          {!isEnrolled ? (
+          {!isEnrolled && !courseEnded ? (
             <aside className="hidden xl:block">
               <div className="sticky top-24 overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.10)]">
                 <p className="text-center text-xs font-black uppercase tracking-wide text-slate-500">
@@ -1666,7 +1836,7 @@ export default function CourseDetailsPage({ t }) {
         </div>
       </div>
 
-      {!isEnrolled ? (
+      {!isEnrolled && !courseEnded ? (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur xl:hidden">
           <div className="mx-auto flex max-w-[1340px] items-center gap-3">
             <div className="min-w-0">
@@ -1706,7 +1876,7 @@ export default function CourseDetailsPage({ t }) {
       <button
         type="button"
         onClick={() => window.scrollTo({ top: 0, left: 0, behavior: "smooth" })}
-        className={`fixed right-5 z-[29] grid h-12 w-12 place-items-center rounded-full border border-primary-400 bg-white text-primary-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100 ${!isEnrolled ? "bottom-24 xl:bottom-5" : "bottom-5"} ${showScrollTop ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"}`}
+        className={`fixed right-5 z-[29] grid h-12 w-12 place-items-center rounded-full border border-primary-400 bg-white text-primary-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100 ${!isEnrolled && !courseEnded ? "bottom-24 xl:bottom-5" : "bottom-5"} ${showScrollTop ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"}`}
         aria-label={language === "fa" ? "رفتن به بالای صفحه" : "Scroll to top"}
         title={language === "fa" ? "رفتن به بالای صفحه" : "Scroll to top"}
       >
