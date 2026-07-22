@@ -6,7 +6,6 @@ import {
   Bell,
   BellRing,
   BadgeCheck,
-  BookOpen,
 } from "lucide-react";
 import SocialBrandIcon from "./SocialBrandIcon.jsx";
 import { resolveAvatarUrl } from "../utils/avatar";
@@ -100,25 +99,18 @@ export default function TeacherHero({ data, dir, following = false, followerCoun
             {data.bio}
           </p>
           <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
-            <a
-              href="#teacher-courses"
-              className="order-2 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-primary-700 sm:order-none sm:w-auto"
-            >
-              <BookOpen size={17} />
-              {data.btnViewCourses}
-            </a>
             <button
               type="button"
               onClick={onToggleFollow}
               disabled={followBusy}
-              className={`order-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-black shadow-sm transition sm:order-none sm:w-auto ${following ? "border border-primary-200 bg-white text-primary-700 hover:bg-primary-50" : "border border-slate-200 bg-white text-slate-800 hover:border-primary-200 hover:text-primary-700"} disabled:opacity-60`}
+              className={`order-2 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-black shadow-sm transition sm:w-auto ${following ? "border border-primary-200 bg-white text-primary-700 hover:bg-primary-50" : "border border-slate-200 bg-white text-slate-800 hover:border-primary-200 hover:text-primary-700"} disabled:opacity-60`}
             >
               {following ? <BellRing size={17}/> : <Bell size={17}/>}
               {following ? (isRtl ? "دنبال می‌کنید" : "Following") : (isRtl ? "دنبال کردن" : "Follow")}
               <span className="rounded-full bg-current/10 px-2 py-0.5 text-xs">{Number(followerCount || 0).toLocaleString(isRtl ? "fa-AF" : "en-US")}</span>
             </button>
             {socialItems.length ? (
-              <div className="order-1 inline-grid max-w-full grid-flow-col auto-cols-[2.5rem] items-center gap-2 overflow-x-auto rounded-2xl border border-white/90 bg-white/80 p-2 shadow-sm backdrop-blur sm:order-none">
+              <div className="order-1 inline-grid max-w-full grid-flow-col auto-cols-[2.5rem] items-center gap-2 overflow-x-auto rounded-2xl border border-white/90 bg-white/80 p-2 shadow-sm backdrop-blur">
                 {socialItems.map((item) => {
                   const Icon = item.icon;
                   return (
@@ -162,7 +154,7 @@ export default function TeacherHero({ data, dir, following = false, followerCoun
               }}
               aria-label={isRtl ? "اشتراک‌گذاری پروفایل" : "Share profile"}
               title={isRtl ? "اشتراک‌گذاری پروفایل" : "Share profile"}
-              className="order-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-primary-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 sm:order-none sm:w-auto"
+              className="order-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-primary-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 sm:w-auto"
             >
               <Share2 size={16} />
               {isRtl ? "اشتراک‌گذاری" : "Share"}
