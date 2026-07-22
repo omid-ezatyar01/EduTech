@@ -1163,8 +1163,8 @@ export default function CourseDetailsPage({ t }) {
             >
               <div className="pointer-events-none absolute -start-20 -top-24 h-64 w-64 rounded-full bg-blue-100/60 blur-3xl" />
               <div className="pointer-events-none absolute -bottom-28 end-0 h-64 w-64 rounded-full bg-teal-100/60 blur-3xl" />
-              <div className="relative grid gap-7 p-5 sm:p-7 lg:grid-cols-[minmax(0,1fr)_minmax(340px,0.9fr)] lg:items-center lg:p-8">
-                <div className="order-2 min-w-0 space-y-4 lg:order-1">
+              <div className="relative p-5 sm:p-7 lg:p-8">
+                <div className="min-w-0 space-y-4">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center gap-2 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-black text-teal-700"><BookOpen size={14} />{language === "fa" ? "کورس آنلاین ایجوتک" : "EduTech online course"}</span>
@@ -1177,6 +1177,24 @@ export default function CourseDetailsPage({ t }) {
                     <h1 className="mt-4 break-words whitespace-normal text-start text-2xl font-black leading-[1.35] text-slate-950 [overflow-wrap:anywhere] sm:text-3xl lg:text-4xl">
                       {course.title}
                     </h1>
+                    <div
+                      className="mx-auto mt-5 flex w-full max-w-5xl items-center justify-center overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-blue-50 to-teal-50 shadow-sm"
+                      style={{ aspectRatio: COURSE_IMAGE_ASPECT_RATIO }}
+                    >
+                      <img
+                        className={`block h-full w-full object-center ${
+                          courseImage === COURSE_IMAGE_FALLBACK ? "object-contain p-8 sm:p-10" : "object-cover"
+                        }`}
+                        src={courseImage}
+                        alt={course.title}
+                        onError={(event) => {
+                          event.currentTarget.onerror = null;
+                          event.currentTarget.src = COURSE_IMAGE_FALLBACK;
+                          event.currentTarget.className =
+                            "block h-full w-full object-contain object-center p-8 sm:p-10";
+                        }}
+                      />
+                    </div>
                     {courseDescription ? (
                       <>
                         <p
@@ -1218,28 +1236,6 @@ export default function CourseDetailsPage({ t }) {
                       <button type="button" onClick={handleDownloadSyllabus} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-primary-200 hover:text-primary-700"><Download size={15} />{detail.download}</button>
                       <button type="button" onClick={handleShare} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-primary-200 hover:text-primary-700"><Share2 size={15} />{detail.share}</button>
                     </div>
-                  </div>
-
-                </div>
-
-                <div className="order-1 min-w-0 space-y-3 lg:order-2">
-                  <div
-                    className="flex w-full items-center justify-center overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-blue-50 to-teal-50 shadow-sm"
-                    style={{ aspectRatio: COURSE_IMAGE_ASPECT_RATIO }}
-                  >
-                    <img
-                      className={`block h-full w-full object-center ${
-                        courseImage === COURSE_IMAGE_FALLBACK ? "object-contain p-8 sm:p-10" : "object-cover"
-                      }`}
-                      src={courseImage}
-                      alt={course.title}
-                      onError={(event) => {
-                        event.currentTarget.onerror = null;
-                        event.currentTarget.src = COURSE_IMAGE_FALLBACK;
-                        event.currentTarget.className =
-                          "block h-full w-full object-contain object-center p-8 sm:p-10";
-                      }}
-                    />
                   </div>
 
                 </div>
