@@ -692,8 +692,8 @@ export default function TeachersPage({ t }) {
 
             {loading && filteredTeachers.length === 0 ? <div className="mt-5"><TeacherGridSkeleton /></div> : null}
 
-            <div id="teacher-results" className="mt-5 flex flex-wrap justify-center gap-5">
-              {filteredTeachers.map((teacher, index) => <div key={teacher._id || teacher.name} className="w-full max-w-[320px]"><TeacherCard labels={page} teacher={teacher} index={index} rank={index + 1} /></div>)}
+            <div id="teacher-results" className="mt-5 grid items-stretch gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredTeachers.map((teacher, index) => <div key={teacher._id || teacher.name} className="min-w-0"><TeacherCard labels={page} teacher={teacher} index={index} rank={index + 1} /></div>)}
             </div>
 
             {!loading && !error && !filteredTeachers.length ? <div className="mt-5 rounded-3xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm"><span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-primary-50 text-primary-700"><UserSearch size={30} /></span><h2 className="mt-5 text-xl font-black text-slate-950">{activeFilterCount > 0 ? (isFa ? "مدرسی مطابق انتخاب شما پیدا نشد" : "No teachers match your selection") : (isFa ? "مدرسان تازه به‌زودی اضافه می‌شوند" : "New teachers are coming soon")}</h2><p className="mx-auto mt-3 max-w-xl text-sm font-medium leading-7 text-slate-600">{activeFilterCount > 0 ? (isFa ? "یک یا چند فیلتر را بردارید یا نام دیگری جستجو کنید." : "Remove one or more filters or search for another name.") : (isFa ? "پروفایل مدرسان پس از تأیید و انتشار در اینجا نمایش داده می‌شود." : "Approved teacher profiles will appear here once published.")}</p>{activeFilterCount > 0 ? <button type="button" onClick={resetTeacherFilters} className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white"><RotateCcw size={16} />{isFa ? "پاک‌کردن فیلترها" : "Clear filters"}</button> : null}</div> : null}

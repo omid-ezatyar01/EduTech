@@ -12,7 +12,6 @@ import { Info } from "lucide-react";
 import {
   fetchStudentLiveSessionLink,
   fetchStudentLiveSessions,
-  fetchPendingCourseRatings,
   joinStudentLiveSession,
   submitCourseRating,
 } from "../../services/courseService.js";
@@ -338,17 +337,6 @@ export default function LiveClass({ language = "fa" }) {
           .sort((a, b) => getSessionSortTime(a) - getSessionSortTime(b));
 
         setRows(mapped);
-        try {
-          const prompts = await fetchPendingCourseRatings();
-          if (!mounted) return;
-          if (!ratingPrompt && prompts[0]) {
-            setRatingPrompt(prompts[0]);
-            setRatingValues({ courseRating: 0, teacherRating: 0, comment: "" });
-            setRatingError("");
-          }
-        } catch {
-          // Rating prompts are optional; live class loading should continue.
-        }
       } catch (err) {
         if (!mounted) return;
         if (isUnauthorizedError(err)) {
@@ -459,11 +447,6 @@ export default function LiveClass({ language = "fa" }) {
 
       const joined = await joinStudentLiveSession(session.id);
       const target = joined?.meetingLink || liveLinkState?.meetLink || session.meetLink;
-      if (joined?.ratingPrompt) {
-        setRatingPrompt(joined.ratingPrompt);
-        setRatingValues({ courseRating: 0, teacherRating: 0, comment: "" });
-        setRatingError("");
-      }
       setRefreshSeed((prev) => prev + 1);
       window.dispatchEvent(new Event("edutech_data_changed"));
       if (target) {

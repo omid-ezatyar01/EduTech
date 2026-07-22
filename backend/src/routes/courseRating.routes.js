@@ -8,6 +8,8 @@ import {
   submitPlatformFeedback,
   getTeacherRatingInsights,
   replyToTeacherRating,
+  removeTeacherRating,
+  setTeacherRatingVisibility,
   getAdminFeedback,
   moderateAdminRating,
   updateAdminPlatformFeedback,
@@ -37,6 +39,8 @@ router.patch("/student/ratings/:id", protect, authorizeRoles("student"), updateS
 router.post("/student/platform-feedback", protect, authorizeRoles("student"), submitPlatformFeedback);
 router.get("/teacher/feedback", protect, authorizeRoles("teacher"), getTeacherRatingInsights);
 router.patch("/teacher/feedback/:id/reply", protect, authorizeRoles("teacher"), replyToTeacherRating);
+router.patch("/teacher/feedback/:id/visibility", protect, authorizeRoles("teacher"), setTeacherRatingVisibility);
+router.delete("/teacher/feedback/:id", protect, authorizeRoles("teacher"), removeTeacherRating);
 router.get("/admin/feedback", protect, authorizeRoles("admin"), getAdminFeedback);
 router.patch("/admin/feedback/ratings/:id", protect, authorizeRoles("admin"), moderateAdminRating);
 router.patch("/admin/feedback/platform/:id", protect, authorizeRoles("admin"), updateAdminPlatformFeedback);

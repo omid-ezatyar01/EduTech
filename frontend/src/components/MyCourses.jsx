@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, BookOpen, Info, Headphones, MessageSquareHeart } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Info, Headphones } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import StudentLayout from "./StudentLayout.jsx";
 import CourseFilterTabs from "./CourseFilterTabs.jsx";
@@ -458,7 +458,7 @@ export default function MyCourses({ language = "fa" }) {
               : "View all courses you are enrolled in here."}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2"><Link to="/student/feedback" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-primary-200 bg-white px-5 text-sm font-black text-primary-700"><MessageSquareHeart size={18}/>{isFa ? "ثبت نظر" : "Write a review"}</Link><Link to="/live-courses" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary-600 px-6 text-sm font-black text-white shadow-glow transition hover:-translate-y-0.5 hover:bg-primary-700">
+        <div className="flex flex-wrap gap-2"><Link to="/live-courses" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary-600 px-6 text-sm font-black text-white shadow-glow transition hover:-translate-y-0.5 hover:bg-primary-700">
           {isFa ? "دیدن کورس‌های آنلاین" : "Browse Live Courses"}{" "}
           {isFa ? <ArrowLeft size={18} /> : <ArrowRight size={18} />}
         </Link></div>

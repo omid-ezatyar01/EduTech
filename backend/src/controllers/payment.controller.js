@@ -13,7 +13,7 @@ import {
   verifyNowPaymentsIpnSignature,
 } from "../services/nowpayments.service.js";
 import {
-  createDirectUsdtBscAmount,
+  createUniqueUsdtBscAmount,
   getDirectBscPaymentDetails,
   normalizeBscNetworkLabel,
   verifyDirectBscUsdtPayment,
@@ -585,7 +585,8 @@ export const createCheckout = async (req, res) => {
         }
 
         const paymentReference = makePaymentReference();
-        const chargeAmount = createDirectUsdtBscAmount(baseAmountUsdCents);
+        const directQuote = createUniqueUsdtBscAmount(baseAmountUsdCents);
+        const chargeAmount = directQuote.totalAmount;
         const directDetails = getDirectBscPaymentDetails(chargeAmount, paymentReference);
         const { attempt } = await createPaymentAttemptRecord({
           order,
@@ -602,7 +603,7 @@ export const createCheckout = async (req, res) => {
           expiresAt: new Date(Date.now() + Number(process.env.BSC_PAYMENT_EXPIRY_MINUTES || 20) * 60 * 1000),
           providerUrl: directDetails.paymentUrl,
           rawCreateSessionResponse: {
-            baseAmount: chargeAmount,
+            baseAmount: directQuote.baseAmount,
             totalAmount: chargeAmount,
             qrPayload: directDetails.qrPayload,
           },
@@ -624,7 +625,7 @@ export const createCheckout = async (req, res) => {
             network: attempt.network,
           },
           quoteBreakdown: {
-            baseAmount: chargeAmount,
+            baseAmount: directQuote.baseAmount,
           },
           payAddress: attempt.recipientAddress || "",
           tokenAddress: attempt.tokenMint || "",

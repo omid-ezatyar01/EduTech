@@ -287,7 +287,7 @@ export default function VideosPage({ language = "fa" }) {
               const isSaved = savedIds.has(item._id);
               const isFollowing = Boolean(followingByTeacher[teacherId]);
               return <article key={item._id} className="group flex h-full min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.06)] transition duration-300 hover:-translate-y-1.5 hover:border-blue-200 hover:shadow-[0_22px_50px_rgba(37,99,235,0.14)]">
-                <div className="relative aspect-video shrink-0 overflow-hidden bg-slate-950">
+                <div className={`relative shrink-0 overflow-hidden bg-slate-950 transition-[aspect-ratio] duration-300 ${!isYoutube && activeVideoId === item._id ? "aspect-square max-h-[420px]" : "aspect-video"}`}>
                   <VideoPreview key={`${item._id}:${activeVideoId === item._id ? "active" : "cover"}`} active={activeVideoId === item._id} embedUrl={embedUrl} onActivate={() => openVideo(item)} playLabel={text.watch} thumbnailUrl={item.thumbnailUrl} title={item.title}/>
                   <span className={`pointer-events-none absolute start-3 top-3 z-20 rounded-full border px-3 py-1.5 text-xs font-black shadow-sm backdrop-blur ${index === 0 ? "border-amber-200 bg-amber-50/95 text-amber-800" : index < 3 ? "border-blue-200 bg-blue-50/95 text-blue-700" : "border-white/70 bg-white/90 text-slate-700"}`}>{language === "fa" ? "رتبه" : "Rank"} #{index + 1}</span>
                 </div>

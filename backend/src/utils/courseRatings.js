@@ -1,9 +1,6 @@
 import mongoose from "mongoose";
 import CourseRating from "../models/CourseRating.js";
 import Enrollment from "../models/Enrollment.js";
-import LiveSession from "../models/LiveSession.js";
-
-const REQUIRED_JOINED_CLASSES = 2;
 
 const activeEnrollmentFilter = (now = new Date()) => ({
   enrollmentStatus: { $in: ["active", "completed"] },
@@ -22,23 +19,6 @@ const roundRating = (value) => {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
   return Math.round(numeric * 10) / 10;
-};
-
-export const getJoinedLiveClassCount = async (studentId, courseId) => {
-  const studentObjectId = toObjectId(studentId);
-  const courseObjectId = toObjectId(courseId);
-  if (!studentObjectId || !courseObjectId) return 0;
-
-  return LiveSession.countDocuments({
-    courseId: courseObjectId,
-    attendance: {
-      $elemMatch: {
-        studentId: studentObjectId,
-        status: "present",
-        joinedAt: { $exists: true, $ne: null },
-      },
-    },
-  });
 };
 
 export const getEligibleCourseRatingPrompts = async (
@@ -60,7 +40,7 @@ export const getEligibleCourseRatingPrompts = async (
   const enrollments = await Enrollment.find(filter)
     .populate({
       path: "courseId",
-      select: "title thumbnail teacher teacherId",
+      select: "title thumbnail teacher teacherId status isPublished classEndedAt classCancelledAt",
       populate: [
         { path: "teacher", select: "name avatar" },
         { path: "teacherId", select: "name avatar" },
@@ -74,6 +54,12 @@ export const getEligibleCourseRatingPrompts = async (
   for (const enrollment of enrollments) {
     const course = enrollment?.courseId;
     if (!course || typeof course !== "object" || !course._id) continue;
+    if (
+      course.status !== "published" ||
+      course.isPublished !== true ||
+      course.classEndedAt ||
+      course.classCancelledAt
+    ) continue;
 
     const existingRating = await CourseRating.exists({
       studentId: studentObjectId,
@@ -81,15 +67,17 @@ export const getEligibleCourseRatingPrompts = async (
     });
     if (existingRating) continue;
 
-    const joinedClassCount = await getJoinedLiveClassCount(studentObjectId, course._id);
-    if (joinedClassCount < REQUIRED_JOINED_CLASSES) continue;
-
     const teacher = course.teacherId || course.teacher || null;
     const teacherId =
       typeof teacher === "object" && teacher?._id
         ? teacher._id
         : course.teacherId || course.teacher;
     if (!teacherId) continue;
+
+    const existingTeacherRating = await CourseRating.findOne({
+      studentId: studentObjectId,
+      teacherId,
+    }).select("teacherRating").lean();
 
     prompts.push({
       courseId: String(course._id),
@@ -104,8 +92,8 @@ export const getEligibleCourseRatingPrompts = async (
         typeof teacher === "object" && teacher?.avatar
           ? teacher.avatar
           : "",
-      joinedClassCount,
-      requiredJoinedClasses: REQUIRED_JOINED_CLASSES,
+      teacherAlreadyRated: Boolean(existingTeacherRating),
+      existingTeacherRating: Number(existingTeacherRating?.teacherRating || 0),
     });
   }
 
@@ -122,7 +110,7 @@ export const getCourseRatingAggregates = async (courseIds = []) => {
   if (!ids.length) return new Map();
 
   const rows = await CourseRating.aggregate([
-    { $match: { courseId: { $in: ids } } },
+    { $match: { courseId: { $in: ids }, moderationStatus: "published" } },
     {
       $group: {
         _id: "$courseId",
@@ -156,10 +144,17 @@ export const getTeacherRatingAggregates = async (teacherIds = []) => {
   if (!ids.length) return new Map();
 
   const rows = await CourseRating.aggregate([
-    { $match: { teacherId: { $in: ids } } },
+    { $match: { teacherId: { $in: ids }, moderationStatus: "published" } },
+    { $sort: { createdAt: 1 } },
     {
       $group: {
-        _id: "$teacherId",
+        _id: { teacherId: "$teacherId", studentId: "$studentId" },
+        teacherRating: { $first: "$teacherRating" },
+      },
+    },
+    {
+      $group: {
+        _id: "$_id.teacherId",
         rating: { $avg: "$teacherRating" },
         ratingCount: { $sum: 1 },
         oneStar: { $sum: { $cond: [{ $eq: ["$teacherRating", 1] }, 1, 0] } },
@@ -214,7 +209,7 @@ export const getPublicCourseReviews = async (courseId, { limit = 6 } = {}) => {
   const rows = await CourseRating.find({
     courseId: courseObjectId,
     comment: { $type: "string", $ne: "" },
-    moderationStatus: { $nin: ["hidden", "pending"] },
+    moderationStatus: "published",
   })
     .populate("studentId", "name")
     .populate("courseId", "title")
@@ -232,7 +227,7 @@ export const getPublicTeacherReviews = async (teacherId, { limit = 10 } = {}) =>
   const rows = await CourseRating.find({
     teacherId: teacherObjectId,
     comment: { $type: "string", $ne: "" },
-    moderationStatus: { $nin: ["hidden", "pending"] },
+    moderationStatus: "published",
   })
     .populate("studentId", "name")
     .populate("courseId", "title")
@@ -240,5 +235,11 @@ export const getPublicTeacherReviews = async (teacherId, { limit = 10 } = {}) =>
     .limit(Math.max(1, Math.min(10, Number(limit) || 10)))
     .lean();
 
-  return rows.map((row) => mapPublicReviewRow(row, { mode: "teacher" }));
+  const seenStudents = new Set();
+  return rows.filter((row) => {
+    const studentId = String(row?.studentId?._id || row?.studentId || "");
+    if (!studentId || seenStudents.has(studentId)) return false;
+    seenStudents.add(studentId);
+    return true;
+  }).map((row) => mapPublicReviewRow(row, { mode: "teacher" }));
 };

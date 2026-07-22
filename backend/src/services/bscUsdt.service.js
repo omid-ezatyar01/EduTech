@@ -1,4 +1,5 @@
 import axios from "axios";
+import { randomInt } from "node:crypto";
 import Decimal from "decimal.js";
 import { Contract, Interface, JsonRpcProvider, getAddress, isAddress } from "ethers";
 
@@ -194,6 +195,18 @@ export const createDirectUsdtBscAmount = (baseAmountUsdCents) =>
   trimTrailingZeros(
     new Decimal(baseAmountUsdCents || 0).div(100).toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toFixed(6),
   );
+
+export const createUniqueUsdtBscAmount = (baseAmountUsdCents) => {
+  const baseAmount = new Decimal(baseAmountUsdCents || 0).div(100).toFixed(6);
+  // Keep the identifying fraction below 0.1 USDT so decimal base prices retain
+  // their visible leading decimal digit (for example, 1.5xxxxx).
+  const uniqueUnits = randomInt(1, 100_000);
+  const totalAmount = new Decimal(baseAmount)
+    .add(new Decimal(uniqueUnits).div(1_000_000))
+    .toFixed(6);
+
+  return { baseAmount, totalAmount, uniqueUnits };
+};
 
 export const getDirectBscPaymentDetails = (amount, paymentReference = "") => {
   const { recipientAddress, usdtContractAddress, explorerBaseUrl } = getBscConfig();

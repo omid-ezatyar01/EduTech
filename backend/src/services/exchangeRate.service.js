@@ -339,5 +339,7 @@ export const __resetExchangeRateCacheForTests = () => {
   cachedSourceBySymbol = new Map();
   lastKnownGoodBySymbol = new Map();
   inFlightRateRequests = new Map();
-  persistentCacheLoaded = false;
+  // Unit tests must not silently reload a real on-disk rate after clearing the
+  // in-memory cache; each test controls its provider response explicitly.
+  persistentCacheLoaded = true;
 };

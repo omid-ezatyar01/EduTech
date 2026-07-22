@@ -27,7 +27,9 @@ import {
 } from "../../services/paymentGateway.js";
 import {
   enrollCourse,
+  fetchPendingCourseRatings,
   fetchPublishedCourseBySlug,
+  fetchStudentRatings,
   getCachedPublishedCourseBySlug,
   fetchStudentEnrollments,
 } from "../../services/courseService.js";
@@ -36,6 +38,8 @@ import PaymentMethodModal from "../components/PaymentMethodModal.jsx";
 import BankPaymentDetailsModal from "../components/BankPaymentDetailsModal.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import ReviewCard from "../components/ReviewCard.jsx";
+import InlineRatingModal from "../components/InlineRatingModal.jsx";
+import { getToken } from "../../services/portal.js";
 import { calculateCourseProgressSnapshot } from "../utils/courseProgress.js";
 import {
   buildCoursePath,
@@ -375,6 +379,8 @@ export default function CourseDetailsPage({ t }) {
   const [expandedDescriptionSlug, setExpandedDescriptionSlug] = useState("");
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [reviewSort, setReviewSort] = useState("newest");
+  const [ratingModalOpen, setRatingModalOpen] = useState(false);
+  const [ratingAccess, setRatingAccess] = useState({ pending: [], submitted: [], loading: false });
   const quotedPriceLabel = useRegionalCoursePrice(Number(course?.price || 0), language);
   const cryptoAmountLabel = useCryptoUsdtQuoteLabel(Number(course?.price || 0), language);
 
@@ -436,6 +442,24 @@ export default function CourseDetailsPage({ t }) {
     const timer = window.setInterval(() => setNowMs(Date.now()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const refreshRatingAccess = async () => {
+    if (!getToken()) return;
+    setRatingAccess((current) => ({ ...current, loading: true }));
+    try {
+      const [pending, submitted] = await Promise.all([fetchPendingCourseRatings(), fetchStudentRatings()]);
+      setRatingAccess({ pending, submitted, loading: false });
+    } catch {
+      setRatingAccess({ pending: [], submitted: [], loading: false });
+    }
+  };
+
+  useEffect(() => {
+    if (!course?._id || !getToken()) return;
+    // Load protected review eligibility when the public course changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refreshRatingAccess();
+  }, [course?._id]);
 
   useEffect(() => {
     let mounted = true;
@@ -1480,7 +1504,17 @@ export default function CourseDetailsPage({ t }) {
                   {courseReviews.length}
                 </span>
               </div>
-              {isEnrolled ? <Link to="/student/feedback" className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-primary-600 px-4 text-sm font-black text-white">{language === "fa" ? "ثبت یا مدیریت نظر من" : "Write or manage my review"}</Link> : null}
+              {(() => {
+                const courseId = String(course?._id || course?.id || "");
+                const prompt = ratingAccess.pending.find((item) => String(item.courseId) === courseId);
+                const existing = ratingAccess.submitted.find((item) => String(item.courseId) === courseId);
+                const ended = Boolean(course?.classEndedAt);
+                if (ended && existing?.canEdit) return <div className="mt-4"><button type="button" onClick={() => setRatingModalOpen(true)} className="inline-flex min-h-11 items-center rounded-xl bg-primary-600 px-4 text-sm font-black text-white">{language === "fa" ? "ویرایش نظر من" : "Edit my review"}</button><p className="mt-2 text-sm font-bold text-slate-500">{language === "fa" ? "کورس پایان یافته است؛ نظر جدید پذیرفته نمی‌شود." : "The course has ended; new reviews are closed."}</p></div>;
+                if (ended) return <p className="mt-4 rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-600">{language === "fa" ? "این کورس پایان یافته است؛ نظرهای قبلی قابل مشاهده‌اند، اما نظر جدید پذیرفته نمی‌شود." : "This course has ended. Existing reviews remain visible, but new reviews are closed."}</p>;
+                if (prompt || existing?.canEdit) return <button type="button" onClick={() => setRatingModalOpen(true)} className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-primary-600 px-4 text-sm font-black text-white">{existing ? (language === "fa" ? "ویرایش نظر من" : "Edit my review") : (language === "fa" ? "ثبت نظر و امتیاز" : "Rate this course")}</button>;
+                if (getToken() && !ratingAccess.loading) return <p className="mt-4 text-sm font-bold text-slate-500">{language === "fa" ? "فقط شاگردان ثبت‌نام‌شده در این کورس فعال می‌توانند نظر و امتیاز ثبت کنند." : "Only students enrolled in this active course can submit a rating and review."}</p>;
+                return null;
+              })()}
               {courseReviews.length > 1 ? <select value={reviewSort} onChange={(event) => setReviewSort(event.target.value)} className="mt-4 ms-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700"><option value="newest">{language === "fa" ? "تازه‌ترین" : "Newest"}</option><option value="helpful">{language === "fa" ? "مفیدترین" : "Most helpful"}</option></select> : null}
               {Number(course?.ratingCount || 0) > 0 ? <div className="mt-5 grid gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-[150px_1fr]"><div className="text-center"><p className="text-4xl font-black text-slate-950">{Number(course.rating || 0).toFixed(1)}</p><p className="mt-1 text-sm font-black text-amber-500">★★★★★</p><p className="mt-1 text-xs font-bold text-slate-500">{course.ratingCount} {language === "fa" ? "نظر تأییدشده" : "verified reviews"}</p></div><div className="space-y-1.5">{[5,4,3,2,1].map((score) => { const count = Number(course?.ratingDistribution?.[score] || 0); const percent = Math.round((count / Number(course.ratingCount || 1)) * 100); return <div key={score} className="flex items-center gap-2 text-xs font-bold text-slate-600"><span className="w-5">{score}</span><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-amber-400" style={{width:`${percent}%`}}/></div><span className="w-9 text-end">{percent}%</span></div>; })}</div></div> : null}
               {courseReviews.length ? (
@@ -1496,6 +1530,7 @@ export default function CourseDetailsPage({ t }) {
                     : "No reviews have been posted for this course yet."}
                 </p>
               )}
+              <InlineRatingModal open={ratingModalOpen} onClose={() => setRatingModalOpen(false)} courses={ratingAccess.pending.filter((item) => String(item.courseId) === String(course?._id || course?.id || ""))} existingRatings={ratingAccess.submitted.filter((item) => String(item.courseId) === String(course?._id || course?.id || ""))} initialCourseId={String(course?._id || course?.id || "")} language={language} onSaved={async () => { await refreshRatingAccess(); const fresh = await fetchPublishedCourseBySlug(courseIdentifier); if (fresh) setCourse(fresh); }}/>
             </div>
 
           </div>

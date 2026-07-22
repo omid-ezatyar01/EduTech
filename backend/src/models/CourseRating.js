@@ -58,6 +58,7 @@ const courseRatingSchema = new mongoose.Schema(
     teacherRepliedAt: Date,
     moderatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     moderatedAt: Date,
+    removedByTeacherAt: Date,
     helpfulBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     reports: [{
       userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
