@@ -37,6 +37,13 @@ const resolveOAuthRedirectUriByRole = (role = "") => {
     );
   }
 
+  if (normalizedRole === "student") {
+    return (
+      String(process.env.GOOGLE_STUDENT_CALENDAR_REDIRECT_URI || "").trim() ||
+      String(process.env.GOOGLE_REDIRECT_URI || "").trim()
+    );
+  }
+
   return String(process.env.GOOGLE_REDIRECT_URI || "").trim();
 };
 
@@ -131,7 +138,7 @@ const verifyOAuthState = (state) => {
 
   try {
     const decoded = jwt.verify(state, secret);
-    if (!decoded?.userId || !["teacher", "admin"].includes(decoded?.role)) {
+    if (!decoded?.userId || !["student", "teacher", "admin"].includes(decoded?.role)) {
       throw new ApiError(400, "Invalid OAuth state payload");
     }
     return decoded;
@@ -145,8 +152,8 @@ export const createGoogleAuthUrl = ({ userId, role }) => {
     throw new ApiError(400, "User context is required for Google OAuth");
   }
 
-  if (!["teacher", "admin"].includes(role)) {
-    throw new ApiError(403, "Only teacher or admin can connect Google account");
+  if (!["student", "teacher", "admin"].includes(role)) {
+    throw new ApiError(403, "This account cannot connect Google Calendar");
   }
 
   const { redirectUri } = getOAuthEnv(role);
@@ -238,12 +245,15 @@ export const handleOAuthCallback = async (code, state) => {
 
   const payload = {
     userId: decoded.userId,
+    role: decoded.role,
     googleEmail,
     accessToken: tokens.access_token,
     refreshToken: encryptRefreshToken(refreshToken),
     expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date) : undefined,
     scope: tokens.scope || GOOGLE_SCOPES.join(" "),
     tokenType: tokens.token_type || "Bearer",
+    reconnectRequired: false,
+    lastError: "",
   };
 
   const account = await GoogleAccount.findOneAndUpdate(
@@ -275,7 +285,7 @@ export const getOAuthClient = async (userId) => {
     throw new ApiError(400, "Stored Google refresh token is missing");
   }
 
-  const oauthClient = buildOAuthClient();
+  const oauthClient = buildOAuthClient(account.role || "");
   oauthClient.setCredentials({
     access_token: account.accessToken || undefined,
     refresh_token: refreshToken,
@@ -363,4 +373,98 @@ export const createCalendarEventWithMeet = async ({
     meetLink,
     event,
   };
+};
+
+const buildCalendarEventBody = ({
+  title,
+  description = "",
+  meetingLink = "",
+  startTime,
+  endTime,
+  timezone,
+} = {}) => ({
+  summary: title,
+  description: [description, meetingLink ? `Join class: ${meetingLink}` : ""]
+    .filter(Boolean)
+    .join("\n\n"),
+  location: meetingLink || "",
+  start: {
+    dateTime: startTime,
+    timeZone: timezone,
+  },
+  end: {
+    dateTime: endTime,
+    timeZone: timezone,
+  },
+  reminders: {
+    useDefault: false,
+    overrides: [
+      { method: "popup", minutes: 30 },
+      { method: "popup", minutes: 10 },
+    ],
+  },
+});
+
+export const createCalendarEvent = async ({
+  userId,
+  calendarId = "primary",
+  ...payload
+} = {}) => {
+  const oauthClient = await getOAuthClient(userId);
+  const calendar = google.calendar({ version: "v3", auth: oauthClient });
+  const response = await calendar.events.insert({
+    calendarId,
+    requestBody: buildCalendarEventBody(payload),
+  });
+  if (!response?.data?.id) {
+    throw new ApiError(502, "Google Calendar event creation failed");
+  }
+  return {
+    eventId: response.data.id,
+    calendarId,
+    event: response.data,
+  };
+};
+
+export const updateCalendarEvent = async ({
+  userId,
+  calendarId = "primary",
+  eventId,
+  ...payload
+} = {}) => {
+  if (!eventId) return { missing: true };
+  const oauthClient = await getOAuthClient(userId);
+  const calendar = google.calendar({ version: "v3", auth: oauthClient });
+  try {
+    const response = await calendar.events.update({
+      calendarId,
+      eventId,
+      requestBody: buildCalendarEventBody(payload),
+    });
+    return { eventId, calendarId, event: response?.data || {} };
+  } catch (error) {
+    if ([404, 410].includes(Number(error?.code || error?.response?.status))) {
+      return { missing: true, eventId, calendarId };
+    }
+    throw error;
+  }
+};
+
+export const deleteCalendarEvent = async ({
+  userId,
+  calendarId = "primary",
+  eventId,
+} = {}) => {
+  if (!eventId) return { deleted: true, missing: true };
+  const oauthClient = await getOAuthClient(userId);
+  const calendar = google.calendar({ version: "v3", auth: oauthClient });
+  try {
+    await calendar.events.delete({ calendarId, eventId });
+    return { deleted: true };
+  } catch (error) {
+    if ([404, 410].includes(Number(error?.code || error?.response?.status))) {
+      return { deleted: true, missing: true };
+    }
+    throw error;
+  }
 };

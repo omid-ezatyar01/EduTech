@@ -9,6 +9,7 @@ import { getAuthUser } from "../../services/portal";
 import {
   createTeacherCourseResource,
   deleteTeacherCourseResource,
+  fetchTeacherCourseById,
   fetchTeacherCourseResources,
   fetchTeacherCourses,
   updateTeacherCourseResource,
@@ -20,7 +21,7 @@ import {
   readTeacherPageCache,
   writeTeacherPageCache,
 } from "../utils/teacherPageCache";
-import { buildCourseQueryValue, extractRouteIdentifier } from "../utils/routePaths";
+import { extractRouteIdentifier } from "../utils/routePaths";
 
 const PDF_MAX_BYTES = 100 * 1024 * 1024;
 const COURSES_PER_PAGE = 10;
@@ -142,8 +143,7 @@ export default function TeacherResources() {
   const navigate = useNavigate();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
   const params = new URLSearchParams(location.search);
-  const requestedCourseValue = params.get("course") || params.get("courseId") || "";
-  const currentCourseQueryValue = params.get("course") || "";
+  const requestedCourseValue = params.get("courseId") || params.get("course") || "";
   const initialCourseId = extractRouteIdentifier(requestedCourseValue);
   const isFa = language === "fa";
   const locale = isFa ? "fa-AF" : "en-US";
@@ -278,9 +278,8 @@ export default function TeacherResources() {
 
   const selectCourse = (course) => {
     const courseId = getCourseId(course);
-    const courseQueryValue = buildCourseQueryValue(course);
     setSelectedCourseId(courseId);
-    navigate(`/teacher/resources?course=${encodeURIComponent(courseQueryValue)}`, { replace: false });
+    navigate(`/teacher/resources?courseId=${encodeURIComponent(courseId)}`, { replace: false });
   };
 
   const clearCourseSelection = () => {
@@ -292,20 +291,44 @@ export default function TeacherResources() {
   };
 
   useEffect(() => {
-    if (!selectedCourseId) return;
-    const selectedCourseRow = courses.find((course) => getCourseId(course) === String(selectedCourseId));
-    if (!selectedCourseRow) {
-      clearCourseSelection();
-      return;
+    const timer = window.setTimeout(() => {
+      setSelectedCourseId((current) =>
+        current === initialCourseId ? current : initialCourseId,
+      );
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialCourseId]);
+
+  useEffect(() => {
+    if (
+      !selectedCourseId ||
+      loadingCourses ||
+      courses.some((course) => getCourseId(course) === String(selectedCourseId))
+    ) {
+      return undefined;
     }
 
-    const nextCourseValue = buildCourseQueryValue(selectedCourseRow);
-    if (!nextCourseValue) return;
+    let active = true;
+    fetchTeacherCourseById(selectedCourseId)
+      .then((course) => {
+        if (!active || !course) return;
+        setCourses((current) => [
+          course,
+          ...current.filter((item) => getCourseId(item) !== getCourseId(course)),
+        ]);
+      })
+      .catch((requestError) => {
+        if (!active) return;
+        setError(
+          requestError?.message ||
+            (isFa ? "کورس انتخاب‌شده پیدا نشد." : "The selected course was not found."),
+        );
+      });
 
-    if (currentCourseQueryValue === nextCourseValue) return;
-
-    navigate(`/teacher/resources?course=${encodeURIComponent(nextCourseValue)}`, { replace: true });
-  }, [courses, currentCourseQueryValue, navigate, selectedCourseId]);
+    return () => {
+      active = false;
+    };
+  }, [courses, isFa, loadingCourses, selectedCourseId]);
 
   const applySessionToForm = (sessionId) => {
     setSelectedSessionId(sessionId);

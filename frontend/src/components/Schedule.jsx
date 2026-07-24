@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { CalendarCheck2, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import StudentLayout from "./StudentLayout.jsx";
 import WeeklyTimetable from "./WeeklyTimetable.jsx";
@@ -11,6 +12,11 @@ import {
   getLocalizedRequestErrorMessage,
   isUnauthorizedError,
 } from "../../services/http.js";
+import {
+  fetchGoogleCalendarAuthUrl,
+  fetchGoogleCalendarStatus,
+} from "../../services/googleCalendarService.js";
+import { getDualTimeDetails } from "../utils/timezone.js";
 
 const mockStudent = {
   id: "",
@@ -61,7 +67,7 @@ const parseTimeToMinutes = (value) => {
 };
 
 const inferCourseType = (course = {}) => {
-  const text = `${course.title || ""} ${course.shortDescription || ""} ${course.description || ""}`.toLowerCase();
+  const text = `${course.title || ""} ${course.description || ""}`.toLowerCase();
   if (/(mern|react|node|javascript|js|full[\s-]?stack)/i.test(text)) return "mern";
   if (/(design|ui|ux|figma|طراحی)/i.test(text)) return "design";
   if (/(english|انگلیسی|speaking|ielts|toefl)/i.test(text)) return "english";
@@ -75,6 +81,10 @@ export default function Schedule({ language = "fa" }) {
     statusCompleted: isFa ? "تکمیل شده" : "Completed",
     statusLive: isFa ? "در حال برگزاری" : "Live now",
     statusScheduled: isFa ? "برنامه‌ریزی شده" : "Scheduled",
+    statusReady: isFa ? "آماده شروع" : "Ready to start",
+    statusDelayed: isFa ? "با تأخیر" : "Delayed",
+    statusMissed: isFa ? "برگزار نشده" : "Missed",
+    statusRescheduled: isFa ? "زمان‌بندی مجدد" : "Rescheduled",
     weeklyClasses: isFa ? "صنف این هفته" : "Classes This Week",
     todayClasses: isFa ? "صنف امروز" : "Today's Classes",
     upcomingClasses: isFa ? "صنف‌های آینده" : "Upcoming Classes",
@@ -93,7 +103,66 @@ export default function Schedule({ language = "fa" }) {
   const [error, setError] = useState("");
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const [googleStatus, setGoogleStatus] = useState({
+    loading: true,
+    connected: false,
+    googleEmail: "",
+    reconnectRequired: false,
+  });
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let active = true;
+    fetchGoogleCalendarStatus()
+      .then((status) => {
+        if (!active) return;
+        setGoogleStatus({
+          loading: false,
+          connected: Boolean(status?.connected),
+          googleEmail: status?.googleEmail || "",
+          reconnectRequired: Boolean(status?.reconnectRequired),
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setGoogleStatus((current) => ({ ...current, loading: false }));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("googleOAuth")) return;
+    params.delete("googleOAuth");
+    params.delete("message");
+    navigate(
+      `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`,
+      { replace: true },
+    );
+  }, [navigate]);
+
+  const connectGoogleCalendar = async () => {
+    try {
+      setConnectingGoogle(true);
+      const url = await fetchGoogleCalendarAuthUrl();
+      if (!url) throw new Error("Google authorization URL is unavailable");
+      window.location.assign(url);
+    } catch (connectError) {
+      setError(
+        getLocalizedRequestErrorMessage(
+          connectError,
+          language,
+          "اتصال تقویم گوگل انجام نشد.",
+          "Unable to connect Google Calendar.",
+        ),
+      );
+      setConnectingGoogle(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -118,34 +187,28 @@ export default function Schedule({ language = "fa" }) {
               ? startAt.toLocaleDateString("en-US", { weekday: "long" })
               : "";
             const day = normalizeDayLabel(dayEn);
-            const time = hasValidTime
-              ? `${startAt.toLocaleTimeString("en-GB", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: false,
-                })} - ${endAt.toLocaleTimeString("en-GB", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: false,
-                })}`
-              : "-";
+            const dualTime = hasValidTime
+              ? getDualTimeDetails(
+                  startAt,
+                  endAt,
+                  session.timezone || "Asia/Kabul",
+                  language,
+                )
+              : null;
+            const time = dualTime?.localRange || "-";
 
-            const status =
-              session.status === "cancelled"
-                ? "pending"
-                : session.status === "completed"
-                  ? "scheduled"
-                  : session.status === "live"
-                    ? "scheduled"
-                    : "scheduled";
-            const statusLabel =
-              session.status === "cancelled"
-                ? t.statusCancelled
-                : session.status === "completed"
-                  ? t.statusCompleted
-                  : session.status === "live"
-                    ? t.statusLive
-                    : t.statusScheduled;
+            const status = String(session.status || "scheduled");
+            const statusLabels = {
+              cancelled: t.statusCancelled,
+              completed: t.statusCompleted,
+              live: t.statusLive,
+              ready: t.statusReady,
+              delayed: t.statusDelayed,
+              missed: t.statusMissed,
+              rescheduled: t.statusRescheduled,
+              scheduled: t.statusScheduled,
+            };
+            const statusLabel = statusLabels[status] || t.statusScheduled;
 
             return {
               id: session._id,
@@ -153,13 +216,17 @@ export default function Schedule({ language = "fa" }) {
               date: day,
               day,
               time,
+              localTime: dualTime?.localRange || "-",
+              teacherTime: dualTime?.teacherRange || "-",
+              localTimeZone: dualTime?.localZone || "",
+              teacherTimeZone: dualTime?.teacherZone || "",
               teacher: session.course?.teacherName || "Teacher",
               status,
               statusLabel,
               meetLink: session.meetingLink || "",
               type: inferCourseType({
                 title: session.course?.title || "",
-                shortDescription: session.description || "",
+                description: session.description || "",
               }),
               createdAt: session.createdAt || session.startAt || 0,
             };
@@ -280,6 +347,65 @@ export default function Schedule({ language = "fa" }) {
           </p>
         </div>
       </div>
+
+      {!googleStatus.loading ? (
+        <div
+          className={`mb-6 flex flex-col gap-4 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
+            googleStatus.connected
+              ? "border-emerald-200 bg-emerald-50"
+              : "border-amber-200 bg-amber-50"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <span
+              className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
+                googleStatus.connected
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-amber-100 text-amber-700"
+              }`}
+            >
+              <CalendarCheck2 size={21} />
+            </span>
+            <div>
+              <p className="font-black text-slate-950">
+                {googleStatus.connected
+                  ? isFa
+                    ? "تقویم گوگل متصل است"
+                    : "Google Calendar is connected"
+                  : isFa
+                    ? "جلسات را در تقویم گوگل دریافت کنید"
+                    : "Receive sessions in Google Calendar"}
+              </p>
+              <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                {googleStatus.connected
+                  ? isFa
+                    ? `جلسات جدید و تغییرات آن‌ها خودکار با ${googleStatus.googleEmail || "حساب گوگل شما"} همگام می‌شود.`
+                    : `New sessions and changes sync automatically with ${googleStatus.googleEmail || "your Google account"}.`
+                  : isFa
+                    ? "برای دریافت یادآوری، تغییر زمان و حذف خودکار جلسات لغوشده، حساب گوگل خود را متصل کنید."
+                    : "Connect Google to receive reminders, time changes, and automatic removal of cancelled sessions."}
+              </p>
+            </div>
+          </div>
+          {!googleStatus.connected ? (
+            <button
+              type="button"
+              onClick={connectGoogleCalendar}
+              disabled={connectingGoogle}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 text-sm font-black text-white transition hover:bg-amber-700 disabled:cursor-wait disabled:opacity-70"
+            >
+              {connectingGoogle ? <Loader2 size={17} className="animate-spin" /> : null}
+              {googleStatus.reconnectRequired
+                ? isFa
+                  ? "اتصال دوباره"
+                  : "Reconnect Google"
+                : isFa
+                  ? "اتصال تقویم گوگل"
+                  : "Connect Google Calendar"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="rounded-[24px] border border-slate-200 bg-white py-16 text-center text-sm font-semibold text-slate-500">

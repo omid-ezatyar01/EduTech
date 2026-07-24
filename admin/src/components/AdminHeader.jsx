@@ -8,6 +8,7 @@ import {
   Menu,
   Search,
   UserCheck,
+  X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -91,8 +92,9 @@ export default function AdminHeader({ admin, onMenuClick }) {
       } catch {
         // Keep the header usable if notifications are temporarily unavailable.
       } finally {
-        if (!active) return;
-        timerId = window.setTimeout(loadNotifications, 30000);
+        if (active) {
+          timerId = window.setTimeout(loadNotifications, 30000);
+        }
       }
     };
 
@@ -209,12 +211,13 @@ export default function AdminHeader({ admin, onMenuClick }) {
 
           {isNotificationsOpen ? (
             <div
-              className={`absolute top-[calc(100%+12px)] z-50 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)] ${
-                isRTL ? "left-0" : "right-0"
+              className={`fixed inset-x-3 bottom-3 top-[calc(var(--admin-shell-header-height)+0.5rem)] z-50 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)] sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-[calc(100%+12px)] sm:h-auto sm:max-h-[min(560px,calc(100vh-96px))] sm:w-[370px] ${
+                isRTL ? "sm:left-0" : "sm:right-0"
               }`}
+              dir={isRTL ? "rtl" : "ltr"}
             >
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                <div>
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-3 py-3 sm:px-4">
+                <div className="min-w-0">
                   <p className="text-sm font-black text-slate-900">
                     {language === "fa" ? "اعلان‌های مدیر" : "Admin notifications"}
                   </p>
@@ -224,26 +227,38 @@ export default function AdminHeader({ admin, onMenuClick }) {
                       : `${unreadCount} unread`}
                   </p>
                 </div>
-                {unreadCount > 0 ? (
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {unreadCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllRead}
+                      className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-[11px] font-black text-blue-700 hover:bg-blue-50"
+                    >
+                      <CheckCheck size={14} />
+                      <span className="hidden min-[390px]:inline">
+                        {language === "fa" ? "خواندن همه" : "Mark all read"}
+                      </span>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={handleMarkAllRead}
-                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-black text-blue-700 hover:bg-blue-50"
+                    onClick={() => setIsNotificationsOpen(false)}
+                    className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 sm:hidden"
+                    aria-label={language === "fa" ? "بستن اعلان‌ها" : "Close notifications"}
                   >
-                    <CheckCheck size={14} />
-                    {language === "fa" ? "خواندن همه" : "Mark all read"}
+                    <X size={17} />
                   </button>
-                ) : null}
+                </div>
               </div>
 
-              <div className="max-h-[420px] overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain sm:max-h-[470px]">
                 {notifications.length ? (
                   notifications.map((notification) => (
                     <button
                       key={notification._id}
                       type="button"
                       onClick={() => handleNotificationClick(notification)}
-                      className={`flex w-full gap-3 border-b border-slate-100 px-4 py-3 text-start transition last:border-b-0 hover:bg-slate-50 ${
+                      className={`flex w-full items-start gap-3 border-b border-slate-100 px-3 py-3 text-start transition last:border-b-0 hover:bg-slate-50 sm:px-4 ${
                         notification.isRead ? "bg-white" : "bg-blue-50/70"
                       }`}
                     >
@@ -261,14 +276,14 @@ export default function AdminHeader({ admin, onMenuClick }) {
                         )}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-black text-slate-900">
+                        <span className="block break-words text-sm font-black text-slate-900">
                           {language === "fa"
                             ? notification.type === "teacher_application_review"
                               ? "درخواست استاد برای بررسی"
                               : "کورس جدید برای بررسی"
                             : notification.title}
                         </span>
-                        <span className="mt-1 block text-xs font-semibold leading-5 text-slate-600">
+                        <span className="mt-1 block break-words text-xs font-semibold leading-5 text-slate-600">
                           {language === "fa"
                             ? notification.type === "teacher_application_review"
                               ? `${notification.teacherName || "یک استاد"} فورم درخواست استادی را برای بررسی فرستاد.`

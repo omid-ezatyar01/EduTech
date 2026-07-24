@@ -6,12 +6,18 @@ import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { createCalendarEventWithMeet } from "../services/googleCalendar.service.js";
+import {
+  enqueueSessionCalendarRemoval,
+  enqueueSessionCalendarSync,
+  syncTeacherCalendarEvent,
+} from "../services/studentCalendarSync.service.js";
 import { generateDatesForMonth } from "../services/sessionGenerator.service.js";
 import {
   expireEnrollmentIfNeeded,
   isEnrollmentExpired,
 } from "../utils/courseAccess.js";
 import { getEligibleCourseRatingPrompts } from "../utils/courseRatings.js";
+import { publishLiveSessionStarted } from "../services/courseNotification.service.js";
 
 const APP_TIMEZONE = process.env.APP_TIMEZONE || "Asia/Kabul";
 const LINK_VISIBLE_BEFORE_MINUTES = Number.parseInt(
@@ -22,6 +28,16 @@ const LINK_CLOSE_AFTER_START_MINUTES = Number.parseInt(
   process.env.MEET_LINK_DISABLE_AFTER_START_MINUTES || "10",
   10,
 );
+
+const runCalendarTask = (task, label) => {
+  setImmediate(() => {
+    Promise.resolve()
+      .then(task)
+      .catch((error) => {
+        console.warn(`${label}: ${error.message}`);
+      });
+  });
+};
 
 const teacherCourseFilter = (teacherId) => ({
   $or: [{ teacher: teacherId }, { teacherId }, { createdBy: teacherId }],
@@ -35,19 +51,25 @@ const hasAllowedEnrollmentAccess = (enrollment = {}) =>
 const getOwnedTeacherCourseIds = async (teacherId) =>
   Course.find(teacherCourseFilter(teacherId)).distinct("_id");
 
-const deriveSessionStatus = (session, now = new Date()) => {
+export const deriveSessionStatus = (session, now = new Date()) => {
   if (!session) return "scheduled";
-  if (session.status === "cancelled" || session.status === "completed") {
+  if (
+    ["cancelled", "completed", "rescheduled", "missed", "delayed"].includes(
+      session.status,
+    )
+  ) {
     return session.status;
   }
+  if (session.status === "live") return "live";
 
   const start = new Date(session.startAt);
   const end = new Date(session.endAt);
 
-  if (Number.isFinite(end.getTime()) && now >= end) return "completed";
-  if (Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) && now >= start && now < end) {
-    return "live";
-  }
+  if (Number.isFinite(end.getTime()) && now >= end) return "missed";
+  const readyAt = Number.isFinite(start.getTime())
+    ? new Date(start.getTime() - 15 * 60 * 1000)
+    : null;
+  if (readyAt && now >= readyAt) return "ready";
   return "scheduled";
 };
 
@@ -156,34 +178,21 @@ const computeLinkAvailability = (session, now = new Date()) => {
     };
   }
 
+  if (session?.status !== "live") {
+    return {
+      available: false,
+      reason: "awaiting_teacher",
+      message: "The teacher has not started this session yet.",
+      status,
+      ...window,
+    };
+  }
+
   if (!window.openAt || !window.closeAt) {
     return {
       available: false,
       reason: "invalid_schedule",
       message: "Session time is invalid.",
-      status,
-      ...window,
-    };
-  }
-
-  if (now < window.openAt) {
-    const startsAtClassTime = LINK_VISIBLE_BEFORE_MINUTES <= 0;
-    return {
-      available: false,
-      reason: "too_early",
-      message: startsAtClassTime
-        ? "Live link will be available when class starts."
-        : `Live link will be available ${LINK_VISIBLE_BEFORE_MINUTES} minutes before class starts.`,
-      status,
-      ...window,
-    };
-  }
-
-  if (now > window.closeAt) {
-    return {
-      available: false,
-      reason: "expired",
-      message: `Join window closed ${LINK_CLOSE_AFTER_START_MINUTES} minutes after class start time.`,
       status,
       ...window,
     };
@@ -211,8 +220,7 @@ const computeLinkAvailability = (session, now = new Date()) => {
 const isAttendanceClosed = (session, now = new Date()) => {
   if (!session || session.status === "cancelled") return false;
   if (session.status === "completed") return true;
-  const { closeAt } = getJoinWindowMeta(session);
-  return Boolean(closeAt && now >= closeAt);
+  return false;
 };
 
 const finalizeSessionAttendance = async (session, now = new Date()) => {
@@ -288,6 +296,9 @@ const mapTeacherSession = (session) => {
     googleCalendarId: row.googleCalendarId || "",
     startAt: row.startAt,
     endAt: row.endAt,
+    sessionNumber: row.sessionNumber || null,
+    actualStartedAt: row.actualStartedAt || null,
+    actualEndedAt: row.actualEndedAt || null,
     status,
     persistedStatus: row.status,
     notifyStudents: Boolean(row.notifyStudents),
@@ -330,6 +341,9 @@ const mapStudentSession = (session, enrollmentStatus, accessAllowed) => {
     meetingLink: accessAllowed && availability.available ? row.meetingLink || "" : "",
     startAt: row.startAt,
     endAt: row.endAt,
+    sessionNumber: row.sessionNumber || null,
+    actualStartedAt: row.actualStartedAt || null,
+    actualEndedAt: row.actualEndedAt || null,
     status,
     enrollmentStatus,
     accessAllowed,
@@ -552,6 +566,9 @@ export const createTeacherLiveSession = asyncHandler(async (req, res) => {
     googleEventId = event.eventId;
   }
 
+  const existingSessionCount = await LiveSession.countDocuments({
+    courseId: payload.courseId,
+  });
   const draft = {
     courseId: payload.courseId,
     teacherId,
@@ -565,6 +582,10 @@ export const createTeacherLiveSession = asyncHandler(async (req, res) => {
     startAt: payload.startAt,
     endAt: payload.endAt,
     status: payload.status || "scheduled",
+    sessionNumber: Math.max(
+      1,
+      Number(payload.sessionNumber || existingSessionCount + 1),
+    ),
     notifyStudents: payload.notifyStudents ?? true,
     reminderEnabled: payload.reminderEnabled ?? true,
     autoAttendance: payload.autoAttendance ?? false,
@@ -573,6 +594,10 @@ export const createTeacherLiveSession = asyncHandler(async (req, res) => {
 
   draft.status = deriveSessionStatus(draft);
   const session = await LiveSession.create(draft);
+  runCalendarTask(
+    () => enqueueSessionCalendarSync(session._id),
+    "Failed to enqueue student calendars for new session",
+  );
 
   const populated = await LiveSession.findById(session._id).populate("courseId", "title");
   return res.status(201).json(
@@ -718,6 +743,20 @@ export const updateTeacherLiveSession = asyncHandler(async (req, res) => {
 
   session.status = deriveSessionStatus(session);
   await session.save();
+  if (session.status === "cancelled") {
+    runCalendarTask(
+      () => enqueueSessionCalendarRemoval(session),
+      "Failed to remove cancelled session calendars",
+    );
+  } else {
+    runCalendarTask(
+      async () => {
+        await syncTeacherCalendarEvent(session);
+        await enqueueSessionCalendarSync(session._id);
+      },
+      "Failed to update session calendars",
+    );
+  }
 
   const populated = await LiveSession.findById(session._id).populate("courseId", "title");
   return res.json(
@@ -731,6 +770,7 @@ export const updateTeacherLiveSession = asyncHandler(async (req, res) => {
 export const deleteTeacherLiveSession = asyncHandler(async (req, res) => {
   const session = await getTeacherSessionById(req.user._id, req.params.id);
   assertTeacherCanManageCourse(session.courseId);
+  await enqueueSessionCalendarRemoval(session);
   await LiveSession.deleteOne({ _id: session._id });
 
   return res.json(
@@ -747,9 +787,48 @@ export const startTeacherLiveSession = asyncHandler(async (req, res) => {
   if (session.status === "cancelled") {
     throw new ApiError(400, "Cancelled session cannot be started");
   }
+  if (session.status === "completed") {
+    throw new ApiError(400, "Completed session cannot be started again");
+  }
+  if (session.status === "live") {
+    return res.json(
+      new ApiResponse({
+        message: "Live session is already running",
+        data: mapTeacherSession(session),
+      }),
+    );
+  }
+
+  const courseId = session.courseId?._id || session.courseId;
+  const course = await Course.findById(courseId).select(
+    "_id classStartedAt classEndedAt classCancelledAt currentSessionNumber",
+  );
+  if (!course?.classStartedAt) {
+    throw new ApiError(409, "Start the course officially before starting a live session");
+  }
+  if (course.classEndedAt || course.classCancelledAt) {
+    throw new ApiError(400, "This course is no longer active");
+  }
+
+  const now = new Date();
+  const earliestStart = new Date(new Date(session.startAt).getTime() - 15 * 60 * 1000);
+  if (!Number.isNaN(earliestStart.getTime()) && now < earliestStart) {
+    throw new ApiError(400, "This session can be started up to 15 minutes before its scheduled time");
+  }
 
   session.status = "live";
+  session.actualStartedAt = session.actualStartedAt || now;
   await session.save();
+  course.currentSessionNumber = Math.max(
+    Number(course.currentSessionNumber || 1),
+    Number(session.sessionNumber || 1),
+  );
+  await course.save();
+  await publishLiveSessionStarted({
+    courseId: course._id,
+    sessionId: session._id,
+    sessionTitle: session.title,
+  });
 
   return res.json(
     new ApiResponse({
@@ -765,8 +844,12 @@ export const endTeacherLiveSession = asyncHandler(async (req, res) => {
   if (session.status === "cancelled") {
     throw new ApiError(400, "Cancelled session cannot be completed");
   }
+  if (session.status !== "live") {
+    throw new ApiError(409, "Only a live session can be completed");
+  }
 
   session.status = "completed";
+  session.actualEndedAt = new Date();
   await session.save();
   await finalizeSessionAttendance(session);
 
@@ -784,6 +867,10 @@ export const cancelTeacherLiveSession = asyncHandler(async (req, res) => {
   session.status = "cancelled";
   session.cancelReason = req.body.reason || "";
   await session.save();
+  runCalendarTask(
+    () => enqueueSessionCalendarRemoval(session),
+    "Failed to remove cancelled session calendars",
+  );
 
   return res.json(
     new ApiResponse({
@@ -1423,6 +1510,10 @@ export const generateCourseMonthlyMeetLinks = asyncHandler(async (req, res) => {
       autoGenerated: true,
       createdBy: actingUser._id,
     });
+    runCalendarTask(
+      () => enqueueSessionCalendarSync(session._id),
+      "Failed to enqueue generated session calendars",
+    );
 
     created.push(session);
   }

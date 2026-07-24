@@ -7,8 +7,11 @@ import Assignment from "../models/Assignment.js";
 import AssignmentSubmission from "../models/AssignmentSubmission.js";
 import CourseRating from "../models/CourseRating.js";
 import DirectMessage from "../models/DirectMessage.js";
+import StudentNotification from "../models/StudentNotification.js";
+import TeacherNotification from "../models/TeacherNotification.js";
 import { removeOldCourseThumbnailIfLocal } from "../utils/courseImage.js";
 import { removeCourseResourcePdfIfLocal } from "../utils/courseResourceFile.js";
+import { enqueueSessionCalendarRemoval } from "./studentCalendarSync.service.js";
 
 const toObjectId = (value) => (value && value._id ? value._id : value);
 
@@ -17,13 +20,21 @@ export const deleteCourseWithRelationsByFilter = async (filter = {}) => {
   if (!course) return null;
 
   const courseId = toObjectId(course._id);
-  const resources = await CourseResource.find({ courseId }).select("filePath").lean();
+  const [resources, calendarSessions] = await Promise.all([
+    CourseResource.find({ courseId }).select("filePath").lean(),
+    LiveSession.find({ courseId }).select(
+      "_id teacherId googleEventId googleCalendarId",
+    ),
+  ]);
 
   await Promise.all(
     resources
       .map((resource) => resource?.filePath)
       .filter(Boolean)
       .map((filePath) => removeCourseResourcePdfIfLocal(filePath)),
+  );
+  await Promise.all(
+    calendarSessions.map((session) => enqueueSessionCalendarRemoval(session)),
   );
 
   const [
@@ -35,6 +46,8 @@ export const deleteCourseWithRelationsByFilter = async (filter = {}) => {
     submissionResult,
     ratingResult,
     messageResult,
+    studentNotificationResult,
+    teacherNotificationResult,
     courseResult,
   ] =
     await Promise.all([
@@ -46,6 +59,8 @@ export const deleteCourseWithRelationsByFilter = async (filter = {}) => {
       AssignmentSubmission.deleteMany({ courseId }),
       CourseRating.deleteMany({ courseId }),
       DirectMessage.deleteMany({ courseId }),
+      StudentNotification.deleteMany({ course: courseId }),
+      TeacherNotification.deleteMany({ course: courseId }),
       Course.deleteOne({ _id: courseId }),
     ]);
 
@@ -63,6 +78,8 @@ export const deleteCourseWithRelationsByFilter = async (filter = {}) => {
       submissions: Number(submissionResult?.deletedCount || 0),
       ratings: Number(ratingResult?.deletedCount || 0),
       messages: Number(messageResult?.deletedCount || 0),
+      studentNotifications: Number(studentNotificationResult?.deletedCount || 0),
+      teacherNotifications: Number(teacherNotificationResult?.deletedCount || 0),
     },
   };
 };

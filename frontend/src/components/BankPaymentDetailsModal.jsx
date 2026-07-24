@@ -36,13 +36,13 @@ function DetailRow({ label, value, onCopy, copyLabel, tone = "slate", showCopy =
   }[tone] || "border-slate-200 bg-white";
 
   return (
-    <div className={`rounded-[24px] border px-4 py-4 ${toneClass}`}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className={`rounded-2xl border px-3.5 py-3 ${toneClass}`}>
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
             {label}
           </p>
-          <p className="mt-2 break-words text-sm font-black text-slate-950 sm:text-[15px]" dir="ltr">
+          <p className="mt-1 break-words text-sm font-black text-slate-950" dir="ltr">
             {value}
           </p>
         </div>
@@ -50,7 +50,7 @@ function DetailRow({ label, value, onCopy, copyLabel, tone = "slate", showCopy =
           <button
             type="button"
             onClick={onCopy}
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-primary-300 hover:text-primary-700"
           >
             <Copy size={14} />
             {copyLabel}
@@ -88,6 +88,9 @@ export default function BankPaymentDetailsModal({
     teacher: isFa ? "مدرس" : "Teacher",
     country: isFa ? "کشور" : "Country",
     currency: isFa ? "واحد پول" : "Currency",
+    requiredAmount: isFa ? "مبلغ قابل پرداخت" : "Amount to transfer",
+    monthlyAmount: isFa ? "برای یک ماه دسترسی" : "For one month of access",
+    wholeCourseAmount: isFa ? "برای تمام دوره" : "For the whole course",
     accountHolderName: isFa ? "نام صاحب حساب" : "Account holder",
     bankName: isFa ? "نام بانک" : "Bank name",
     accountNumber: isFa ? "شماره حساب" : "Account number",
@@ -124,6 +127,7 @@ export default function BankPaymentDetailsModal({
   };
 
   const bankPaymentInfo = details?.bankPaymentInfo || {};
+  const paymentAmount = details?.paymentAmount || {};
   const submissionState = details?.submissionState || {};
   const submissionStatus = String(submissionState.status || "none").trim();
   const canSubmitProof = Boolean(onSubmitProof) && submissionState.canResubmit !== false;
@@ -134,6 +138,12 @@ export default function BankPaymentDetailsModal({
       ? (isFa ? "ایران" : "Iran")
       : "";
   const selectedFileName = paymentProof instanceof File ? paymentProof.name : "";
+  const requiredAmount = Number(paymentAmount.amount || 0);
+  const requiredAmountLabel = requiredAmount > 0
+    ? `${new Intl.NumberFormat(isFa ? "fa-AF" : "en-US", {
+        maximumFractionDigits: 2,
+      }).format(requiredAmount)} ${paymentAmount.currency || bankPaymentInfo.currency || ""}`
+    : "";
 
   const handleCopy = async (key, value) => {
     const ok = await copyToClipboard(value);
@@ -214,22 +224,21 @@ export default function BankPaymentDetailsModal({
         onClick={onClose}
       />
       <div
-        className="edutech-scrollbar relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-y-auto overflow-x-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)] sm:rounded-[28px]"
+        className="edutech-scrollbar relative flex max-h-[92vh] w-full max-w-3xl flex-col overflow-y-auto overflow-x-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
         dir="ltr"
       >
         <div
-          className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1.02fr)_minmax(340px,0.98fr)]"
+          className="flex min-h-0 flex-1 flex-col"
           dir={isFa ? "rtl" : "ltr"}
         >
-          <div className="border-b border-slate-200 bg-slate-50/60 lg:min-h-0 lg:border-b-0 lg:border-e">
-            <div className="flex items-start justify-between gap-4 px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
+          <div className="bg-slate-50/60">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6">
               <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">
-                  <Landmark size={14} />
+                <h2 className="flex items-center gap-2 text-xl font-black text-slate-950">
+                  <Landmark size={20} className="text-primary-600" />
                   {t.title}
-                </div>
-                <h2 className="mt-3 text-xl font-black text-slate-950 sm:text-2xl">{t.title}</h2>
-                <p className="mt-2 max-w-lg text-sm font-medium leading-6 text-slate-600">
+                </h2>
+                <p className="mt-1 max-w-lg text-sm font-medium leading-6 text-slate-600">
                   {t.subtitle}
                 </p>
               </div>
@@ -243,8 +252,29 @@ export default function BankPaymentDetailsModal({
               </button>
             </div>
 
-            <div className="px-4 pb-4 sm:px-6 sm:pb-6 lg:h-[calc(92vh-96px)] lg:overflow-y-auto lg:px-8 lg:edutech-scrollbar">
-              <div className="rounded-[20px] border border-slate-200 bg-white p-4 sm:rounded-[24px]">
+            <div className="px-4 py-4 sm:px-6 sm:py-5">
+              {requiredAmountLabel ? (
+                <div className="mb-4 rounded-2xl border border-primary-200 bg-primary-50 p-4">
+                  <p className="text-xs font-black text-primary-700">{t.requiredAmount}</p>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-2xl font-black text-slate-950" dir="ltr">{requiredAmountLabel}</p>
+                      <p className="mt-1 text-xs font-bold text-slate-500">
+                        {paymentAmount.paymentPlan === "whole_period" ? t.wholeCourseAmount : t.monthlyAmount}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy("paymentAmount", requiredAmount)}
+                      className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-xs font-black text-primary-700 shadow-sm"
+                    >
+                      <Copy size={14} />
+                      {copiedKey === "paymentAmount" ? (isFa ? "کپی شد" : "Copied") : (isFa ? "کپی مبلغ" : "Copy amount")}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                     <div className="flex items-center gap-2 text-slate-500">
@@ -262,7 +292,7 @@ export default function BankPaymentDetailsModal({
                   </div>
                 </div>
 
-              <div className="mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-4 sm:rounded-[20px]">
+              <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-3.5">
                   <div className="flex items-center gap-2 text-slate-700">
                     <WalletCards size={16} />
                     <p className="text-xs font-black uppercase tracking-wide">{t.transferGuideTitle}</p>
@@ -279,7 +309,7 @@ export default function BankPaymentDetailsModal({
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <DetailRow
                   label={t.country}
                   value={countryLabel}
@@ -308,7 +338,7 @@ export default function BankPaymentDetailsModal({
                 />
               </div>
 
-              <div className="mt-4 grid gap-3">
+              <div className="mt-3 grid gap-2">
                 <DetailRow
                   label={t.accountNumber}
                   value={bankPaymentInfo.accountNumber}
@@ -332,7 +362,7 @@ export default function BankPaymentDetailsModal({
               </div>
 
               {String(bankPaymentInfo.paymentNote || bankPaymentInfo.note || "").trim() ? (
-                <div className="mt-4 rounded-[18px] border border-slate-200 bg-white px-4 py-4 sm:rounded-[20px]">
+                <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
                   <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
                     {t.note}
                   </p>
@@ -344,10 +374,10 @@ export default function BankPaymentDetailsModal({
             </div>
           </div>
 
-          <div className="min-h-0 bg-white">
-            <div className="edutech-scrollbar h-full overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+          <div className="border-t border-slate-200 bg-white">
+            <div className="px-4 py-4 sm:px-6 sm:py-5">
               {onSubmitProof ? (
-                <form className="flex h-full min-h-[320px] flex-col rounded-[20px] border border-slate-200 bg-slate-50/50 p-4 sm:rounded-[24px] sm:p-5" onSubmit={handleSubmit}>
+                <form className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 sm:p-5" onSubmit={handleSubmit}>
                   <div>
                     <p className="text-base font-black text-slate-950">
                     {isFa ? "بعد از انتقال، رسید را برای مدرس بفرستید" : "After transfer, send the proof to the teacher"}
@@ -357,7 +387,7 @@ export default function BankPaymentDetailsModal({
                     </p>
                   </div>
 
-                  <div className="mt-5 flex-1 space-y-4">
+                  <div className="mt-4 space-y-4">
                     {!canSubmitProof ? (
                       <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
                         {submissionStatus === "approved" ? t.alreadyApproved : t.waitingReview}
@@ -436,7 +466,7 @@ export default function BankPaymentDetailsModal({
                     <label className="block space-y-2">
                       <span className="text-xs font-black text-slate-700">{t.studentNote}</span>
                       <textarea
-                        rows={4}
+                        rows={3}
                         value={note}
                         onChange={(event) => setNote(event.target.value)}
                         disabled={!canSubmitProof || isSubmittingProof}

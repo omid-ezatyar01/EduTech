@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  deriveCourseLifecycleStatus,
   ensureCourseAutoStarted,
   resolveNextCourseStartDate,
   resolveCourseScheduledStartAt,
@@ -54,7 +55,7 @@ test("course does not auto-start when scheduled time is reached but minimum stud
   assert.equal(result, false);
 });
 
-test("course auto-starts only after scheduled time when minimum students are met", () => {
+test("course never auto-starts even after scheduled time when minimum students are met", () => {
   const result = shouldAutoStartCourse(
     {
       status: "published",
@@ -67,7 +68,7 @@ test("course auto-starts only after scheduled time when minimum students are met
     { now: "2026-07-20T09:45:00" },
   );
 
-  assert.equal(result, true);
+  assert.equal(result, false);
 });
 
 test("a missed start on the 1st moves to the 15th", () => {
@@ -99,12 +100,12 @@ test("the next start date crosses into a new year", () => {
   assert.equal(result.getDate(), 1);
 });
 
-test("an overdue course below its minimum is rescheduled instead of started", async () => {
-  const originalFindOneAndUpdate = Course.findOneAndUpdate;
+test("an overdue course below its minimum waits for a teacher decision", async () => {
+  const originalUpdateOne = Course.updateOne;
   let capturedUpdate = null;
-  Course.findOneAndUpdate = async (_filter, update) => {
+  Course.updateOne = async (_filter, update) => {
     capturedUpdate = update;
-    return { _id: "course-1" };
+    return { acknowledged: true, modifiedCount: 1 };
   };
 
   const course = {
@@ -123,28 +124,25 @@ test("an overdue course below its minimum is rescheduled instead of started", as
       activeStudentsCount: 0,
     });
   } finally {
-    Course.findOneAndUpdate = originalFindOneAndUpdate;
+    Course.updateOne = originalUpdateOne;
   }
 
   assert.equal(course.classStartedAt, undefined);
   assert.equal(course.startDate.getFullYear(), 2026);
-  assert.equal(course.startDate.getMonth(), 7);
-  assert.equal(course.startDate.getDate(), 1);
+  assert.equal(course.startDate.getMonth(), 6);
+  assert.equal(course.startDate.getDate(), 15);
   assert.equal(course.startDate.getHours(), 0);
   assert.equal(capturedUpdate.$set.classStartedAt, undefined);
-  assert.equal(capturedUpdate.$set.startDate.getDate(), 1);
-  assert.equal(
-    course.lastAutoRescheduledAt.getTime(),
-    new Date("2026-07-15T09:45:00").getTime(),
-  );
+  assert.equal(capturedUpdate.$set.startDate, undefined);
+  assert.equal(course.lifecycleStatus, "minimum_not_reached");
 });
 
-test("an overdue course starts when its real enrollment count reaches the minimum", async () => {
-  const originalFindOneAndUpdate = Course.findOneAndUpdate;
+test("an overdue course reaching its minimum becomes ready but does not start", async () => {
+  const originalUpdateOne = Course.updateOne;
   let capturedUpdate = null;
-  Course.findOneAndUpdate = async (_filter, update) => {
+  Course.updateOne = async (_filter, update) => {
     capturedUpdate = update;
-    return { _id: "course-2" };
+    return { acknowledged: true, modifiedCount: 1 };
   };
 
   const course = {
@@ -162,13 +160,38 @@ test("an overdue course starts when its real enrollment count reaches the minimu
       activeStudentsCount: 5,
     });
   } finally {
-    Course.findOneAndUpdate = originalFindOneAndUpdate;
+    Course.updateOne = originalUpdateOne;
   }
 
-  assert.equal(course.classStartedAt.getTime(), new Date("2026-07-15T09:45:00").getTime());
+  assert.equal(course.classStartedAt, undefined);
   assert.equal(capturedUpdate.$set.startDate, undefined);
+  assert.equal(capturedUpdate.$set.classStartedAt, undefined);
+  assert.equal(course.lifecycleStatus, "ready_to_start");
   assert.equal(
-    capturedUpdate.$set.classStartedAt.getTime(),
+    capturedUpdate.$set.minimumReachedAt.getTime(),
     new Date("2026-07-15T09:45:00").getTime(),
+  );
+});
+
+test("course lifecycle reflects review, start, and completion checkpoints", () => {
+  assert.equal(
+    deriveCourseLifecycleStatus({ status: "pending", isPublished: false }),
+    "pending_review",
+  );
+  assert.equal(
+    deriveCourseLifecycleStatus({
+      status: "published",
+      isPublished: true,
+      classStartedAt: new Date("2026-07-20T10:00:00"),
+    }),
+    "in_progress",
+  );
+  assert.equal(
+    deriveCourseLifecycleStatus({
+      status: "published",
+      isPublished: true,
+      classEndedAt: new Date("2026-08-20T10:00:00"),
+    }),
+    "completed",
   );
 });

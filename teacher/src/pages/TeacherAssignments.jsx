@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   ClipboardCheck,
   Clock,
@@ -121,12 +122,17 @@ const resolveSubmissionAttachmentUrl = (value = "") => {
 };
 
 export default function TeacherAssignments() {
+  const location = useLocation();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
   const isFa = language === "fa";
+  const requestedCourseId = useMemo(
+    () => new URLSearchParams(location.search).get("courseId") || "",
+    [location.search],
+  );
   const initialAssignmentsCache = readTeacherPageCache(getAssignmentsCacheKey({
     page: 1,
     search: "",
-    courseId: "",
+    courseId: requestedCourseId,
     status: "",
     type: "",
   }));
@@ -135,7 +141,7 @@ export default function TeacherAssignments() {
   const [meta, setMeta] = useState(initialAssignmentsCache?.meta || DEFAULT_ASSIGNMENTS_META);
   const [stats, setStats] = useState(initialAssignmentsCache?.stats || DEFAULT_ASSIGNMENTS_STATS);
   const [search, setSearch] = useState("");
-  const [courseId, setCourseId] = useState("");
+  const [courseId, setCourseId] = useState(requestedCourseId);
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
   const [page, setPage] = useState(1);
@@ -218,8 +224,18 @@ export default function TeacherAssignments() {
           sortBy: "newest",
           sortOrder: "desc",
         }),
-        fetchTeacherAssignments({ page: 1, limit: 1, status: "published" }),
-        fetchTeacherAssignments({ page: 1, limit: 100, status: "published" }),
+        fetchTeacherAssignments({
+          page: 1,
+          limit: 1,
+          status: "published",
+          ...(courseId ? { courseId } : {}),
+        }),
+        fetchTeacherAssignments({
+          page: 1,
+          limit: 100,
+          status: "published",
+          ...(courseId ? { courseId } : {}),
+        }),
       ]);
 
       const activeCourseIds = new Set((Array.isArray(courses) ? courses : []).map((course) => String(course?._id || "")));
@@ -288,6 +304,14 @@ export default function TeacherAssignments() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setCourseId(requestedCourseId);
+      setPage(1);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedCourseId]);
 
   useEffect(() => {
     loadAssignments(page);

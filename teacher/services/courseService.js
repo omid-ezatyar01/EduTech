@@ -140,10 +140,14 @@ export const requestTeacherCourseEndReview = async (courseId, reason) => {
   return data?.data || {};
 };
 
-export const startTeacherCourseClass = async (courseId) => {
+export const startTeacherCourseClass = async (
+  courseId,
+  { startBelowMinimum = false } = {},
+) => {
   const response = await fetch(`${getApiBase()}/teacher/courses/${courseId}/start-class`, {
     method: "POST",
     headers: buildAuthHeaders(),
+    body: JSON.stringify({ startBelowMinimum: Boolean(startBelowMinimum) }),
   });
 
   const data = await parseJsonResponse(response);

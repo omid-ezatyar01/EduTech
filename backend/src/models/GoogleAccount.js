@@ -9,6 +9,12 @@ const googleAccountSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+    role: {
+      type: String,
+      enum: ["student", "teacher", "admin", ""],
+      default: "",
+      index: true,
+    },
     googleEmail: {
       type: String,
       required: true,
@@ -37,6 +43,17 @@ const googleAccountSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: "Bearer",
+    },
+    reconnectRequired: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    lastError: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 500,
     },
   },
   { timestamps: true },

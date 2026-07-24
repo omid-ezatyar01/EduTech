@@ -1,6 +1,6 @@
 import multer from "multer";
 
-const COURSE_THUMBNAIL_MAX_SIZE = 2 * 1024 * 1024;
+const COURSE_THUMBNAIL_MAX_SIZE = 500 * 1024;
 
 const storage = multer.memoryStorage();
 

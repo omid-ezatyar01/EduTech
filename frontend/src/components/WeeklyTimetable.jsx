@@ -147,6 +147,13 @@ export default function WeeklyTimetable({ classes, onClassClick, language = "fa"
                                   );
                                 })()}
                               </div>
+                              {classInSlot.teacherTime &&
+                              classInSlot.teacherTime !== classInSlot.time ? (
+                                <p className="mb-1 text-[9px] font-bold text-slate-500">
+                                  {isFa ? "استاد: " : "Teacher: "}
+                                  {classInSlot.teacherTime}
+                                </p>
+                              ) : null}
                               <h4
                                 className={`text-xs font-black leading-tight ${getTypeStyles(classInSlot.type).text}`}
                               >

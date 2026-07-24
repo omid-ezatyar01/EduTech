@@ -1,4 +1,4 @@
-import { Coins, CreditCard, Landmark, Sparkles, X } from "lucide-react";
+import { Coins, CreditCard, Landmark, X } from "lucide-react";
 import { createPortal } from "react-dom";
 
 export default function PaymentMethodModal({
@@ -63,22 +63,18 @@ export default function PaymentMethodModal({
         onClick={onClose}
       />
       <div
-        className="relative w-full max-w-xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-2xl"
+        className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
         dir={isFa ? "rtl" : "ltr"}
       >
         <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-primary-500 via-teal-400 to-amber-400" />
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5 sm:px-8">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
-              <Sparkles size={14} />
-              {t.title}
-            </div>
-            <h2 className="mt-3 text-2xl font-black text-slate-950">{t.title}</h2>
-            <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+            <h2 className="text-xl font-black text-slate-950">{t.title}</h2>
+            <p className="mt-1 text-sm font-medium leading-6 text-slate-600">
               {t.subtitle}
             </p>
             {courseTitle ? (
-              <p className="mt-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+              <p className="mt-2 line-clamp-1 text-xs font-bold text-slate-500">
                 {t.course}: <span className="text-slate-700">{courseTitle}</span>
               </p>
             ) : null}
@@ -93,15 +89,15 @@ export default function PaymentMethodModal({
           </button>
         </div>
 
-        <div className="space-y-4 px-6 py-6 sm:px-8">
+        <div className="space-y-3 px-5 py-5 sm:px-6">
           <button
             type="button"
             onClick={onSelectHesabPay}
             disabled={isLoading}
-            className="flex w-full items-center justify-between rounded-2xl border border-primary-200 bg-primary-50 px-4 py-4 text-start transition hover:border-primary-300 hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-70"
+            className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-start transition hover:border-primary-300 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary-600 shadow-sm">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
                 <CreditCard size={20} />
               </div>
               <div>
@@ -120,10 +116,10 @@ export default function PaymentMethodModal({
             type="button"
             onClick={onSelectNowPayments}
             disabled={isLoading}
-            className="flex w-full items-center justify-between rounded-2xl border border-teal-200 bg-teal-50 px-4 py-4 text-start transition hover:border-teal-300 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-70"
+            className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-start transition hover:border-teal-300 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-teal-600 shadow-sm">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600">
                 <Coins size={20} />
               </div>
               <div>
@@ -144,10 +140,10 @@ export default function PaymentMethodModal({
                 type="button"
                 onClick={onSelectBank}
                 disabled={isLoading || isBankLoading}
-                className="flex w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-start transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-70"
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-start transition hover:border-amber-300 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-amber-600 shadow-sm">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
                     <Landmark size={20} />
                   </div>
                   <div>

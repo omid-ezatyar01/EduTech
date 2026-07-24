@@ -115,7 +115,7 @@ export const getCourseSharePreview = asyncHandler(async (req, res) => {
 
   const destination = `${getStudentOrigin()}/course/${encodeURIComponent(course.slug || course._id)}`;
   const description =
-    compactText(course.shortDescription || course.description) ||
+    compactText(course.description) ||
     `Learn with ${teacher.name || "an EduTech instructor"}.`;
 
   return renderSharePreview(res, {

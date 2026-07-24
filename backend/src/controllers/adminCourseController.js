@@ -21,6 +21,7 @@ import {
 import { normalizeTeacherCourseDiscountPercentage } from "../utils/platformSettings.js";
 import { finalizeCourseEnd } from "../services/courseCompletion.service.js";
 import { publishTeacherActivity } from "../services/teacherActivity.service.js";
+import { getCoursePublicState } from "../utils/coursePublicState.js";
 
 const buildSort = ({ sortBy = "newest", sortOrder = "desc" }) => {
   if (sortBy === "price") return { price: sortOrder === "asc" ? 1 : -1 };
@@ -137,6 +138,8 @@ export const createAdminCourse = asyncHandler(async (req, res) => {
   payload.teacherId = payload.teacher || undefined;
   payload.status = payload.status || "draft";
   payload.isPublished = payload.status === "published";
+  payload.lifecycleStatus =
+    payload.status === "published" ? "enrollment_open" : "draft";
   payload.currency = "USD";
   payload.isFree = Boolean(payload.isFree);
   payload.previewVideoUrls = normalizePreviewVideoUrls(payload.previewVideoUrls);
@@ -160,6 +163,11 @@ export const createAdminCourse = asyncHandler(async (req, res) => {
       ),
     );
   }
+  payload.certificate = {
+    ...(payload.certificate || {}),
+    enabled: !payload.isFree,
+    fullPaymentRequired: !payload.isFree,
+  };
 
   const course = await Course.create(payload);
 
@@ -194,7 +202,13 @@ export const getAdminCourses = asyncHandler(async (req, res) => {
   return res.json(
     new ApiResponse({
       message: "Courses fetched successfully",
-      data: courses,
+      data: courses.map((course) => {
+        const row = course.toObject();
+        return {
+          ...row,
+          publicState: getCoursePublicState({ course: row }),
+        };
+      }),
       meta: {
         page,
         limit,
@@ -219,7 +233,10 @@ export const getAdminCourseById = asyncHandler(async (req, res) => {
   return res.json(
     new ApiResponse({
       message: "Course fetched successfully",
-      data: course,
+      data: {
+        ...course.toObject(),
+        publicState: getCoursePublicState({ course }),
+      },
     }),
   );
 });
@@ -267,6 +284,19 @@ export const updateAdminCourse = asyncHandler(async (req, res) => {
   }
   if (Object.prototype.hasOwnProperty.call(payload, "status")) {
     payload.isPublished = payload.status === "published";
+    const lifecycleByPublicationStatus = {
+      draft: "draft",
+      pending: "pending_review",
+      approved: "approved",
+      rejected: "changes_requested",
+      published: existingCourse.classStartedAt
+        ? "in_progress"
+        : "enrollment_open",
+      cancelled: "canceled",
+    };
+    payload.lifecycleStatus =
+      lifecycleByPublicationStatus[payload.status] ||
+      existingCourse.lifecycleStatus;
     if (payload.status === "cancelled") {
       payload.classCancelledAt = new Date();
     }
@@ -289,6 +319,14 @@ export const updateAdminCourse = asyncHandler(async (req, res) => {
   const nextIsFree = Object.prototype.hasOwnProperty.call(payload, "isFree")
     ? Boolean(payload.isFree)
     : Boolean(existingCourse.isFree);
+  if (payload.certificate || Object.prototype.hasOwnProperty.call(payload, "isFree")) {
+    payload.certificate = {
+      ...(existingCourse.certificate?.toObject?.() || existingCourse.certificate || {}),
+      ...(payload.certificate || {}),
+      enabled: !nextIsFree,
+      fullPaymentRequired: !nextIsFree,
+    };
+  }
   if (!nextIsFree) {
     const priceForDiscountCalc = Object.prototype.hasOwnProperty.call(payload, "price")
       ? Number(payload.price || 0)
@@ -354,15 +392,11 @@ export const deleteAdminCourse = asyncHandler(async (req, res) => {
 });
 
 export const approveCourse = asyncHandler(async (req, res) => {
-  const existingCourse = await Course.findById(req.params.id).select("status isPublished");
-  if (!existingCourse) {
-    throw new ApiError(404, "Course not found");
-  }
-
   const course = await Course.findByIdAndUpdate(
     req.params.id,
     {
       status: "approved",
+      lifecycleStatus: "approved",
       isPublished: false,
       rejectionReason: "",
     },
@@ -371,14 +405,6 @@ export const approveCourse = asyncHandler(async (req, res) => {
 
   if (!course) {
     throw new ApiError(404, "Course not found");
-  }
-
-  if (!(existingCourse.status === "approved" && existingCourse.isPublished === false)) {
-    await notifyPublishedCourseByAdminChoice({
-      course,
-      notificationAudience: req.body?.notificationAudience || "all",
-      notificationChannels: req.body?.notificationChannels || {},
-    });
   }
 
   return res.json(
@@ -394,6 +420,7 @@ export const rejectCourse = asyncHandler(async (req, res) => {
     req.params.id,
     {
       status: "rejected",
+      lifecycleStatus: "changes_requested",
       isPublished: false,
       rejectionReason: req.body.rejectionReason,
     },
@@ -426,6 +453,7 @@ export const publishCourse = asyncHandler(async (req, res) => {
     req.params.id,
     {
       status: "published",
+      lifecycleStatus: "enrollment_open",
       isPublished: true,
       rejectionReason: "",
     },
@@ -464,6 +492,7 @@ export const unpublishCourse = asyncHandler(async (req, res) => {
     req.params.id,
     {
       status: "approved",
+      lifecycleStatus: "approved",
       isPublished: false,
     },
     { returnDocument: "after", runValidators: true },
@@ -495,6 +524,7 @@ export const approveCourseCancellation = asyncHandler(async (req, res) => {
   }
 
   course.status = "cancelled";
+  course.lifecycleStatus = "canceled";
   course.isPublished = false;
   course.classCancelledAt = new Date();
   course.cancellationRequest.status = "approved";
@@ -593,6 +623,7 @@ export const rejectCourseEndRequest = asyncHandler(async (req, res) => {
   course.endRequest.reviewedAt = new Date();
   course.endRequest.reviewedBy = req.user._id;
   course.endRequest.adminResponse = String(req.body?.adminResponse || "").trim();
+  course.lifecycleStatus = course.classStartedAt ? "in_progress" : "enrollment_open";
   await course.save();
 
   return res.json(

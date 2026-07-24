@@ -5,6 +5,7 @@ import {
   createGoogleAuthUrl,
   handleOAuthCallback,
 } from "../services/googleCalendar.service.js";
+import { syncFutureSessionsForStudent } from "../services/studentCalendarSync.service.js";
 
 const normalizeOrigin = (value = "") =>
   String(value || "")
@@ -31,17 +32,37 @@ const parseRoleRedirectMap = () => {
 };
 
 const resolveRoleRedirect = (role) => {
-  const direct = String(process.env.GOOGLE_OAUTH_RESULT_REDIRECT || "").trim();
-  if (direct) return direct;
-
   const roleKey = String(role || "").trim().toLowerCase();
   const mapped = parseRoleRedirectMap();
   if (roleKey && mapped[roleKey]) return mapped[roleKey];
+
+  const roleSpecific = roleKey === "student"
+    ? process.env.GOOGLE_STUDENT_OAUTH_RESULT_REDIRECT
+    : roleKey === "teacher"
+      ? process.env.GOOGLE_TEACHER_OAUTH_RESULT_REDIRECT
+      : roleKey === "admin"
+        ? process.env.GOOGLE_ADMIN_OAUTH_RESULT_REDIRECT
+        : "";
+  if (String(roleSpecific || "").trim()) return String(roleSpecific).trim();
+
+  if (roleKey === "student") {
+    const studentBase = normalizeOrigin(
+      process.env.STUDENT_CLIENT_URL ||
+      process.env.STUDENT_FRONTEND_URL ||
+      process.env.CLIENT_URL ||
+      "",
+    );
+    if (studentBase) return `${studentBase}/student/schedule`;
+  }
+
+  const direct = String(process.env.GOOGLE_OAUTH_RESULT_REDIRECT || "").trim();
+  if (direct) return direct;
 
   const base = normalizeOrigin(process.env.GOOGLE_OAUTH_RESULT_REDIRECT_BASE || "");
   if (!base) return "";
   if (roleKey === "teacher") return `${base}/teacher`;
   if (roleKey === "admin") return `${base}/admin`;
+  if (roleKey === "student") return `${base}/student/schedule`;
   return base;
 };
 
@@ -73,15 +94,17 @@ export const getGoogleOAuthUrl = asyncHandler(async (req, res) => {
 
 export const getGoogleAccountStatus = asyncHandler(async (req, res) => {
   const account = await GoogleAccount.findOne({ userId: req.user._id }).select(
-    "googleEmail updatedAt createdAt",
+    "googleEmail reconnectRequired lastError updatedAt createdAt",
   );
 
   return res.json(
     new ApiResponse({
       message: "Google account status fetched successfully",
       data: {
-        connected: Boolean(account),
+        connected: Boolean(account) && account?.reconnectRequired !== true,
         googleEmail: account?.googleEmail || "",
+        reconnectRequired: Boolean(account?.reconnectRequired),
+        error: account?.lastError || "",
         connectedAt: account?.createdAt || null,
         updatedAt: account?.updatedAt || null,
       },
@@ -94,6 +117,13 @@ export const handleGoogleOAuthCallback = asyncHandler(async (req, res) => {
 
   try {
     const linked = await handleOAuthCallback(code, state);
+    if (linked.role === "student") {
+      setImmediate(() => {
+        syncFutureSessionsForStudent(linked.userId).catch((error) => {
+          console.warn(`Student calendar backfill failed: ${error.message}`);
+        });
+      });
+    }
     const successRedirect = buildCallbackRedirect({
       type: "success",
       role: linked.role,

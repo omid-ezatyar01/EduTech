@@ -38,8 +38,20 @@ const resolveCourseTimes = (course = {}) => {
     return { startTime: scheduleStart, endTime: scheduleEnd };
   }
 
-  const startFromDate = extractTime(course?.startDate);
-  const endFromDate = extractTime(course?.endDate);
+  const formatInCourseZone = (value) => {
+    const date = new Date(value || "");
+    if (Number.isNaN(date.getTime())) return "";
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: course?.timezone || "Asia/Kabul",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]));
+    return values.hour && values.minute ? `${values.hour}:${values.minute}` : "";
+  };
+  const startFromDate = formatInCourseZone(course?.startDate);
+  const endFromDate = formatInCourseZone(course?.endDate);
   return {
     startTime: startFromDate || "18:00",
     endTime: endFromDate || "19:00",
@@ -155,6 +167,9 @@ export default function CreateLiveClassModal({
               readOnly
               className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-slate-50 px-3 text-sm font-semibold text-slate-700"
             />
+            <span className="mt-1 block text-[11px] font-bold text-slate-500" dir="ltr">
+              {selectedCourse?.timezone || "Asia/Kabul"}
+            </span>
           </label>
 
           <label className="sm:col-span-2">

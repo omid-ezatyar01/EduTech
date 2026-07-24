@@ -136,7 +136,7 @@ const ensureCourseTextSearchIndex = async () => {
   try {
     const coursesCollection = mongoose.connection.collection("courses");
     const indexes = await coursesCollection.indexes();
-    const textKey = { title: "text", shortDescription: "text", description: "text" };
+    const textKey = { title: "text", description: "text" };
     const textIndexName = "course_text_search";
 
     const textIndexesToDrop = indexes.filter((index) => {
@@ -146,7 +146,8 @@ const ensureCourseTextSearchIndex = async () => {
       return (
         index.name !== textIndexName ||
         index.language_override !== "textSearchLanguage" ||
-        index.default_language !== "none"
+        index.default_language !== "none" ||
+        Object.prototype.hasOwnProperty.call(index.weights || {}, "shortDescription")
       );
     });
 

@@ -26,6 +26,7 @@ import {
   endTeacherLiveSession,
   fetchTeacherLiveSessionAttendance,
   fetchTeacherLiveSessions,
+  startTeacherLiveSession,
   updateTeacherLiveSessionAttendance,
 } from "../../services/liveSessionService";
 import {
@@ -33,7 +34,13 @@ import {
   readTeacherPageCache,
   writeTeacherPageCache,
 } from "../utils/teacherPageCache";
-import { buildCourseQueryValue, extractRouteIdentifier } from "../utils/routePaths";
+import { extractRouteIdentifier } from "../utils/routePaths";
+import {
+  formatDateTimeInZone,
+  formatTimeRangeInZone,
+  getBrowserTimeZone,
+  zonedDateTimeToUtc,
+} from "../utils/timezone";
 
 const formatDay = (day, language) => {
   if (!day) return language === "fa" ? "نامشخص" : "Unknown";
@@ -66,10 +73,20 @@ const statusMetaMap = {
     en: "Scheduled",
     badge: "bg-[#DBEAFE] text-[#0B4FD8]",
   },
+  ready: {
+    fa: "آماده شروع",
+    en: "Ready to start",
+    badge: "bg-amber-100 text-amber-800",
+  },
   live: {
     fa: "در حال برگزاری",
     en: "Live",
     badge: "bg-[#DCFCE7] text-[#10B981]",
+  },
+  delayed: {
+    fa: "با تأخیر",
+    en: "Delayed",
+    badge: "bg-orange-100 text-orange-800",
   },
   completed: {
     fa: "تکمیل شده",
@@ -80,6 +97,16 @@ const statusMetaMap = {
     fa: "لغو شده",
     en: "Cancelled",
     badge: "bg-[#FEE2E2] text-[#EF4444]",
+  },
+  rescheduled: {
+    fa: "زمان‌بندی مجدد",
+    en: "Rescheduled",
+    badge: "bg-violet-100 text-violet-800",
+  },
+  missed: {
+    fa: "برگزار نشده",
+    en: "Missed",
+    badge: "bg-rose-100 text-rose-700",
   },
 };
 
@@ -142,10 +169,15 @@ function SpotlightCard({ title, subtitle, emptyText, session, language, actionLa
           <p className="text-sm font-black text-slate-900">{session.title}</p>
           <p className="mt-1 text-xs font-bold text-slate-600">{session.courseTitle}</p>
           <p className="mt-3 text-sm font-semibold text-slate-700">
-            {session.dateLabel}
+            {language === "fa" ? "وقت کورس: " : "Course time: "}
+            {session.teacherDateLabel}
           </p>
           <p className="mt-1 text-sm font-semibold text-slate-700" dir="ltr">
-            {session.timeLabel}
+            {session.teacherTimeLabel}
+          </p>
+          <p className="mt-2 text-xs font-bold text-teal-700">
+            {language === "fa" ? "وقت محل شما: " : "Your local time: "}
+            {session.localDateLabel} · {session.localTimeLabel}
           </p>
           {actionLabel ? (
             <button
@@ -167,6 +199,7 @@ function SessionCard({
   language,
   isBusy,
   onJoin,
+  onStart,
   onEnd,
   onAttendance,
   onCancel,
@@ -188,12 +221,14 @@ function SessionCard({
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl bg-[#F8FAFC] px-3 py-2">
-          <p className="text-[11px] font-black text-slate-500">{isFa ? "تاریخ" : "Date"}</p>
-          <p className="mt-1 text-sm font-bold text-slate-800">{session.dateLabel}</p>
+          <p className="text-[11px] font-black text-slate-500">{isFa ? "وقت کورس" : "Course time"}</p>
+          <p className="mt-1 text-sm font-bold text-slate-800">{session.teacherDateLabel}</p>
+          <p className="mt-1 text-xs font-bold text-slate-600" dir="ltr">{session.teacherTimeLabel}</p>
         </div>
         <div className="rounded-xl bg-[#F8FAFC] px-3 py-2">
-          <p className="text-[11px] font-black text-slate-500">{isFa ? "زمان" : "Time"}</p>
-          <p className="mt-1 text-sm font-bold text-slate-800" dir="ltr">{session.timeLabel}</p>
+          <p className="text-[11px] font-black text-slate-500">{isFa ? "وقت محل شما" : "Your local time"}</p>
+          <p className="mt-1 text-sm font-bold text-slate-800">{session.localDateLabel}</p>
+          <p className="mt-1 text-xs font-bold text-teal-700" dir="ltr">{session.localTimeLabel}</p>
         </div>
         <div className="rounded-xl bg-[#F8FAFC] px-3 py-2">
           <p className="text-[11px] font-black text-slate-500">{isFa ? "پلتفرم" : "Platform"}</p>
@@ -208,7 +243,22 @@ function SessionCard({
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {session.status !== "cancelled" ? (
+        {["scheduled", "ready", "delayed", "missed"].includes(session.status) ? (
+          <button
+            type="button"
+            onClick={() => onStart(session)}
+            disabled={
+              isBusy ||
+              (session.platform !== "physical" && !session.meetingLink)
+            }
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            <Video size={14} />
+            {isFa ? "شروع جلسه" : "Start session"}
+          </button>
+        ) : null}
+
+        {session.status === "live" && session.meetingLink ? (
           <button
             type="button"
             onClick={() => onJoin(session)}
@@ -216,7 +266,7 @@ function SessionCard({
             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#0B4FD8] px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             <Link2 size={14} />
-            {isFa ? "ورود" : "Join"}
+            {isFa ? "ورود به جلسه" : "Join session"}
           </button>
         ) : null}
 
@@ -264,6 +314,15 @@ export default function TeacherLiveClasses() {
   const location = useLocation();
   const navigate = useNavigate();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
+  const requestedCourseId = useMemo(
+    () =>
+      extractRouteIdentifier(
+        new URLSearchParams(location.search).get("courseId") ||
+          new URLSearchParams(location.search).get("course") ||
+          "",
+      ),
+    [location.search],
+  );
   const initialLiveClassesCache = readTeacherPageCache(getLiveClassesCacheKey({
     courseId: "",
     status: "",
@@ -278,24 +337,11 @@ export default function TeacherLiveClasses() {
   const [attendanceRows, setAttendanceRows] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [busySessionId, setBusySessionId] = useState("");
-  const [filterCourseId, setFilterCourseId] = useState("");
+  const [filterCourseId, setFilterCourseId] = useState(requestedCourseId);
   const [filterStatus, setFilterStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [refreshSeed, setRefreshSeed] = useState(0);
-  const currentCourseQueryValue = useMemo(
-    () => new URLSearchParams(location.search).get("course") || "",
-    [location.search],
-  );
-  const requestedCourseId = useMemo(
-    () =>
-      extractRouteIdentifier(
-        new URLSearchParams(location.search).get("course") ||
-          new URLSearchParams(location.search).get("courseId") ||
-          "",
-      ),
-    [location.search],
-  );
 
   const teacher = useMemo(() => {
     const user = getAuthUser();
@@ -306,8 +352,9 @@ export default function TeacherLiveClasses() {
     () => ({
       page: 1,
       limit: 100,
+      ...(filterCourseId ? { courseId: filterCourseId } : {}),
     }),
-    [],
+    [filterCourseId],
   );
 
   useLiveDataRefresh(() => setRefreshSeed((prev) => prev + 1), {
@@ -364,7 +411,7 @@ export default function TeacherLiveClasses() {
     return () => {
       isMounted = false;
     };
-  }, [refreshSeed, sessionQuery]);
+  }, [filterCourseId, filterStatus, refreshSeed, sessionQuery]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -373,28 +420,15 @@ export default function TeacherLiveClasses() {
   }, [toast]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setFilterCourseId(requestedCourseId || ""), 0);
+    const timer = setTimeout(
+      () =>
+        setFilterCourseId((current) =>
+          current === requestedCourseId ? current : requestedCourseId,
+        ),
+      0,
+    );
     return () => clearTimeout(timer);
   }, [requestedCourseId]);
-
-  useEffect(() => {
-    if (!filterCourseId) {
-      if (location.search) {
-        navigate("/teacher/live-classes", { replace: true });
-      }
-      return;
-    }
-
-    const selectedCourse = courses.find(
-      (course) => String(course?._id || course?.id || "") === String(filterCourseId),
-    );
-    if (!selectedCourse) return;
-
-    const nextCourseValue = buildCourseQueryValue(selectedCourse);
-    if (!nextCourseValue || currentCourseQueryValue === nextCourseValue) return;
-
-    navigate(`/teacher/live-classes?course=${encodeURIComponent(nextCourseValue)}`, { replace: true });
-  }, [courses, currentCourseQueryValue, filterCourseId, location.search, navigate]);
 
   const reloadSessions = async () => {
     const { sessions: rows } = await fetchTeacherLiveSessions(sessionQuery);
@@ -416,6 +450,8 @@ export default function TeacherLiveClasses() {
         const endDate = new Date(session.endAt);
         const statusMeta = statusMetaMap[session.status] || statusMetaMap.scheduled;
         const attendanceCount = Number(session.attendanceCount || 0);
+        const teacherTimeZone = session.timezone || "Asia/Kabul";
+        const localTimeZone = getBrowserTimeZone();
         return {
           ...session,
           id: session._id,
@@ -426,21 +462,39 @@ export default function TeacherLiveClasses() {
               : startDate.toLocaleDateString("en-US", { weekday: "long" }),
             language,
           ),
+          teacherDateLabel: Number.isNaN(startDate.getTime())
+            ? "-"
+            : formatDateTimeInZone(startDate, teacherTimeZone, language, {
+                hour: undefined,
+                minute: undefined,
+                weekday: "long",
+              }),
+          localDateLabel: Number.isNaN(startDate.getTime())
+            ? "-"
+            : formatDateTimeInZone(startDate, localTimeZone, language, {
+                hour: undefined,
+                minute: undefined,
+                weekday: "long",
+              }),
+          teacherTimeLabel:
+            Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())
+              ? "-"
+              : formatTimeRangeInZone(startDate, endDate, teacherTimeZone, language),
+          localTimeLabel:
+            Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())
+              ? "-"
+              : formatTimeRangeInZone(startDate, endDate, localTimeZone, language),
           dateLabel: Number.isNaN(startDate.getTime())
             ? "-"
-            : startDate.toLocaleDateString(
-                language === "fa" ? "fa-IR-u-ca-persian" : "en-US",
-                {
-                  weekday: "long",
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                },
-              ),
+            : formatDateTimeInZone(startDate, localTimeZone, language, {
+                hour: undefined,
+                minute: undefined,
+                weekday: "long",
+              }),
           timeLabel:
             Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())
               ? "-"
-              : `${startDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${endDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+              : formatTimeRangeInZone(startDate, endDate, localTimeZone, language),
           statusLabel: language === "fa" ? statusMeta.fa : statusMeta.en,
           badgeClass: statusMeta.badge,
           platformLabel: formatPlatform(session.platform, language),
@@ -519,10 +573,15 @@ export default function TeacherLiveClasses() {
 
   const handleCreateSession = async (form) => {
     try {
-      const startAt = new Date(`${form.date}T${form.startTime}:00`);
-      const endAt = new Date(`${form.date}T${form.endTime}:00`);
+      const selectedCourse = courses.find(
+        (course) => String(course?._id) === String(form.courseId),
+      );
+      const timezone =
+        selectedCourse?.timezone || getBrowserTimeZone() || "Asia/Kabul";
+      const startAt = zonedDateTimeToUtc(form.date, form.startTime, timezone);
+      const endAt = zonedDateTimeToUtc(form.date, form.endTime, timezone);
 
-      if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+      if (!startAt || !endAt) {
         throw new Error(language === "fa" ? "زمان جلسه معتبر نیست." : "Invalid date/time");
       }
 
@@ -534,7 +593,7 @@ export default function TeacherLiveClasses() {
         meetingLink: form.meetLink || "",
         autoGenerateMeet: Boolean(form.autoGenerateMeet),
         calendarId: "primary",
-        timezone: "Asia/Kabul",
+        timezone,
         startAt: startAt.toISOString(),
         endAt: endAt.toISOString(),
         notifyStudents: Boolean(form.notify),
@@ -655,6 +714,17 @@ export default function TeacherLiveClasses() {
     window.open(session.meetingLink, "_blank", "noopener,noreferrer");
   };
 
+  const handleStartSession = async (session) => {
+    await withSessionAction(session.id, async () => {
+      await startTeacherLiveSession(session.id);
+      setToast(
+        language === "fa"
+          ? "جلسه شروع شد؛ اکنون شاگردان می‌توانند وارد شوند."
+          : "Session started; students can now join.",
+      );
+    });
+  };
+
   const handleEndSession = async (session) => {
     await withSessionAction(session.id, () => endTeacherLiveSession(session.id));
   };
@@ -672,6 +742,7 @@ export default function TeacherLiveClasses() {
     setSearchQuery("");
     setFilterStatus("");
     setFilterCourseId("");
+    navigate("/teacher/live-classes", { replace: true });
   };
 
   return (
@@ -746,7 +817,16 @@ export default function TeacherLiveClasses() {
 
             <select
               value={filterCourseId}
-              onChange={(event) => setFilterCourseId(event.target.value)}
+              onChange={(event) => {
+                const nextCourseId = event.target.value;
+                setFilterCourseId(nextCourseId);
+                navigate(
+                  nextCourseId
+                    ? `/teacher/live-classes?courseId=${encodeURIComponent(nextCourseId)}`
+                    : "/teacher/live-classes",
+                  { replace: true },
+                );
+              }}
               className="h-11 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0B4FD8] focus:bg-white focus:ring-4 focus:ring-[#0B4FD8]/10"
             >
               <option value="">{language === "fa" ? "همه کورس‌ها" : "All courses"}</option>
@@ -832,6 +912,7 @@ export default function TeacherLiveClasses() {
                   language={language}
                   isBusy={busySessionId === session.id}
                   onJoin={handleJoinSession}
+                  onStart={handleStartSession}
                   onEnd={handleEndSession}
                   onAttendance={openAttendance}
                   onCancel={handleCancelSession}

@@ -1,11 +1,18 @@
-import { Loader2, X } from "lucide-react";
+import { Check, CheckCircle2, Eye, Loader2, Save, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import CourseStartDatePicker from "./CourseStartDatePicker";
 import CourseImageCropModal from "./CourseImageCropModal";
 import CourseTypePicker from "./CourseTypePicker";
 import CourseCategoryFields from "./CourseCategoryFields";
+import CourseTimeZonePicker from "./CourseTimeZonePicker";
 import { isAllowedCourseStartDate } from "../../utils/courseStartDate";
 import { getParentCategories } from "../../utils/categoryTree";
+import {
+  addDaysToDateValue,
+  getBrowserTimeZone,
+  isValidTimeZone,
+  zonedDateTimeToUtc,
+} from "../../utils/timezone";
 
 const DAY_OPTIONS = [
   { key: "monday", enumKey: "MONDAY", labelFa: "دوشنبه", labelEn: "Monday" },
@@ -51,7 +58,7 @@ const toMinutes = (timeText = "") => {
 };
 const DESCRIPTION_MIN_CHARS = 120;
 const DESCRIPTION_MAX_CHARS = 2000;
-const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
+const THUMBNAIL_MAX_BYTES = 500 * 1024;
 const TITLE_MIN_CHARS = 5;
 const TITLE_MAX_CHARS = 120;
 const COURSE_WEEKS_MIN = 1;
@@ -65,12 +72,15 @@ const MINIMUM_STUDENTS_TO_START_MIN = 1;
 const LIST_ITEM_MIN_CHARS = 3;
 const LIST_ITEM_MAX_CHARS = 180;
 const LIST_MAX_ITEMS = 30;
-const MOBILE_BREAKPOINT = 640;
 const CREATE_FORM_STEPS = [
-  { id: 1, titleFa: "اطلاعات کورس", titleEn: "Course Info" },
-  { id: 2, titleFa: "برنامه و زمان", titleEn: "Schedule" },
-  { id: 3, titleFa: "قیمت‌گذاری", titleEn: "Pricing" },
+  { id: 1, titleFa: "اطلاعات اصلی", titleEn: "Basics" },
+  { id: 2, titleFa: "یادگیری", titleEn: "Learning" },
+  { id: 3, titleFa: "برنامه زنده", titleEn: "Schedule" },
+  { id: 4, titleFa: "قیمت و گواهینامه", titleEn: "Pricing & certificate" },
+  { id: 5, titleFa: "قوانین", titleEn: "Policies" },
+  { id: 6, titleFa: "پیش‌نمایش", titleEn: "Preview" },
 ];
+const CREATE_DRAFT_STORAGE_KEY = "edutech:teacher:create-course-draft:v2";
 const LIST_ROW_BREAK_REGEX = /\r\n?|\n|\u2028|\u2029/g;
 const normalizeTextareaRows = (raw = "") =>
   String(raw)
@@ -86,6 +96,11 @@ const parseListLines = (raw = "") =>
 const parseVideoLinks = (raw = "") => {
   return normalizeTextareaRows(raw).filter(Boolean);
 };
+const parseTags = (raw = "") =>
+  String(raw || "")
+    .split(/[,،\n]/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
 
 const getYouTubeVideoKey = (value = "") => {
   try {
@@ -251,6 +266,7 @@ export default function CreateCourseModal({
   categories = [],
   pricingSettings = {},
   teacherLanguages = [],
+  defaultTimeZone = "",
 }) {
   const levels = useMemo(
     () => [
@@ -272,6 +288,7 @@ export default function CreateCourseModal({
   const getInitialForm = () => ({
     title: "",
     description: "",
+    tagsText: "",
     category: firstCategory,
     subcategory: "",
     level: "beginner",
@@ -288,20 +305,47 @@ export default function CreateCourseModal({
     startDate: "",
     startTime: "18:00",
     endTime: "19:00",
+    timezone: isValidTimeZone(defaultTimeZone)
+      ? defaultTimeZone
+      : getBrowserTimeZone(),
     selectedDays: ["monday", "wednesday", "friday"],
     targetAudienceText: "",
     whatYouWillLearnText: "",
     requirementsText: "",
     curriculumTopicsText: "",
     previewVideoUrlsText: "",
+    certificateEnabled: true,
+    certificateMinimumAttendance: "70",
+    certificateMinimumPassingGrade: "60",
+    refundPolicyAccepted: false,
+    makeupClassPolicyAccepted: false,
+    conductPolicyAccepted: false,
+    intellectualPropertyAccepted: false,
+    informationAccurate: false,
+    contentPermission: false,
+    teacherPoliciesAccepted: false,
+    refundRulesAccepted: false,
+    sessionCommitmentAccepted: false,
     thumbnailFile: null,
   });
 
-  const [form, setForm] = useState(getInitialForm());
+  const [form, setForm] = useState(() => {
+    const initial = getInitialForm();
+    try {
+      const stored = JSON.parse(localStorage.getItem(CREATE_DRAFT_STORAGE_KEY) || "null");
+      return stored && typeof stored === "object"
+        ? { ...initial, ...stored, thumbnailFile: null }
+        : initial;
+    } catch {
+      return initial;
+    }
+  });
   const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [pendingThumbnailFile, setPendingThumbnailFile] = useState(null);
   const [mobileStep, setMobileStep] = useState(1);
-  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [submissionSucceeded, setSubmissionSucceeded] = useState(false);
+  const [draftStatus, setDraftStatus] = useState("");
   const selectedCategory = form.category || firstCategory;
   const selectedSubcategory = categories.some(
     (item) => String(item._id) === String(form.subcategory || ""),
@@ -341,20 +385,22 @@ export default function CreateCourseModal({
   ];
   const invalidListField = getInvalidListField(listFieldConfigs);
   const stepContainerClass = (stepId) =>
-    `${mobileStep === stepId ? "contents" : "hidden"} sm:contents`;
+    mobileStep === stepId ? "contents" : "hidden";
   const thumbnailPreviewUrl = useMemo(() => {
     if (typeof URL === "undefined" || !form.thumbnailFile) return "";
     return URL.createObjectURL(form.thumbnailFile);
   }, [form.thumbnailFile]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const media = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-    const sync = () => setIsMobileViewport(media.matches);
-    sync();
-    media.addEventListener("change", sync);
-    return () => media.removeEventListener("change", sync);
-  }, []);
+    if (!open) return undefined;
+    const timer = window.setTimeout(() => {
+      const serializableForm = { ...form };
+      delete serializableForm.thumbnailFile;
+      localStorage.setItem(CREATE_DRAFT_STORAGE_KEY, JSON.stringify(serializableForm));
+      setDraftStatus(language === "fa" ? "پیش‌نویس در این دستگاه ذخیره شد" : "Draft saved on this device");
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [form, language, open]);
 
   useEffect(() => {
     if (!thumbnailPreviewUrl || typeof URL === "undefined") return undefined;
@@ -363,11 +409,44 @@ export default function CreateCourseModal({
 
   useEffect(() => {
     if (!open) return undefined;
-    const timer = setTimeout(() => setMobileStep(1), 0);
+    const timer = setTimeout(() => {
+      setMobileStep(1);
+      setSubmissionSucceeded(false);
+    }, 0);
     return () => clearTimeout(timer);
   }, [open]);
 
   if (!open) return null;
+
+  const policyConfirmations = [
+    {
+      key: "refundPolicyAccepted",
+      fa: "قوانین لغو و بازپرداخت EduTech را مطالعه کرده و می‌پذیرم.",
+      en: "I have read and accept EduTech’s cancellation and refund rules.",
+    },
+    {
+      key: "makeupClassPolicyAccepted",
+      fa: "جلسه از دست‌رفته را دوباره زمان‌بندی و شاگردان را آگاه می‌کنم.",
+      en: "I will reschedule missed sessions and notify students.",
+    },
+    {
+      key: "conductPolicyAccepted",
+      fa: "قوانین رفتاری، حریم خصوصی و عدم اشتراک لینک خصوصی صنف را می‌پذیرم.",
+      en: "I accept conduct, privacy, and private meeting-link rules.",
+    },
+    {
+      key: "intellectualPropertyAccepted",
+      fa: "برای تصاویر و محتوای این کورس حق استفاده دارم.",
+      en: "I have permission to use all images and course content.",
+    },
+  ];
+  const finalConfirmations = [
+    { key: "informationAccurate", fa: "تمام معلومات کورس دقیق است.", en: "All course information is accurate." },
+    { key: "contentPermission", fa: "اجازه استفاده از محتوای بارگذاری‌شده را دارم.", en: "I may use the uploaded content." },
+    { key: "teacherPoliciesAccepted", fa: "قوانین استاد و کورس EduTech را می‌پذیرم.", en: "I accept EduTech teacher and course policies." },
+    { key: "refundRulesAccepted", fa: "قوانین بازپرداخت و لغو را درک کرده‌ام.", en: "I understand refund and cancellation rules." },
+    { key: "sessionCommitmentAccepted", fa: "تعداد جلسات اعلام‌شده را برگزار می‌کنم.", en: "I will deliver the stated number of sessions." },
+  ];
 
   const handleThumbnailInputChange = (event) => {
     const file = event.target.files?.[0] || null;
@@ -377,7 +456,22 @@ export default function CreateCourseModal({
   };
 
   const handleApplyThumbnailCrop = (file) => {
+    if (file?.size > THUMBNAIL_MAX_BYTES) {
+      const message =
+        language === "fa"
+          ? "حجم تصویر کورس بعد از آماده‌سازی باید حداکثر ۵۰۰ کیلوبایت باشد."
+          : "The prepared course image must be 500 KB or smaller.";
+      setFieldErrors({ thumbnailFile: message });
+      setFormError(message);
+      setPendingThumbnailFile(null);
+      return;
+    }
     setForm((prev) => ({ ...prev, thumbnailFile: file }));
+    setFieldErrors((previous) => {
+      const next = { ...previous };
+      delete next.thumbnailFile;
+      return next;
+    });
     setFormError("");
     setPendingThumbnailFile(null);
   };
@@ -404,19 +498,33 @@ export default function CreateCourseModal({
       const titleLength = String(form.title || "").trim().length;
       const descriptionLength = String(form.description || "").trim().length;
       const previewVideoUrls = parseVideoLinks(form.previewVideoUrlsText);
-      const listFieldError = getInvalidListFieldError(listFieldConfigs, language);
+      const tags = parseTags(form.tagsText);
 
       if (titleLength < TITLE_MIN_CHARS || titleLength > TITLE_MAX_CHARS) {
         return language === "fa"
           ? `عنوان کورس باید بین ${TITLE_MIN_CHARS} تا ${TITLE_MAX_CHARS} کاراکتر باشد.`
           : `Course title must be between ${TITLE_MIN_CHARS} and ${TITLE_MAX_CHARS} characters.`;
       }
+      if (!/\p{L}/u.test(String(form.title || ""))) {
+        return language === "fa"
+          ? "عنوان کورس باید شامل حروف باشد و نمی‌تواند فقط عدد یا علامت باشد."
+          : "Course title must contain letters; it cannot be only numbers or symbols.";
+      }
       if (descriptionLength < DESCRIPTION_MIN_CHARS || descriptionLength > DESCRIPTION_MAX_CHARS) {
         return language === "fa"
           ? `توضیحات کامل باید بین ${DESCRIPTION_MIN_CHARS} تا ${DESCRIPTION_MAX_CHARS} کاراکتر باشد.`
           : `Detailed description must be between ${DESCRIPTION_MIN_CHARS} and ${DESCRIPTION_MAX_CHARS} characters.`;
       }
-      if (listFieldError) return listFieldError;
+      const normalizedTags = tags.map((item) => item.toLowerCase());
+      if (
+        tags.length > 10 ||
+        tags.some((item) => item.length > 30) ||
+        new Set(normalizedTags).size !== normalizedTags.length
+      ) {
+        return language === "fa"
+          ? "حداکثر ۱۰ برچسب متفاوت وارد کنید؛ هر برچسب حداکثر ۳۰ کاراکتر."
+          : "Add up to 10 unique tags, each no longer than 30 characters.";
+      }
       const previewVideoError = getPreviewVideoError(previewVideoUrls, language);
       if (previewVideoError) return previewVideoError;
       const thumbnail = form.thumbnailFile || null;
@@ -427,17 +535,21 @@ export default function CreateCourseModal({
       }
       if (thumbnail && thumbnail.size > THUMBNAIL_MAX_BYTES) {
         return language === "fa"
-          ? "حجم تصویر کورس باید حداکثر ۲ مگابایت باشد."
-          : "Course thumbnail must be 2MB or smaller.";
+          ? "حجم تصویر کورس باید حداکثر ۵۰۰ کیلوبایت باشد."
+          : "Course image must be 500 KB or smaller.";
       }
       return "";
     }
 
     if (step === 2) {
+      const listError = getInvalidListFieldError(listFieldConfigs, language);
+      if (listError) return listError;
+      return "";
+    }
+
+    if (step === 3) {
       const durationWeeks = sessionWeekCount;
       const totalSessions = Number(form.totalSessions || 0);
-      const maxStudents = Number(form.maxStudents || 0);
-      const minimumStudentsToStart = Number(form.minimumStudentsToStart || 0);
       const startDateValue = new Date(`${form.startDate}T00:00:00`);
       const startTime = String(form.startTime || "");
       const endTime = String(form.endTime || "");
@@ -483,6 +595,55 @@ export default function CreateCourseModal({
           ? "حداقل دو روز تدریس در هفته انتخاب کنید."
           : "Select at least two teaching days per week.";
       }
+      return "";
+    }
+
+    if (step === 4) {
+      const maxStudents = Number(form.maxStudents || 0);
+      const minimumStudentsToStart = Number(form.minimumStudentsToStart || 0);
+      const price = Number(form.price || 0);
+      const teacherDiscountPercentage = Number(form.teacherDiscountPercentage || 0);
+      const minimumAttendance = Number(form.certificateMinimumAttendance);
+      const minimumPassingGrade = Number(form.certificateMinimumPassingGrade);
+      if (form.pricingType !== "free" && (
+        price < minTeacherCoursePrice ||
+        price > PRICE_MAX_USD ||
+        !isWholeDollarAmount(price)
+      )) {
+        return language === "fa"
+          ? `برای کورس پولی، قیمت باید حداقل ${minTeacherCoursePrice} دالر، حداکثر ${PRICE_MAX_USD} دالر و فقط به‌صورت عدد صحیح باشد.`
+          : `For a paid course, price must be at least ${minTeacherCoursePrice} USD, at most ${PRICE_MAX_USD} USD, and use whole numbers only.`;
+      }
+      if (
+        form.pricingType !== "free" &&
+        (!Number.isFinite(teacherDiscountPercentage) ||
+          teacherDiscountPercentage < 0 ||
+          teacherDiscountPercentage > 100)
+      ) {
+        return language === "fa"
+          ? "درصد تخفیف مدرس باید بین ۰ تا ۱۰۰ باشد."
+          : "Teacher discount percentage must be between 0 and 100.";
+      }
+      if (
+        form.pricingType !== "free" &&
+        (!Number.isFinite(minimumAttendance) ||
+          minimumAttendance < 0 ||
+          minimumAttendance > 100)
+      ) {
+        return language === "fa"
+          ? "حداقل حضور باید بین ۰ تا ۱۰۰ درصد باشد."
+          : "Minimum attendance must be between 0 and 100 percent.";
+      }
+      if (
+        form.pricingType !== "free" &&
+        (!Number.isFinite(minimumPassingGrade) ||
+          minimumPassingGrade < 0 ||
+          minimumPassingGrade > 100)
+      ) {
+        return language === "fa"
+          ? "حداقل نمره قبولی باید بین ۰ تا ۱۰۰ درصد باشد."
+          : "Minimum passing grade must be between 0 and 100 percent.";
+      }
       if (!Number.isInteger(maxStudents) || maxStudents < MAX_STUDENTS_MIN || maxStudents > MAX_STUDENTS_MAX) {
         return language === "fa"
           ? `حداکثر شاگرد باید بین ${MAX_STUDENTS_MIN} تا ${MAX_STUDENTS_MAX} باشد.`
@@ -497,38 +658,274 @@ export default function CreateCourseModal({
           ? "حداقل شاگرد برای شروع باید حداقل ۱ نفر و کمتر یا مساوی ظرفیت کورس باشد."
           : "Minimum students to start must be at least 1 and cannot exceed course capacity.";
       }
-      return "";
     }
 
-    if (step === 3) {
-      if (form.pricingType === "free") return "";
-      const price = Number(form.price || 0);
-      const teacherDiscountPercentage = Number(form.teacherDiscountPercentage || 0);
-      const normalizedTeacherDiscountPercentage = clampPercentage(
-        Number.isFinite(teacherDiscountPercentage) ? teacherDiscountPercentage : 0,
-      );
-      if (
-        price < minTeacherCoursePrice ||
-        price > PRICE_MAX_USD ||
-        !isWholeDollarAmount(price)
-      ) {
+    if (step === 5) {
+      const accepted = [
+        form.refundPolicyAccepted,
+        form.makeupClassPolicyAccepted,
+        form.conductPolicyAccepted,
+        form.intellectualPropertyAccepted,
+        form.informationAccurate,
+        form.contentPermission,
+        form.teacherPoliciesAccepted,
+        form.refundRulesAccepted,
+        form.sessionCommitmentAccepted,
+      ].every(Boolean);
+      if (!accepted) {
         return language === "fa"
-          ? `برای کورس پولی، قیمت باید حداقل ${minTeacherCoursePrice} دالر، حداکثر ${PRICE_MAX_USD} دالر و فقط به‌صورت عدد صحیح باشد.`
-          : `For a paid course, price must be at least ${minTeacherCoursePrice} USD, at most ${PRICE_MAX_USD} USD, and use whole numbers only.`;
-      }
-      if (normalizedTeacherDiscountPercentage < 0 || normalizedTeacherDiscountPercentage > 100) {
-        return language === "fa"
-          ? "درصد تخفیف مدرس باید بین ۰ تا ۱۰۰ باشد."
-          : "Teacher discount percentage must be between 0 and 100.";
+          ? "برای ادامه، قوانین و تأییدهای نهایی کورس را مطالعه و قبول کنید."
+          : "Review and accept every course policy and final confirmation before continuing.";
       }
     }
 
     return "";
   };
 
-  const handleSubmit = (event) => {
+  const getValidationField = (step) => {
+    if (step === 1) {
+      const title = String(form.title || "").trim();
+      const description = String(form.description || "").trim();
+      const tags = parseTags(form.tagsText);
+      const normalizedTags = tags.map((item) => item.toLowerCase());
+      if (
+        title.length < TITLE_MIN_CHARS ||
+        title.length > TITLE_MAX_CHARS ||
+        !/\p{L}/u.test(title)
+      ) return "title";
+      if (
+        description.length < DESCRIPTION_MIN_CHARS ||
+        description.length > DESCRIPTION_MAX_CHARS
+      ) return "description";
+      if (
+        tags.length > 10 ||
+        tags.some((item) => item.length > 30) ||
+        new Set(normalizedTags).size !== normalizedTags.length
+      ) return "tagsText";
+      if (getPreviewVideoError(parseVideoLinks(form.previewVideoUrlsText), language)) {
+        return "previewVideoUrlsText";
+      }
+      return "thumbnailFile";
+    }
+    if (step === 2) {
+      if (invalidListField?.key) return invalidListField.key;
+      return "curriculumTopicsText";
+    }
+    if (step === 3) {
+      if (!selectedCategory) return "category";
+      if (!selectedCourseLanguage) return "language";
+      if (
+        !Number.isInteger(totalSessionCount) ||
+        totalSessionCount < COURSE_SESSIONS_MIN ||
+        totalSessionCount > COURSE_SESSIONS_MAX
+      ) return "totalSessions";
+      if (!form.startDate || !isAllowedCourseStartDate(form.startDate)) return "startDate";
+      if (
+        !isValidTimeText(form.startTime) ||
+        !isValidTimeText(form.endTime) ||
+        toMinutes(form.endTime) <= toMinutes(form.startTime)
+      ) return "classTime";
+      if (!Array.isArray(form.selectedDays) || new Set(form.selectedDays).size < 2) {
+        return "selectedDays";
+      }
+      return "schedule";
+    }
+    if (step === 4) {
+      const maxStudents = Number(form.maxStudents || 0);
+      const minimumStudentsToStart = Number(form.minimumStudentsToStart || 0);
+      if (form.pricingType !== "free") {
+        const price = Number(form.price || 0);
+        if (
+          price < minTeacherCoursePrice ||
+          price > PRICE_MAX_USD ||
+          !isWholeDollarAmount(price)
+        ) return "price";
+        const discount = Number(form.teacherDiscountPercentage || 0);
+        if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+          return "teacherDiscountPercentage";
+        }
+        const minimumAttendance = Number(form.certificateMinimumAttendance);
+        if (
+          !Number.isFinite(minimumAttendance) ||
+          minimumAttendance < 0 ||
+          minimumAttendance > 100
+        ) return "certificateMinimumAttendance";
+        const minimumPassingGrade = Number(form.certificateMinimumPassingGrade);
+        if (
+          !Number.isFinite(minimumPassingGrade) ||
+          minimumPassingGrade < 0 ||
+          minimumPassingGrade > 100
+        ) return "certificateMinimumPassingGrade";
+      }
+      if (
+        !Number.isInteger(maxStudents) ||
+        maxStudents < MAX_STUDENTS_MIN ||
+        maxStudents > MAX_STUDENTS_MAX
+      ) return "maxStudents";
+      if (
+        !Number.isInteger(minimumStudentsToStart) ||
+        minimumStudentsToStart < MINIMUM_STUDENTS_TO_START_MIN ||
+        minimumStudentsToStart > maxStudents
+      ) return "minimumStudentsToStart";
+      return "pricing";
+    }
+    if (step === 5) return "agreements";
+    return "form";
+  };
+
+  const validateStep = (step) => {
+    const message = getStepValidationError(step);
+    setFieldErrors(message ? { [getValidationField(step)]: message } : {});
+    return message;
+  };
+
+  const isFieldCurrentlyInvalid = (field) => {
+    if (!fieldErrors[field]) return false;
+    const value = String(form[field] || "").trim();
+
+    switch (field) {
+      case "title":
+        return (
+          value.length < TITLE_MIN_CHARS ||
+          value.length > TITLE_MAX_CHARS ||
+          !/\p{L}/u.test(value)
+        );
+      case "description":
+        return value.length < DESCRIPTION_MIN_CHARS || value.length > DESCRIPTION_MAX_CHARS;
+      case "tagsText": {
+        const tags = parseTags(form.tagsText);
+        const normalized = tags.map((item) => item.toLowerCase());
+        return (
+          tags.length > 10 ||
+          tags.some((item) => item.length > 30) ||
+          new Set(normalized).size !== normalized.length
+        );
+      }
+      case "previewVideoUrlsText":
+        return Boolean(
+          getPreviewVideoError(parseVideoLinks(form.previewVideoUrlsText), language),
+        );
+      case "thumbnailFile":
+        return !form.thumbnailFile || form.thumbnailFile.size > THUMBNAIL_MAX_BYTES;
+      case "targetAudienceText":
+      case "whatYouWillLearnText":
+      case "requirementsText":
+      case "curriculumTopicsText":
+        return !validateListField(parseListLines(form[field]));
+      case "certificateMinimumAttendance": {
+        if (form.pricingType === "free") return false;
+        const percentage = Number(form.certificateMinimumAttendance);
+        return !Number.isFinite(percentage) || percentage < 0 || percentage > 100;
+      }
+      case "certificateMinimumPassingGrade": {
+        if (form.pricingType === "free") return false;
+        const percentage = Number(form.certificateMinimumPassingGrade);
+        return !Number.isFinite(percentage) || percentage < 0 || percentage > 100;
+      }
+      case "category":
+        return !selectedCategory;
+      case "language":
+        return !selectedCourseLanguage;
+      case "totalSessions": {
+        const sessions = Number(form.totalSessions || 0);
+        return (
+          !Number.isInteger(sessions) ||
+          sessions < COURSE_SESSIONS_MIN ||
+          sessions > COURSE_SESSIONS_MAX
+        );
+      }
+      case "startDate": {
+        const date = new Date(`${form.startDate}T00:00:00`);
+        return (
+          !form.startDate ||
+          Number.isNaN(date.getTime()) ||
+          !isAllowedCourseStartDate(form.startDate)
+        );
+      }
+      case "classTime":
+        return (
+          !isValidTimeText(form.startTime) ||
+          !isValidTimeText(form.endTime) ||
+          toMinutes(form.endTime) <= toMinutes(form.startTime)
+        );
+      case "selectedDays":
+        return !Array.isArray(form.selectedDays) || new Set(form.selectedDays).size < 2;
+      case "price": {
+        if (form.pricingType === "free") return false;
+        const price = Number(form.price || 0);
+        return (
+          price < minTeacherCoursePrice ||
+          price > PRICE_MAX_USD ||
+          !isWholeDollarAmount(price)
+        );
+      }
+      case "teacherDiscountPercentage": {
+        if (form.pricingType === "free") return false;
+        const discount = Number(form.teacherDiscountPercentage);
+        return !Number.isFinite(discount) || discount < 0 || discount > 100;
+      }
+      case "maxStudents": {
+        const maximum = Number(form.maxStudents || 0);
+        return (
+          !Number.isInteger(maximum) ||
+          maximum < MAX_STUDENTS_MIN ||
+          maximum > MAX_STUDENTS_MAX
+        );
+      }
+      case "minimumStudentsToStart": {
+        const minimum = Number(form.minimumStudentsToStart || 0);
+        const maximum = Number(form.maxStudents || 0);
+        return (
+          !Number.isInteger(minimum) ||
+          minimum < MINIMUM_STUDENTS_TO_START_MIN ||
+          minimum > maximum
+        );
+      }
+      case "agreements":
+        return ![
+          form.refundPolicyAccepted,
+          form.makeupClassPolicyAccepted,
+          form.conductPolicyAccepted,
+          form.intellectualPropertyAccepted,
+          form.informationAccurate,
+          form.contentPermission,
+          form.teacherPoliciesAccepted,
+          form.refundRulesAccepted,
+          form.sessionCommitmentAccepted,
+        ].every(Boolean);
+      default:
+        return true;
+    }
+  };
+
+  const visibleFieldError = (field) =>
+    isFieldCurrentlyInvalid(field) ? fieldErrors[field] : "";
+
+  const fieldClass = (field, baseClass) =>
+    `${baseClass} ${
+      visibleFieldError(field)
+        ? "border-rose-500 bg-rose-50/60 focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+        : ""
+    }`;
+
+  const renderFieldError = (field) =>
+    visibleFieldError(field) ? (
+      <p className="mt-1.5 text-xs font-bold leading-5 text-rose-600" role="alert">
+        {visibleFieldError(field)}
+      </p>
+    ) : null;
+
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setFormError("");
+    for (let step = 1; step <= 5; step += 1) {
+      const validationError = validateStep(step);
+      if (validationError) {
+        setMobileStep(step);
+        setFormError(validationError);
+        return;
+      }
+    }
     const { pricingType, ...rest } = form;
     const isFree = pricingType === "free";
     const price = Number(form.price || 0);
@@ -544,6 +941,7 @@ export default function CreateCourseModal({
     const requirements = listFieldConfigs[2].items;
     const curriculumTopics = listFieldConfigs[3].items;
     const previewVideoUrls = parseVideoLinks(form.previewVideoUrlsText);
+    const tags = parseTags(form.tagsText);
     const listFieldError = getInvalidListFieldError(listFieldConfigs, language);
     const startDateValue = new Date(`${form.startDate}T00:00:00`);
     const startTime = form.startTime;
@@ -565,6 +963,14 @@ export default function CreateCourseModal({
         language === "fa"
           ? `عنوان کورس باید بین ${TITLE_MIN_CHARS} تا ${TITLE_MAX_CHARS} کاراکتر باشد.`
           : `Course title must be between ${TITLE_MIN_CHARS} and ${TITLE_MAX_CHARS} characters.`,
+      );
+      return;
+    }
+    if (!/\p{L}/u.test(String(form.title || ""))) {
+      setFormError(
+        language === "fa"
+          ? "عنوان کورس باید شامل حروف باشد و نمی‌تواند فقط عدد یا علامت باشد."
+          : "Course title must contain letters; it cannot be only numbers or symbols.",
       );
       return;
     }
@@ -662,8 +1068,8 @@ export default function CreateCourseModal({
     if (thumbnail && thumbnail.size > THUMBNAIL_MAX_BYTES) {
       setFormError(
         language === "fa"
-          ? "حجم تصویر کورس باید حداکثر ۲ مگابایت باشد."
-          : "Course thumbnail must be 2MB or smaller.",
+          ? "حجم تصویر کورس باید حداکثر ۵۰۰ کیلوبایت باشد."
+          : "Course image must be 500 KB or smaller.",
       );
       return;
     }
@@ -717,8 +1123,12 @@ export default function CreateCourseModal({
       endTime,
     }));
 
-    const startDateTime = new Date(`${form.startDate}T${startTime}:00`);
-    if (Number.isNaN(startDateTime.getTime())) {
+    const startDateTime = zonedDateTimeToUtc(
+      form.startDate,
+      startTime,
+      form.timezone,
+    );
+    if (!startDateTime) {
       setFormError(
         language === "fa"
           ? "تاریخ و زمان شروع کورس معتبر نیست."
@@ -727,17 +1137,22 @@ export default function CreateCourseModal({
       return;
     }
 
-    const computedEndDate = new Date(startDateTime);
-    computedEndDate.setDate(computedEndDate.getDate() + durationWeeks * 7 - 1);
-    const [endHours, endMinutesOnly] = endTime.split(":").map((value) => Number(value));
-    computedEndDate.setHours(
-      endHours || 0,
-      endMinutesOnly || 0,
-      0,
-      0,
+    const computedEndDate = zonedDateTimeToUtc(
+      addDaysToDateValue(form.startDate, durationWeeks * 7 - 1),
+      endTime,
+      form.timezone,
     );
+    if (!computedEndDate) {
+      setFormError(
+        language === "fa"
+          ? "تاریخ و زمان پایان کورس معتبر نیست."
+          : "Course end date/time is invalid.",
+      );
+      return;
+    }
 
-    onSubmit({
+    try {
+      await onSubmit({
       ...rest,
       category: selectedCategory,
       subcategory: selectedSubcategory || null,
@@ -761,7 +1176,40 @@ export default function CreateCourseModal({
       requirements,
       curriculumTopics,
       previewVideoUrls,
-    });
+      tags,
+      timezone: form.timezone,
+      certificate: {
+        enabled: !isFree,
+        minimumAttendance: Number(form.certificateMinimumAttendance || 0),
+        minimumPassingGrade: Number(form.certificateMinimumPassingGrade || 0),
+        assignmentsRequired: false,
+        finalProjectRequired: false,
+        fullPaymentRequired: true,
+      },
+      coursePolicies: {
+        refundPolicyAccepted: Boolean(form.refundPolicyAccepted),
+        attendancePolicy: "",
+        makeupClassPolicyAccepted: Boolean(form.makeupClassPolicyAccepted),
+        conductPolicyAccepted: Boolean(form.conductPolicyAccepted),
+        intellectualPropertyAccepted: Boolean(form.intellectualPropertyAccepted),
+      },
+      agreements: {
+        informationAccurate: Boolean(form.informationAccurate),
+        contentPermission: Boolean(form.contentPermission),
+        teacherPoliciesAccepted: Boolean(form.teacherPoliciesAccepted),
+        refundRulesAccepted: Boolean(form.refundRulesAccepted),
+        sessionCommitmentAccepted: Boolean(form.sessionCommitmentAccepted),
+      },
+      });
+      setSubmissionSucceeded(true);
+    } catch (error) {
+      setFormError(
+        error?.message ||
+          (language === "fa"
+            ? "ذخیره کورس ناموفق بود. دوباره تلاش کنید."
+            : "Could not save the course. Please try again."),
+      );
+    }
   };
 
   return (
@@ -781,28 +1229,94 @@ export default function CreateCourseModal({
           </button>
         </div>
 
+        {submissionSucceeded ? (
+          <div
+            className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 py-10 text-center sm:px-10"
+            dir={isRTL ? "rtl" : "ltr"}
+          >
+            <div className="grid h-20 w-20 place-items-center rounded-full bg-emerald-100 text-emerald-600">
+              <CheckCircle2 size={42} strokeWidth={2.4} />
+            </div>
+            <h4 className="mt-6 text-2xl font-black text-slate-950">
+              {language === "fa" ? "کورس با موفقیت ایجاد شد" : "Course created successfully"}
+            </h4>
+            <p className="mt-3 max-w-lg text-sm font-semibold leading-7 text-slate-600">
+              {language === "fa"
+                ? "اطلاعات کورس شما ذخیره شد و برای بررسی مدیر ارسال گردید. می‌توانید اکنون با خیال راحت به فهرست کورس‌ها برگردید."
+                : "Your course was saved and sent for admin review. You can now return to your course list."}
+            </p>
+            <div className="mt-7 w-full max-w-sm rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold leading-6 text-emerald-800">
+              {language === "fa"
+                ? "پس از تأیید مدیر، وضعیت کورس در همین صفحه به‌روزرسانی می‌شود."
+                : "After admin approval, the course status will update on this page."}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-7 h-12 w-full max-w-sm rounded-xl bg-[#0B4FD8] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#083fae]"
+            >
+              {language === "fa" ? "برگشت به کورس‌های من" : "Back to my courses"}
+            </button>
+          </div>
+        ) : (
         <form
           noValidate
           onSubmit={handleSubmit}
           className="min-h-0 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4"
           dir="ltr"
         >
-          {isMobileViewport ? (
-            <div className="mb-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3" dir={isRTL ? "rtl" : "ltr"}>
-              <p className="text-xs font-bold text-slate-500">
-                {language === "fa"
-                  ? `مرحله ${mobileStep} از ${CREATE_FORM_STEPS.length}`
-                  : `Step ${mobileStep} of ${CREATE_FORM_STEPS.length}`}
-              </p>
-              <p className="mt-1 text-sm font-black text-slate-700">
-                {language === "fa"
-                  ? CREATE_FORM_STEPS[mobileStep - 1]?.titleFa
-                  : CREATE_FORM_STEPS[mobileStep - 1]?.titleEn}
-              </p>
+          <div className="mb-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-3" dir={isRTL ? "rtl" : "ltr"}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-slate-500">
+                  {language === "fa"
+                    ? `مرحله ${mobileStep} از ${CREATE_FORM_STEPS.length}`
+                    : `Step ${mobileStep} of ${CREATE_FORM_STEPS.length}`}
+                </p>
+                <p className="mt-1 text-sm font-black text-slate-800">
+                  {language === "fa"
+                    ? CREATE_FORM_STEPS[mobileStep - 1]?.titleFa
+                    : CREATE_FORM_STEPS[mobileStep - 1]?.titleEn}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-700">
+                <Save size={14} />
+                <span>{draftStatus}</span>
+              </div>
             </div>
-          ) : null}
-          <div className="grid gap-3 text-start sm:gap-4 lg:grid-cols-2" dir={isRTL ? "rtl" : "ltr"}>
-          {formError ? (
+            <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
+              {CREATE_FORM_STEPS.map((step) => (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => {
+                    if (step.id > mobileStep) {
+                      const validationError = validateStep(mobileStep);
+                      if (validationError) {
+                        setFormError(validationError);
+                        return;
+                      }
+                    }
+                    setFormError("");
+                    setMobileStep(step.id);
+                  }}
+                  className={`flex min-w-[42px] flex-1 items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-black transition sm:min-w-[96px] ${
+                    mobileStep === step.id
+                      ? "bg-[#0B4FD8] text-white"
+                      : step.id < mobileStep
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-white text-slate-500"
+                  }`}
+                  aria-current={mobileStep === step.id ? "step" : undefined}
+                >
+                  {step.id < mobileStep ? <Check size={13} /> : <span>{step.id}</span>}
+                  <span className="hidden sm:inline">{language === "fa" ? step.titleFa : step.titleEn}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-3 text-start sm:grid-cols-2 sm:gap-4" dir={isRTL ? "rtl" : "ltr"}>
+          {formError && !Object.keys(fieldErrors).length ? (
             <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 sm:col-span-2">
               {formError}
             </div>
@@ -816,7 +1330,10 @@ export default function CreateCourseModal({
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
               placeholder={language === "fa" ? "عنوان کورس" : "Course title"}
-              className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold outline-none"
+              className={fieldClass(
+                "title",
+                "h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold outline-none",
+              )}
               minLength={TITLE_MIN_CHARS}
               required
             />
@@ -825,6 +1342,7 @@ export default function CreateCourseModal({
                 ? `${String(form.title || "").trim().length} / ${TITLE_MAX_CHARS} کاراکتر (حداقل ${TITLE_MIN_CHARS})`
                 : `${String(form.title || "").trim().length} / ${TITLE_MAX_CHARS} chars (min ${TITLE_MIN_CHARS})`}
             </p>
+            {renderFieldError("title")}
           </div>
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
@@ -834,7 +1352,10 @@ export default function CreateCourseModal({
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder={language === "fa" ? "توضیحات کامل" : "Detailed description"}
-              className="min-h-[90px] w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 text-sm font-semibold"
+              className={fieldClass(
+                "description",
+                "min-h-[90px] w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 text-sm font-semibold",
+              )}
               minLength={DESCRIPTION_MIN_CHARS}
               maxLength={DESCRIPTION_MAX_CHARS}
               required
@@ -845,6 +1366,27 @@ export default function CreateCourseModal({
               ? `${String(form.description || "").trim().length} / ${DESCRIPTION_MAX_CHARS} کاراکتر (حداقل ${DESCRIPTION_MIN_CHARS})`
               : `${String(form.description || "").trim().length} / ${DESCRIPTION_MAX_CHARS} chars (min ${DESCRIPTION_MIN_CHARS})`}
           </p>
+          <div className="-mt-3 sm:col-span-2">{renderFieldError("description")}</div>
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-bold text-slate-600">
+              {language === "fa" ? "برچسب‌های کورس" : "Course tags"}
+            </label>
+            <input
+              value={form.tagsText}
+              onChange={(event) => setForm({ ...form, tagsText: event.target.value })}
+              placeholder={language === "fa" ? "JavaScript، برنامه‌نویسی، توسعه وب" : "JavaScript, programming, web development"}
+              className={fieldClass(
+                "tagsText",
+                "h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold outline-none",
+              )}
+            />
+            <p className="mt-1 text-[11px] font-semibold text-slate-500">
+              {language === "fa"
+                ? `${parseTags(form.tagsText).length} از ۱۰ برچسب`
+                : `${parseTags(form.tagsText).length} of 10 tags`}
+            </p>
+            {renderFieldError("tagsText")}
+          </div>
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "تصویر کورس *" : "Course image *"}
@@ -853,14 +1395,18 @@ export default function CreateCourseModal({
               type="file"
               accept="image/png,image/jpeg,image/webp"
               onChange={handleThumbnailInputChange}
-              className="block w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-semibold text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-1.5 file:text-xs file:font-bold"
+              className={fieldClass(
+                "thumbnailFile",
+                "block w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-semibold text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-1.5 file:text-xs file:font-bold",
+              )}
             />
             <p className="mt-1 text-[11px] font-semibold text-slate-500">
               {language === "fa"
-                ? "اندازه دقیق پیشنهادی: ۱۲۰۰ × ۶۷۵ پیکسل (نسبت ۱۶:۹). با این اندازه نیازی به برش نیست. | PNG, JPG, WEBP | حداکثر ۲MB"
-                : "Exact recommended size: 1200 × 675 px (16:9). This size needs no cropping. | PNG, JPG, WEBP | Max 2MB"}
+                ? "اندازه پیشنهادی: ۱۲۰۰ × ۶۷۵ پیکسل (نسبت ۱۶:۹) | PNG, JPG, WEBP | حداکثر ۵۰۰KB"
+                : "Recommended size: 1200 × 675 px (16:9) | PNG, JPG, WEBP | Max 500 KB"}
               {form.thumbnailFile ? ` | ${form.thumbnailFile.name}` : ""}
             </p>
+            {renderFieldError("thumbnailFile")}
             {thumbnailPreviewUrl ? (
               <div className="mt-3 overflow-hidden rounded-xl border border-[#E2E8F0] bg-slate-50">
                 <img
@@ -893,7 +1439,10 @@ export default function CreateCourseModal({
               placeholder={
                 "https://www.youtube.com/watch?v=...\nhttps://youtu.be/...\nhttps://www.youtube.com/shorts/..."
               }
-              className="mt-3 min-h-[112px] w-full rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-800 outline-none focus:border-primary-300"
+              className={fieldClass(
+                "previewVideoUrlsText",
+                "mt-3 min-h-[112px] w-full rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-800 outline-none focus:border-primary-300",
+              )}
               dir="ltr"
             />
             <p className="mt-2 text-[11px] font-bold text-slate-500">
@@ -901,8 +1450,12 @@ export default function CreateCourseModal({
                 ? `${parseVideoLinks(form.previewVideoUrlsText).length} لینک اضافه شده`
                 : `${parseVideoLinks(form.previewVideoUrlsText).length} links added`}
             </p>
+            {renderFieldError("previewVideoUrlsText")}
           </div>
-          <div className="sm:col-span-2">
+          </div>
+
+          <div className={stepContainerClass(2)}>
+          <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "مخاطبین هدف" : "Target audience"}
             </label>
@@ -915,7 +1468,7 @@ export default function CreateCourseModal({
                   : "Who is this course for? (one item per line)"
               }
               className={`min-h-[90px] w-full rounded-xl p-3 text-sm font-semibold ${
-                invalidListField?.key === "targetAudienceText"
+                visibleFieldError("targetAudienceText")
                   ? "border border-rose-300 bg-rose-50"
                   : "border border-[#E2E8F0] bg-[#F8FAFC]"
               }`}
@@ -923,8 +1476,9 @@ export default function CreateCourseModal({
               maxLength={LIST_ITEM_MAX_CHARS * LIST_MAX_ITEMS}
               required
             />
+            {renderFieldError("targetAudienceText")}
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "آنچه شاگرد یاد می‌گیرد" : "What students will learn"}
             </label>
@@ -937,7 +1491,7 @@ export default function CreateCourseModal({
                   : "What students will learn (one item per line)"
               }
               className={`min-h-[90px] w-full rounded-xl p-3 text-sm font-semibold ${
-                invalidListField?.key === "whatYouWillLearnText"
+                visibleFieldError("whatYouWillLearnText")
                   ? "border border-rose-300 bg-rose-50"
                   : "border border-[#E2E8F0] bg-[#F8FAFC]"
               }`}
@@ -945,8 +1499,9 @@ export default function CreateCourseModal({
               maxLength={LIST_ITEM_MAX_CHARS * LIST_MAX_ITEMS}
               required
             />
+            {renderFieldError("whatYouWillLearnText")}
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "پیش‌نیازها" : "Requirements"}
             </label>
@@ -959,7 +1514,7 @@ export default function CreateCourseModal({
                   : "Requirements (one item per line)"
               }
               className={`min-h-[90px] w-full rounded-xl p-3 text-sm font-semibold ${
-                invalidListField?.key === "requirementsText"
+                visibleFieldError("requirementsText")
                   ? "border border-rose-300 bg-rose-50"
                   : "border border-[#E2E8F0] bg-[#F8FAFC]"
               }`}
@@ -967,8 +1522,9 @@ export default function CreateCourseModal({
               maxLength={LIST_ITEM_MAX_CHARS * LIST_MAX_ITEMS}
               required
             />
+            {renderFieldError("requirementsText")}
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "موضوعات درسی" : "Curriculum topics"}
             </label>
@@ -981,7 +1537,7 @@ export default function CreateCourseModal({
                   : "Curriculum topics (one item per line)"
               }
               className={`min-h-[90px] w-full rounded-xl p-3 text-sm font-semibold ${
-                invalidListField?.key === "curriculumTopicsText"
+                visibleFieldError("curriculumTopicsText")
                   ? "border border-rose-300 bg-rose-50"
                   : "border border-[#E2E8F0] bg-[#F8FAFC]"
               }`}
@@ -989,10 +1545,11 @@ export default function CreateCourseModal({
               maxLength={LIST_ITEM_MAX_CHARS * LIST_MAX_ITEMS}
               required
             />
+            {renderFieldError("curriculumTopicsText")}
           </div>
           </div>
 
-          <div className={stepContainerClass(2)}>
+          <div className={stepContainerClass(3)}>
           <CourseCategoryFields
             categories={categories}
             categoryId={selectedCategory}
@@ -1006,6 +1563,7 @@ export default function CreateCourseModal({
               }))
             }
           />
+          <div className="-mt-3 sm:col-span-2">{renderFieldError("category")}</div>
 
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
@@ -1031,7 +1589,9 @@ export default function CreateCourseModal({
             <select
               value={selectedCourseLanguage}
               onChange={(e) => setForm({ ...form, language: e.target.value })}
-              className={`h-11 w-full rounded-xl border border-[#E2E8F0] px-3 text-sm font-semibold ${
+              className={`h-11 w-full rounded-xl border px-3 text-sm font-semibold ${
+                visibleFieldError("language") ? "border-rose-500 bg-rose-50/60" : "border-[#E2E8F0]"
+              } ${
                 courseLanguageOptions.length ? "bg-[#F8FAFC]" : "bg-slate-100 text-slate-500"
               }`}
               required
@@ -1053,6 +1613,7 @@ export default function CreateCourseModal({
                 ? "فقط زبان‌هایی که در پروفایل استاد انتخاب شده‌اند قابل استفاده است."
                 : "Only languages selected in your teacher profile can be used."}
             </p>
+            {renderFieldError("language")}
           </div>
 
           <CourseTypePicker
@@ -1061,7 +1622,13 @@ export default function CreateCourseModal({
             language={language}
           />
 
-          <div className="lg:col-span-2">
+          <CourseTimeZonePicker
+            value={form.timezone}
+            onChange={(timezone) => setForm({ ...form, timezone })}
+            language={language}
+          />
+
+          <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "تعداد مجموعی جلسات" : "Total course sessions"}
             </label>
@@ -1073,9 +1640,13 @@ export default function CreateCourseModal({
               value={form.totalSessions}
               onChange={(e) => setForm({ ...form, totalSessions: e.target.value })}
               placeholder={language === "fa" ? "حداقل ۸ جلسه" : "At least 8 sessions"}
-              className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold"
+              className={fieldClass(
+                "totalSessions",
+                "h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold",
+              )}
               required
             />
+            {renderFieldError("totalSessions")}
           </div>
 
           <CourseStartDatePicker
@@ -1083,6 +1654,7 @@ export default function CreateCourseModal({
               onChange={(startDate) => setForm({ ...form, startDate })}
               language={language}
             />
+          <div className="-mt-3 sm:col-span-2">{renderFieldError("startDate")}</div>
 
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
@@ -1092,9 +1664,13 @@ export default function CreateCourseModal({
               type="time"
               value={form.startTime}
               onChange={(e) => setForm({ ...form, startTime: e.target.value })}
-              className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold"
+              className={fieldClass(
+                "classTime",
+                "h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold",
+              )}
               required
             />
+            {renderFieldError("classTime")}
           </div>
 
           <div>
@@ -1105,12 +1681,19 @@ export default function CreateCourseModal({
               type="time"
               value={form.endTime}
               onChange={(e) => setForm({ ...form, endTime: e.target.value })}
-              className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold"
+              className={fieldClass(
+                "classTime",
+                "h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold",
+              )}
               required
             />
           </div>
 
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 sm:col-span-2">
+          <div className={`rounded-xl border p-3 sm:col-span-2 ${
+            visibleFieldError("selectedDays")
+              ? "border-rose-500 bg-rose-50/60"
+              : "border-[#E2E8F0] bg-[#F8FAFC]"
+          }`}>
             <p className="text-xs font-bold text-slate-600">
               {language === "fa" ? "روزهای تدریس" : "Teaching days"}
             </p>
@@ -1144,11 +1727,12 @@ export default function CreateCourseModal({
                 {totalSessionCount || 0}
               </span>
             </div>
+            {renderFieldError("selectedDays")}
           </div>
           </div>
 
-          <div className={stepContainerClass(3)}>
-          <div>
+          <div className={stepContainerClass(4)}>
+          <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "نوع کورس" : "Course type"}
             </label>
@@ -1161,6 +1745,7 @@ export default function CreateCourseModal({
                   price: e.target.value === "free" ? "0" : form.price,
                   teacherDiscountPercentage:
                     e.target.value === "free" ? "0" : form.teacherDiscountPercentage,
+                  certificateEnabled: e.target.value !== "free",
                 })
               }
               className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold"
@@ -1170,7 +1755,76 @@ export default function CreateCourseModal({
             </select>
           </div>
 
-          <div>
+          <section className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <label className="flex items-center justify-between gap-3">
+              <span>
+                <span className="block text-sm font-black text-slate-900">
+                  {language === "fa" ? "گواهینامه کورس" : "Course certificate"}
+                </span>
+                <span className="mt-1 block text-xs font-semibold text-slate-500">
+                  {language === "fa"
+                    ? "گواهینامه مستقیماً به نوع کورس وابسته است."
+                    : "Certificate availability is directly tied to the course pricing type."}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={form.pricingType !== "free"}
+                disabled
+                readOnly
+                className="h-5 w-5 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </label>
+            <p className={`mt-3 rounded-xl border px-3 py-2 text-xs font-bold ${
+              form.pricingType === "free"
+                ? "border-amber-200 bg-amber-50 text-amber-800"
+                : "border-emerald-200 bg-emerald-50 text-emerald-800"
+            }`}>
+              {form.pricingType === "free"
+                ? language === "fa"
+                  ? "کورس رایگان شامل گواهینامه نمی‌شود. برای فعال‌کردن آن، نوع کورس را در همین مرحله به پولی تغییر دهید."
+                  : "Free courses do not include certificates. Change the course to paid in this step to enable it."
+                : language === "fa"
+                  ? "این کورس پولی است و پس از برآورده‌شدن شرایط زیر گواهینامه صادر می‌شود."
+                  : "This paid course includes a certificate after the requirements below are met."}
+            </p>
+            {form.pricingType !== "free" ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-bold text-slate-600">
+                  {language === "fa" ? "حداقل حضور (%)" : "Minimum attendance (%)"}
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={form.certificateMinimumAttendance}
+                    onChange={(event) => setForm({ ...form, certificateMinimumAttendance: event.target.value })}
+                    className={fieldClass(
+                      "certificateMinimumAttendance",
+                      "mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3",
+                    )}
+                  />
+                  {renderFieldError("certificateMinimumAttendance")}
+                </label>
+                <label className="text-xs font-bold text-slate-600">
+                  {language === "fa" ? "حداقل نمره قبولی (%)" : "Minimum passing grade (%)"}
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={form.certificateMinimumPassingGrade}
+                    onChange={(event) => setForm({ ...form, certificateMinimumPassingGrade: event.target.value })}
+                    className={fieldClass(
+                      "certificateMinimumPassingGrade",
+                      "mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3",
+                    )}
+                  />
+                  {renderFieldError("certificateMinimumPassingGrade")}
+                </label>
+              </div>
+            ) : null}
+          </section>
+
+          <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "روش پرداخت کورس" : "Course payment plan"}
             </label>
@@ -1180,7 +1834,9 @@ export default function CreateCourseModal({
                 setForm({ ...form, paymentPlan: event.target.value })
               }
               disabled={form.pricingType === "free"}
-              className={`h-11 w-full rounded-xl border border-[#E2E8F0] px-3 text-sm font-semibold ${
+              className={`h-11 w-full rounded-xl border px-3 text-sm font-semibold ${
+                visibleFieldError("price") ? "border-rose-500 bg-rose-50/60" : "border-[#E2E8F0]"
+              } ${
                 form.pricingType === "free"
                   ? "bg-slate-100 text-slate-400"
                   : "bg-[#F8FAFC]"
@@ -1210,7 +1866,7 @@ export default function CreateCourseModal({
             </p>
           </div>
 
-          <div className="lg:col-span-2">
+          <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "قیمت (دالر)" : "Price (USD)"}
             </label>
@@ -1235,6 +1891,7 @@ export default function CreateCourseModal({
               required={form.pricingType !== "free"}
               disabled={form.pricingType === "free"}
             />
+            {renderFieldError("price")}
             <div className="mt-2 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
               {form.pricingType === "free" ? (
                 <p className="text-[11px] font-semibold text-emerald-700">
@@ -1274,7 +1931,7 @@ export default function CreateCourseModal({
             </div>
           </div>
 
-          <div>
+          <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "درصد تخفیف مدرس (%)" : "Teacher discount percentage (%)"}
             </label>
@@ -1286,7 +1943,11 @@ export default function CreateCourseModal({
               value={form.teacherDiscountPercentage}
               onChange={(e) => setForm({ ...form, teacherDiscountPercentage: e.target.value })}
               placeholder={language === "fa" ? "اختیاری - مثال: 10" : "Optional - e.g. 10"}
-              className={`h-11 w-full rounded-xl border border-[#E2E8F0] px-3 text-sm font-semibold ${
+              className={`h-11 w-full rounded-xl border px-3 text-sm font-semibold ${
+                visibleFieldError("teacherDiscountPercentage")
+                  ? "border-rose-500 bg-rose-50/60"
+                  : "border-[#E2E8F0]"
+              } ${
                 form.pricingType === "free"
                   ? "bg-slate-100 text-slate-400"
                   : "bg-[#F8FAFC]"
@@ -1298,6 +1959,7 @@ export default function CreateCourseModal({
                 ? "بین ۰ تا ۱۰۰. مثال: اگر ۱۰ وارد کنید، ۱۰٪ از قیمت کورس کم می‌شود."
                 : "Between 0 and 100. Example: 10 means a 10% teacher discount."}
             </p>
+            {renderFieldError("teacherDiscountPercentage")}
           </div>
 
           <div>
@@ -1311,12 +1973,16 @@ export default function CreateCourseModal({
               value={form.maxStudents}
               onChange={(e) => setForm({ ...form, maxStudents: e.target.value })}
               placeholder={language === "fa" ? "حداکثر شاگرد" : "Max students"}
-              className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold"
+              className={fieldClass(
+                "maxStudents",
+                "h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold",
+              )}
               required
             />
+            {renderFieldError("maxStudents")}
           </div>
 
-          <div className="lg:col-span-2">
+          <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "حداقل شاگرد برای شروع" : "Minimum students to start"}
             </label>
@@ -1327,7 +1993,10 @@ export default function CreateCourseModal({
               step="1"
               value={form.minimumStudentsToStart}
               onChange={(e) => setForm({ ...form, minimumStudentsToStart: e.target.value })}
-              className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold"
+              className={fieldClass(
+                "minimumStudentsToStart",
+                "h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold",
+              )}
               placeholder={language === "fa" ? "مثلاً 10 نفر" : "For example 10 students"}
               required
             />
@@ -1336,10 +2005,104 @@ export default function CreateCourseModal({
                 ? "تا رسیدن به این تعداد، کورس خودکار شروع نمی‌شود؛ اما شما همچنان می‌توانید خودتان صنف را شروع کنید."
                 : "Until this number is reached, the course should not be considered ready automatically, but you can still start the class manually."}
             </p>
+            {renderFieldError("minimumStudentsToStart")}
           </div>
           </div>
 
-          <div className="mt-2 flex gap-2 sm:hidden">
+          <div className={stepContainerClass(5)}>
+            <section className={`sm:col-span-2 rounded-2xl border p-4 sm:p-5 ${
+              visibleFieldError("agreements")
+                ? "border-rose-500 bg-rose-50/50"
+                : "border-slate-200 bg-slate-50"
+            }`}>
+              <h4 className="text-base font-black text-slate-950">
+                {language === "fa" ? "قوانین کورس" : "Course policies"}
+              </h4>
+              <p className="mt-1 text-xs font-semibold leading-6 text-slate-500">
+                {language === "fa"
+                  ? "این قوانین از شاگرد، استاد و کیفیت کورس محافظت می‌کند."
+                  : "These policies protect students, teachers, and course quality."}
+              </p>
+              <div className="mt-4 space-y-3">
+                {policyConfirmations.map((item) => (
+                  <label key={item.key} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form[item.key])}
+                      onChange={(event) => setForm((previous) => ({ ...previous, [item.key]: event.target.checked }))}
+                      className="mt-0.5 h-5 w-5 shrink-0"
+                    />
+                    <span className="text-sm font-bold leading-6 text-slate-700">
+                      {language === "fa" ? item.fa : item.en}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </section>
+            <section className="sm:col-span-2 rounded-2xl border border-primary-100 bg-primary-50/60 p-4 sm:p-5">
+              <h4 className="text-base font-black text-slate-950">
+                {language === "fa" ? "تأییدهای نهایی استاد" : "Final teacher confirmations"}
+              </h4>
+              <div className="mt-4 space-y-3">
+                {finalConfirmations.map((item) => (
+                  <label key={item.key} className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form[item.key])}
+                      onChange={(event) => setForm((previous) => ({ ...previous, [item.key]: event.target.checked }))}
+                      className="mt-0.5 h-5 w-5 shrink-0"
+                    />
+                    <span className="text-sm font-bold leading-6 text-slate-700">
+                      {language === "fa" ? item.fa : item.en}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {renderFieldError("agreements")}
+            </section>
+          </div>
+
+          <div className={stepContainerClass(6)}>
+            <section className="sm:col-span-2 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              {thumbnailPreviewUrl ? (
+                <img src={thumbnailPreviewUrl} alt="" className="aspect-video max-h-72 w-full bg-slate-50 object-contain" />
+              ) : (
+                <div className="grid aspect-video max-h-52 place-items-center bg-slate-50 text-sm font-bold text-slate-400">
+                  {language === "fa" ? "تصویر کورس را دوباره انتخاب کنید" : "Select the course image again"}
+                </div>
+              )}
+              <div className="p-4 sm:p-6">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-black text-primary-700">
+                  <Eye size={16} />
+                  {language === "fa" ? "پیش‌نمایش قبل از ارسال" : "Preview before submission"}
+                </div>
+                <h4 className="mt-3 text-2xl font-black text-slate-950">{form.title || "—"}</h4>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    [language === "fa" ? "زبان" : "Language", selectedCourseLanguage || "—"],
+                    [language === "fa" ? "جلسات" : "Sessions", totalSessionCount || "—"],
+                    [language === "fa" ? "زمان" : "Time", `${form.startTime} – ${form.endTime}`],
+                    [language === "fa" ? "منطقه زمانی" : "Timezone", form.timezone],
+                    [language === "fa" ? "شروع" : "Start", form.startDate || "—"],
+                    [language === "fa" ? "ظرفیت" : "Capacity", form.maxStudents],
+                    [language === "fa" ? "روش پرداخت" : "Payment", form.pricingType === "free" ? (language === "fa" ? "رایگان" : "Free") : form.paymentPlan],
+                    [language === "fa" ? "قیمت" : "Price", form.pricingType === "free" ? "0 USD" : `${form.price || "—"} USD`],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl bg-slate-50 p-3">
+                      <p className="text-[11px] font-black text-slate-500">{label}</p>
+                      <p className="mt-1 break-words text-sm font-black text-slate-900">{value}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5">
+                  <p className="text-xs font-black text-slate-500">{language === "fa" ? "توضیحات کامل" : "Full description"}</p>
+                  <p className="mt-2 whitespace-pre-line text-sm font-semibold leading-7 text-slate-700">{form.description}</p>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="sticky bottom-0 z-10 mt-2 flex gap-2 border-t border-slate-200 bg-white/95 py-3 backdrop-blur sm:col-span-2">
             <button
               type="button"
               onClick={() => {
@@ -1371,7 +2134,7 @@ export default function CreateCourseModal({
                 type="button"
                 onClick={() => {
                   if (isSubmitting) return;
-                  const nextStepError = getStepValidationError(mobileStep);
+                  const nextStepError = validateStep(mobileStep);
                   if (nextStepError) {
                     setFormError(nextStepError);
                     return;
@@ -1387,26 +2150,9 @@ export default function CreateCourseModal({
             )}
           </div>
 
-          <div className="mt-3 hidden flex-col-reverse gap-2 border-t border-[#E2E8F0] pt-4 sm:col-span-2 sm:flex sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="h-11 flex-1 rounded-xl border border-[#E2E8F0] bg-white px-5 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-36 sm:flex-none"
-            >
-              {language === "fa" ? "لغو" : "Cancel"}
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#0B4FD8] px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-70 sm:w-44 sm:flex-none"
-            >
-              {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : null}
-              <span>{isSubmitting ? (language === "fa" ? "در حال ایجاد..." : "Creating") : (language === "fa" ? "ایجاد کورس" : "Create Course")}</span>
-            </button>
-          </div>
           </div>
         </form>
+        )}
       </div>
       <CourseImageCropModal
         open={Boolean(pendingThumbnailFile)}

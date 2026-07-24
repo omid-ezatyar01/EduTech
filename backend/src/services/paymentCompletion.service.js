@@ -8,6 +8,10 @@ import { resolveCourseAccessWindow } from "../utils/courseAccess.js";
 import { syncLegacyPaymentRecord } from "./paymentSync.service.js";
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 import { sendCourseEnrollmentCongratsEmail } from "../utils/Email.js";
+import {
+  publishCourseEnrollmentEvents,
+  publishCourseStarted,
+} from "./courseNotification.service.js";
 
 const ACTIVE_STATUS = new Set(["PENDING", "SUCCEEDED", "DUPLICATE_PAYMENT", "MANUAL_REVIEW", "FAILED", "EXPIRED"]);
 const NON_TRANSACTIONAL_MONGO_PATTERNS = [
@@ -163,7 +167,11 @@ export const completePayment = async ({
         course.enrolledStudentsCount = Number(course.enrolledStudentsCount || 0) + 1;
       }
 
-      await ensureCourseAutoStarted(course, { session });
+      const wasCourseStarted = Boolean(course.classStartedAt);
+      await ensureCourseAutoStarted(course, {
+        session,
+        suppressNotifications: true,
+      });
 
       result = {
         order: lockedOrder,
@@ -172,6 +180,7 @@ export const completePayment = async ({
         enrollment,
         duplicate: false,
         shouldSendEnrollmentEmail,
+        courseStarted: !wasCourseStarted && Boolean(course.classStartedAt),
       };
     };
 
@@ -212,6 +221,16 @@ export const completePayment = async ({
         });
       }
     }
+    if (result?.enrollment && result?.shouldSendEnrollmentEmail) {
+      await publishCourseEnrollmentEvents({
+        courseId: result.order?.courseId,
+        enrollmentId: result.enrollment?._id,
+        studentId: result.order?.userId,
+      });
+    }
+    if (result?.courseStarted) {
+      await publishCourseStarted({ courseId: result.order?.courseId });
+    }
     return result;
   } catch (error) {
     if (session && usesStandaloneMongo(error)) {
@@ -239,6 +258,16 @@ export const completePayment = async ({
             console.warn(`Failed to send enrollment email: ${sendError.message}`);
           });
         }
+      }
+      if (result?.enrollment && result?.shouldSendEnrollmentEmail) {
+        await publishCourseEnrollmentEvents({
+          courseId: result.order?.courseId,
+          enrollmentId: result.enrollment?._id,
+          studentId: result.order?.userId,
+        });
+      }
+      if (result?.courseStarted) {
+        await publishCourseStarted({ courseId: result.order?.courseId });
       }
       return result;
     }

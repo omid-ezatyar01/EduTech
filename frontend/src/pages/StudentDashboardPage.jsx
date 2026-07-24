@@ -300,7 +300,7 @@ function mapEnrollment(enrollment = {}, language = "fa") {
           ? "زمان‌بندی این کورس به‌زودی اعلام می‌شود"
           : "Course schedule will be announced soon."
     );
-  const description = course.shortDescription || course.description || "";
+  const description = course.description || "";
   const courseSlug = course.slug || course._id || "";
   const teacherName =
     teacher?.name ||

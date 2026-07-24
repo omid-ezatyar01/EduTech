@@ -37,6 +37,18 @@ const trustedEmbed = (value) => {
   } catch { return ""; }
 };
 
+const autoplayEmbed = (value) => {
+  const trustedUrl = trustedEmbed(value);
+  if (!trustedUrl) return "";
+  const url = new URL(trustedUrl);
+  url.searchParams.set("autoplay", "1");
+  if (url.hostname.includes("youtube")) {
+    url.searchParams.set("playsinline", "1");
+    url.searchParams.set("rel", "0");
+  }
+  return url.toString();
+};
+
 const VideoPreview = ({ active, embedUrl, onActivate, playLabel, thumbnailUrl, title }) => {
   if (!active) {
     return <div className="relative h-full w-full bg-gradient-to-br from-white via-blue-50 to-cyan-50">
@@ -52,7 +64,7 @@ const VideoPreview = ({ active, embedUrl, onActivate, playLabel, thumbnailUrl, t
     <div className="pointer-events-none absolute inset-0 z-0 grid place-items-center bg-gradient-to-br from-white via-blue-50 to-cyan-50" aria-hidden="true">
       <img src="/logo.png" alt="" className="w-[72%] max-w-sm object-contain"/>
     </div>
-    {embedUrl ? <iframe src={embedUrl} title={title} loading="eager" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen scrolling="no" className="relative z-10 h-full w-full border-0 bg-transparent"/> : null}
+    {embedUrl ? <iframe src={autoplayEmbed(embedUrl)} title={title} loading="eager" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen scrolling="no" className="relative z-10 h-full w-full border-0 bg-transparent"/> : null}
   </div>;
 };
 

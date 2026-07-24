@@ -7,7 +7,6 @@ import {
   Clock3,
   Download,
   FolderOpen,
-  Info,
   MonitorPlay,
   PlayCircle,
   Target,
@@ -21,7 +20,7 @@ import {
   fetchStudentEnrollments,
   fetchStudentResources,
 } from "../../services/courseService.js";
-import { clearAuth, getAuthUser, setAuthNotice } from "../../services/portal.js";
+import { clearAuth, setAuthNotice } from "../../services/portal.js";
 import {
   getLocalizedRequestErrorMessage,
   isUnauthorizedError,
@@ -29,21 +28,16 @@ import {
 import { buildTeacherPath } from "../utils/routePaths.js";
 import { resolveAvatarUrl } from "../utils/avatar.js";
 import { resolveStudentCourseProgressPercent } from "../utils/courseProgress.js";
+import {
+  formatTimeZoneOffset,
+  getDualTimeDetails,
+} from "../utils/timezone.js";
+import {
+  getPublicStateLabel,
+  getPublicStateTone,
+} from "../utils/coursePublicState.js";
 
 const COURSE_IMAGE_FALLBACK = "/logo.png";
-
-function formatLevelLabel(levelValue, language = "fa") {
-  const key = String(levelValue || "").trim().toLowerCase();
-  const map = {
-    beginner: { fa: "مبتدی", en: "Beginner" },
-    intermediate: { fa: "متوسط", en: "Intermediate" },
-    advanced: { fa: "پیشرفته", en: "Advanced" },
-    all: { fa: "همه سطوح", en: "All Levels" },
-  };
-  const hit = map[key];
-  if (hit) return language === "fa" ? hit.fa : hit.en;
-  return levelValue || (language === "fa" ? "نامشخص" : "Unknown");
-}
 
 function formatMeetingType(typeValue, language = "fa") {
   const key = String(typeValue || "").trim().toLowerCase();
@@ -317,7 +311,6 @@ function buildMockStudentWorkspaceData({
 
 export default function StudentCourseWorkspace({ language = "fa" }) {
   const isFa = language === "fa";
-  const user = getAuthUser() || { nameFa: "کاربر", email: "", avatar: "" };
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -410,11 +403,27 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
     if (status === "cancelled") return isFa ? "لغو شده" : "Cancelled";
     return isFa ? "در انتظار تایید" : "Pending approval";
   }, [enrollment?.enrollmentStatus, isFa]);
+  const courseTimeDetails = course?.startDate
+    ? getDualTimeDetails(
+        course.startDate,
+        null,
+        course?.timezone || "Asia/Kabul",
+        language,
+      )
+    : null;
+  const publicStateLabel = getPublicStateLabel(course, language);
   const quickFacts = [
     {
       icon: CalendarDays,
-      label: isFa ? "تاریخ شروع" : "Start Date",
-      value: formatDate(course?.startDate, language),
+      label: isFa ? "شروع به وقت استاد" : "Start in teacher time",
+      value: courseTimeDetails?.teacherDate || formatDate(course?.startDate, language),
+      secondary: courseTimeDetails
+        ? formatTimeZoneOffset(
+            courseTimeDetails.teacherZone,
+            language,
+            new Date(course.startDate),
+          )
+        : "",
     },
     {
       icon: Clock3,
@@ -560,6 +569,11 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
               <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
                 {statusLabel}
               </span>
+              {publicStateLabel ? (
+                <span className={`rounded-full border px-3 py-1 text-xs font-black ${getPublicStateTone(course)}`}>
+                  {publicStateLabel}
+                </span>
+              ) : null}
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
                 {course?.level || (isFa ? "همه سطوح" : "All Levels")}
               </span>
@@ -665,6 +679,11 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
                   </div>
                   <p className="text-xs font-bold text-slate-500">{item.label}</p>
                   <p className="mt-2 text-sm font-black text-slate-900">{item.value}</p>
+                  {item.secondary ? (
+                    <p className="mt-1 break-all text-[10px] font-bold text-slate-500" dir="ltr">
+                      {item.secondary}
+                    </p>
+                  ) : null}
                 </div>
               );
             })}
@@ -714,6 +733,33 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
               </p>
             </div>
           </div>
+          {courseTimeDetails ? (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+                <p className="text-xs font-black text-blue-700">
+                  {isFa ? "وقت تعیین‌شده استاد" : "Teacher’s scheduled time"}
+                </p>
+                <p className="mt-1.5 text-sm font-black text-slate-950">
+                  {courseTimeDetails.teacherDate}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-teal-100 bg-teal-50/70 p-4">
+                <p className="text-xs font-black text-teal-700">
+                  {isFa ? "وقت محل فعلی شما" : "Your local time"}
+                </p>
+                <p className="mt-1.5 text-sm font-black text-slate-950">
+                  {courseTimeDetails.localDate}
+                </p>
+                <p className="mt-1 break-all text-[10px] font-bold text-slate-500" dir="ltr">
+                  {formatTimeZoneOffset(
+                    courseTimeDetails.localZone,
+                    language,
+                    new Date(course.startDate),
+                  )}
+                </p>
+              </div>
+            </div>
+          ) : null}
           {scheduleRows.length ? (
             <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
               <div className="grid grid-cols-[1.2fr_1fr_1fr] bg-slate-50 px-4 py-3 text-xs font-black text-slate-500">

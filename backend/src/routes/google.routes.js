@@ -1,7 +1,6 @@
 import express from "express";
 import { protect } from "../middlewares/authMiddleware.js";
 import authorizeRoles from "../middlewares/authorizeRoles.js";
-import requireApprovedTeacher from "../middlewares/requireApprovedTeacher.js";
 import validateRequest from "../middlewares/validateRequest.js";
 import {
   getGoogleAccountStatus,
@@ -15,15 +14,13 @@ const router = express.Router();
 router.get(
   "/google/auth-url",
   protect,
-  authorizeRoles("teacher", "admin"),
-  requireApprovedTeacher(),
+  authorizeRoles("student", "teacher", "admin"),
   getGoogleOAuthUrl,
 );
 router.get(
   "/google/account-status",
   protect,
-  authorizeRoles("teacher", "admin"),
-  requireApprovedTeacher(),
+  authorizeRoles("student", "teacher", "admin"),
   getGoogleAccountStatus,
 );
 router.get(

@@ -26,6 +26,41 @@ const scheduleSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const certificateSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    minimumAttendance: { type: Number, min: 0, max: 100, default: 0 },
+    minimumPassingGrade: { type: Number, min: 0, max: 100, default: 0 },
+    assignmentsRequired: { type: Boolean, default: false },
+    finalProjectRequired: { type: Boolean, default: false },
+    fullPaymentRequired: { type: Boolean, default: true },
+  },
+  { _id: false },
+);
+
+const coursePoliciesSchema = new mongoose.Schema(
+  {
+    refundPolicyAccepted: { type: Boolean, default: false },
+    attendancePolicy: { type: String, trim: true, maxlength: 1200, default: "" },
+    makeupClassPolicyAccepted: { type: Boolean, default: false },
+    conductPolicyAccepted: { type: Boolean, default: false },
+    intellectualPropertyAccepted: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const courseAgreementsSchema = new mongoose.Schema(
+  {
+    informationAccurate: { type: Boolean, default: false },
+    contentPermission: { type: Boolean, default: false },
+    teacherPoliciesAccepted: { type: Boolean, default: false },
+    refundRulesAccepted: { type: Boolean, default: false },
+    sessionCommitmentAccepted: { type: Boolean, default: false },
+    acceptedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
 const courseSchema = new mongoose.Schema(
   {
     title: {
@@ -41,10 +76,6 @@ const courseSchema = new mongoose.Schema(
       index: true,
       trim: true,
       lowercase: true,
-    },
-    shortDescription: {
-      type: String,
-      trim: true,
     },
     description: {
       type: String,
@@ -101,6 +132,20 @@ const courseSchema = new mongoose.Schema(
           return !value || value.length <= 5;
         },
         message: "previewVideoUrls cannot contain more than 5 links",
+      },
+    },
+    tags: {
+      type: [String],
+      default: [],
+      validate: {
+        validator(value) {
+          return !value || (
+            value.length <= 10 &&
+            new Set(value.map((item) => String(item).trim().toLowerCase())).size === value.length &&
+            value.every((item) => String(item).trim().length <= 30)
+          );
+        },
+        message: "Course tags must be unique and contain at most 10 items of 30 characters",
       },
     },
     teacher: {
@@ -178,6 +223,43 @@ const courseSchema = new mongoose.Schema(
       type: Date,
       index: true,
     },
+    actualStartedAt: {
+      type: Date,
+      index: true,
+    },
+    startedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    currentSessionNumber: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    minimumReachedAt: {
+      type: Date,
+    },
+    lifecycleStatus: {
+      type: String,
+      enum: [
+        "draft",
+        "pending_review",
+        "changes_requested",
+        "approved",
+        "enrollment_open",
+        "enrollment_closed",
+        "minimum_not_reached",
+        "ready_to_start",
+        "in_progress",
+        "paused",
+        "awaiting_completion",
+        "completed",
+        "canceled",
+        "archived",
+      ],
+      default: "draft",
+      index: true,
+    },
     lastAutoRescheduledAt: {
       type: Date,
     },
@@ -244,6 +326,24 @@ const courseSchema = new mongoose.Schema(
     schedule: {
       type: [scheduleSchema],
       default: [],
+    },
+    timezone: {
+      type: String,
+      trim: true,
+      default: "Asia/Kabul",
+      maxlength: 80,
+    },
+    certificate: {
+      type: certificateSchema,
+      default: () => ({}),
+    },
+    coursePolicies: {
+      type: coursePoliciesSchema,
+      default: () => ({}),
+    },
+    agreements: {
+      type: courseAgreementsSchema,
+      default: () => ({}),
     },
     meetingType: {
       type: String,
@@ -461,7 +561,7 @@ courseSchema.pre("validate", async function () {
 });
 
 courseSchema.index(
-  { title: "text", shortDescription: "text", description: "text" },
+  { title: "text", description: "text" },
   {
     default_language: "none",
     language_override: "textSearchLanguage",

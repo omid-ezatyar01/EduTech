@@ -1,6 +1,5 @@
 import Course from "../models/Course.js";
 import Enrollment from "../models/Enrollment.js";
-import { deriveCourseSchedule } from "./courseSchedule.js";
 
 const DAY_INDEX_BY_KEY = {
   sunday: 0,
@@ -77,6 +76,16 @@ export const resolveCourseScheduledStartAt = (course = {}) => {
   const startDate = course?.startDate ? new Date(course.startDate) : null;
   if (!startDate || Number.isNaN(startDate.getTime())) return null;
 
+  // Current course forms persist the exact scheduled instant. Only combine a
+  // schedule time for legacy records that were saved at local midnight.
+  if (
+    startDate.getHours() !== 0 ||
+    startDate.getMinutes() !== 0 ||
+    startDate.getSeconds() !== 0
+  ) {
+    return startDate;
+  }
+
   const scheduleRows = Array.isArray(course?.schedule) ? course.schedule : [];
   const matchingRows = scheduleRows
     .filter((row) => dayToIndex(row?.day) === startDate.getDay())
@@ -101,24 +110,53 @@ export const resolveCourseScheduledStartAt = (course = {}) => {
   return scheduledStartAt;
 };
 
-export const shouldAutoStartCourse = (course = {}, options = {}) => {
-  if (!course) return false;
-  if (course.classStartedAt || course.classEndedAt || course.classCancelledAt) return false;
-  if (String(course.status || "") !== "published" || course.isPublished !== true) return false;
+// Kept as a compatibility export. Courses must now be started explicitly by
+// their teacher, never by a read request or background sweep.
+export const shouldAutoStartCourse = () => false;
 
-  const scheduledStartAt = resolveCourseScheduledStartAt(course);
-  if (!scheduledStartAt) return false;
+export const deriveCourseLifecycleStatus = (course = {}, options = {}) => {
+  if (!course) return "draft";
+  if (course.classCancelledAt || String(course.status || "") === "cancelled") {
+    return "canceled";
+  }
+  if (course.classEndedAt) return "completed";
+  if (course.endRequest?.status === "pending") return "awaiting_completion";
+  if (course.classStartedAt || course.actualStartedAt) return "in_progress";
+
+  const publicationStatus = String(course.status || "");
+  if (publicationStatus === "rejected") return "changes_requested";
+  if (publicationStatus === "pending") return "pending_review";
+  if (publicationStatus === "approved") return "approved";
+  if (publicationStatus === "draft") return "draft";
+  if (publicationStatus !== "published" || course.isPublished !== true) {
+    return course.lifecycleStatus || "draft";
+  }
 
   const now = options.now ? new Date(options.now) : new Date();
-  if (Number.isNaN(now.getTime()) || now < scheduledStartAt) return false;
+  const scheduledStartAt = resolveCourseScheduledStartAt(course);
+  if (
+    !scheduledStartAt ||
+    Number.isNaN(now.getTime()) ||
+    now < scheduledStartAt
+  ) {
+    return "enrollment_open";
+  }
 
-  const minimumStudentsToStart = Math.max(1, Number(course.minimumStudentsToStart || 1));
-  const enrolledStudentsCount = Math.max(
-    0,
-    Number(options.activeStudentsCount ?? course.enrolledStudentsCount ?? 0),
+  const minimumStudentsToStart = Math.max(
+    1,
+    Number(course.minimumStudentsToStart || 1),
   );
-
-  return enrolledStudentsCount >= minimumStudentsToStart;
+  const activeStudentsCount = Math.max(
+    0,
+    Number(
+      options.activeStudentsCount ??
+        course.enrolledStudentsCount ??
+        0,
+    ),
+  );
+  return activeStudentsCount >= minimumStudentsToStart
+    ? "ready_to_start"
+    : "minimum_not_reached";
 };
 
 export const resolveNextCourseStartDate = (value = new Date()) => {
@@ -133,22 +171,6 @@ export const resolveNextCourseStartDate = (value = new Date()) => {
     next.setMonth(next.getMonth() + 1);
   }
   return next;
-};
-
-const isCourseDueForAutomaticAction = (course = {}, now = new Date()) => {
-  if (!course || course.classStartedAt || course.classEndedAt || course.classCancelledAt) {
-    return false;
-  }
-  if (String(course.status || "") !== "published" || course.isPublished !== true) {
-    return false;
-  }
-
-  const scheduledStartAt = resolveCourseScheduledStartAt(course);
-  return Boolean(
-    scheduledStartAt &&
-    !Number.isNaN(now.getTime()) &&
-    now >= scheduledStartAt
-  );
 };
 
 const countActiveStudents = async (courseId, { now, session } = {}) => {
@@ -167,92 +189,46 @@ const countActiveStudents = async (courseId, { now, session } = {}) => {
 };
 
 export const ensureCourseAutoStarted = async (course = null, options = {}) => {
-  const startedAt = options.now ? new Date(options.now) : new Date();
-  if (!isCourseDueForAutomaticAction(course, startedAt)) return course;
-
+  if (!course) return course;
+  const now = options.now ? new Date(options.now) : new Date();
   const courseId = course?._id || course?.id;
   if (!courseId) return course;
 
+  const shouldCountStudents =
+    String(course.status || "") === "published" &&
+    course.isPublished === true &&
+    !course.classStartedAt &&
+    !course.classEndedAt &&
+    !course.classCancelledAt;
   const activeStudentsCount = Number.isFinite(Number(options.activeStudentsCount))
     ? Math.max(0, Number(options.activeStudentsCount))
-    : await countActiveStudents(courseId, { now: startedAt, session: options.session });
+    : shouldCountStudents
+      ? await countActiveStudents(courseId, { now, session: options.session })
+      : Math.max(0, Number(course.enrolledStudentsCount || 0));
   const minimumStudentsToStart = Math.max(1, Number(course.minimumStudentsToStart || 1));
-
-  if (activeStudentsCount < minimumStudentsToStart) {
-    const nextStartDate = resolveNextCourseStartDate(startedAt);
-    if (!nextStartDate) return course;
-    const previousStartDate = new Date(course.startDate);
-    if (!Number.isNaN(previousStartDate.getTime())) {
-      nextStartDate.setHours(
-        previousStartDate.getHours(),
-        previousStartDate.getMinutes(),
-        previousStartDate.getSeconds(),
-        previousStartDate.getMilliseconds(),
-      );
-    }
-
-    const derivedSchedule = deriveCourseSchedule({
-      startDate: nextStartDate,
-      schedule: course.schedule,
-      totalSessions: course.totalSessions,
-    });
-    const update = {
-      startDate: nextStartDate,
-      lastAutoRescheduledAt: startedAt,
-    };
-    if (derivedSchedule) {
-      update.endDate = derivedSchedule.endDate;
-      update.durationWeeks = derivedSchedule.durationWeeks;
-    }
-
-    const rescheduled = await Course.findOneAndUpdate(
-      {
-        _id: courseId,
-        startDate: course.startDate,
-        classStartedAt: null,
-        classEndedAt: null,
-        classCancelledAt: null,
-        status: "published",
-        isPublished: true,
-      },
-      { $set: update },
-      {
-        ...(options.session ? { session: options.session } : {}),
-        returnDocument: "after",
-      },
-    );
-
-    if (rescheduled) {
-      course.startDate = nextStartDate;
-      course.lastAutoRescheduledAt = startedAt;
-      if (derivedSchedule) {
-        course.endDate = derivedSchedule.endDate;
-        course.durationWeeks = derivedSchedule.durationWeeks;
-      }
-    }
-    return course;
+  const lifecycleStatus = deriveCourseLifecycleStatus(course, {
+    now,
+    activeStudentsCount,
+  });
+  const update = { lifecycleStatus };
+  if (
+    activeStudentsCount >= minimumStudentsToStart &&
+    !course.minimumReachedAt
+  ) {
+    update.minimumReachedAt = now;
   }
 
-  const started = await Course.findOneAndUpdate(
-    {
-      _id: courseId,
-      classStartedAt: null,
-      classEndedAt: null,
-      classCancelledAt: null,
-      status: "published",
-      isPublished: true,
-    },
-    {
-      $set: {
-        classStartedAt: startedAt,
-      },
-    },
-    {
-      ...(options.session ? { session: options.session } : {}),
-      returnDocument: "after",
-    },
-  );
-
-  if (started) course.classStartedAt = startedAt;
+  if (
+    String(course.lifecycleStatus || "") !== lifecycleStatus ||
+    update.minimumReachedAt
+  ) {
+    await Course.updateOne(
+      { _id: courseId },
+      { $set: update },
+      options.session ? { session: options.session } : {},
+    );
+    course.lifecycleStatus = lifecycleStatus;
+    if (update.minimumReachedAt) course.minimumReachedAt = now;
+  }
   return course;
 };

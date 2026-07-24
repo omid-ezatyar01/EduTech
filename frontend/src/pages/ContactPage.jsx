@@ -197,6 +197,8 @@ const CONTACT_EMAIL = "info@edutech.study";
 const WHATSAPP_CHANNEL_URL = "https://whatsapp.com/channel/0029Vb6syw8CRs1pexVczE0A";
 const TELEGRAM_CHANNEL_URL = "https://t.me/edutech_main";
 const INSTAGRAM_URL = "https://www.instagram.com/edutech_main/";
+const FACEBOOK_URL = "https://www.facebook.com/share/1KuPqHbFMv/";
+const YOUTUBE_URL = "https://www.youtube.com/@edutech_main";
 
 function WhatsAppIcon({ size = 20, className = "" }) {
   return (
@@ -550,7 +552,7 @@ export default function ContactPage({ language = "fa" }) {
               <p className="mt-3 text-sm font-medium leading-7 text-slate-600">
                 {data.followUs.text}
               </p>
-              <div className="mt-6 grid gap-2 sm:grid-cols-3">
+              <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                 {[
                   {
                     href: WHATSAPP_CHANNEL_URL,
@@ -566,6 +568,16 @@ export default function ContactPage({ language = "fa" }) {
                     href: INSTAGRAM_URL,
                     label: "Instagram",
                     icon: <SocialBrandIcon brand="instagram" size={20} className="text-pink-600" />,
+                  },
+                  {
+                    href: FACEBOOK_URL,
+                    label: "Facebook",
+                    icon: <SocialBrandIcon brand="facebook" size={20} className="text-blue-600" />,
+                  },
+                  {
+                    href: YOUTUBE_URL,
+                    label: "YouTube",
+                    icon: <SocialBrandIcon brand="youtube" size={20} className="text-red-600" />,
                   },
                 ].map((item) => (
                   <a

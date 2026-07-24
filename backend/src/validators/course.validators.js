@@ -67,6 +67,55 @@ const meetingTypeSchema = Joi.string().valid(
 );
 
 const languageSchema = Joi.string().trim().min(LANGUAGE_MIN_CHARS).max(LANGUAGE_MAX_CHARS);
+const titleSchema = Joi.string()
+  .trim()
+  .min(TITLE_MIN_CHARS)
+  .max(TITLE_MAX_CHARS)
+  .custom((value, helpers) =>
+    /\p{L}/u.test(value)
+      ? value
+      : helpers.message("Course title must contain at least one letter"),
+  );
+const timezoneSchema = Joi.string().trim().max(80).custom((value, helpers) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return value;
+  } catch {
+    return helpers.message("Course timezone must be a valid IANA timezone");
+  }
+});
+const tagsSchema = Joi.array()
+  .items(Joi.string().trim().min(1).max(30))
+  .max(10)
+  .custom((value, helpers) => {
+    const normalized = (value || []).map((item) => String(item).trim().toLowerCase());
+    return new Set(normalized).size === normalized.length
+      ? value
+      : helpers.message("Course tags cannot contain duplicates");
+  });
+const certificateSchema = Joi.object({
+  enabled: Joi.boolean().required(),
+  minimumAttendance: Joi.number().min(0).max(100).default(0),
+  minimumPassingGrade: Joi.number().min(0).max(100).default(0),
+  assignmentsRequired: Joi.boolean().default(false),
+  finalProjectRequired: Joi.boolean().default(false),
+  fullPaymentRequired: Joi.boolean().default(true),
+});
+const coursePoliciesSchema = Joi.object({
+  refundPolicyAccepted: Joi.boolean().required(),
+  attendancePolicy: Joi.string().trim().max(1200).allow("").default(""),
+  makeupClassPolicyAccepted: Joi.boolean().required(),
+  conductPolicyAccepted: Joi.boolean().required(),
+  intellectualPropertyAccepted: Joi.boolean().required(),
+});
+const agreementsSchema = Joi.object({
+  informationAccurate: Joi.boolean().valid(true).required(),
+  contentPermission: Joi.boolean().valid(true).required(),
+  teacherPoliciesAccepted: Joi.boolean().valid(true).required(),
+  refundRulesAccepted: Joi.boolean().valid(true).required(),
+  sessionCommitmentAccepted: Joi.boolean().valid(true).required(),
+  acceptedAt: Joi.date().optional(),
+});
 
 const thumbnailSchema = Joi.alternatives()
   .try(
@@ -154,8 +203,7 @@ const teacherCourseStartDateSchema = Joi.date().custom((value, helpers) => {
 }, "Teacher course start date validation");
 
 const baseCourseSchema = {
-  title: Joi.string().trim().min(TITLE_MIN_CHARS).max(TITLE_MAX_CHARS).required(),
-  shortDescription: Joi.string().trim().allow(""),
+  title: titleSchema.required(),
   description: Joi.string().trim().min(DESCRIPTION_MIN_CHARS).max(DESCRIPTION_MAX_CHARS).required(),
   category: objectId.required(),
   subcategory: objectId.allow(null, ""),
@@ -165,6 +213,7 @@ const baseCourseSchema = {
   thumbnail: thumbnailSchema.optional(),
   promoVideo: Joi.string().uri().optional().allow(""),
   previewVideoUrls: optionalPreviewVideoUrlsSchema.default([]),
+  tags: tagsSchema.default([]),
   price: Joi.number().min(0).max(PRICE_MAX_USD).required(),
   discountPrice: Joi.number().min(0).max(PRICE_MAX_USD).default(0),
   teacherDiscountPercentage: Joi.number().min(0).max(100).default(0),
@@ -177,6 +226,17 @@ const baseCourseSchema = {
   startDate: Joi.date().optional(),
   endDate: Joi.date().optional(),
   schedule: Joi.array().items(scheduleItemSchema).default([]),
+  timezone: timezoneSchema.default("Asia/Kabul"),
+  certificate: certificateSchema.default({
+    enabled: false,
+    minimumAttendance: 0,
+    minimumPassingGrade: 0,
+    assignmentsRequired: false,
+    finalProjectRequired: false,
+    fullPaymentRequired: true,
+  }),
+  coursePolicies: coursePoliciesSchema.optional(),
+  agreements: agreementsSchema.optional(),
   meetingType: meetingTypeSchema.default("recorded"),
   meetingLink: Joi.string().uri().allow(""),
   requirements: Joi.array().items(listItemSchema).max(LIST_MAX_ITEMS).default([]),
@@ -271,8 +331,7 @@ export const createCourseByAdminSchema = Joi.object(baseCourseSchema)
 
 export const updateCourseByAdminSchema = Joi.object({
   ...baseCourseSchema,
-  title: Joi.string().trim().min(TITLE_MIN_CHARS).max(TITLE_MAX_CHARS),
-  shortDescription: Joi.string().trim(),
+  title: titleSchema,
   description: Joi.string().trim().min(DESCRIPTION_MIN_CHARS).max(DESCRIPTION_MAX_CHARS),
   category: objectId,
   subcategory: objectId.allow(null, ""),
@@ -288,6 +347,11 @@ export const updateCourseByAdminSchema = Joi.object({
   paymentPlan: paymentPlanSchema,
   meetingType: meetingTypeSchema,
   previewVideoUrls: optionalPreviewVideoUrlsSchema,
+  tags: tagsSchema,
+  timezone: timezoneSchema,
+  certificate: certificateSchema,
+  coursePolicies: coursePoliciesSchema,
+  agreements: agreementsSchema,
   requirements: Joi.array().items(listItemSchema).max(LIST_MAX_ITEMS),
   whatYouWillLearn: Joi.array().items(listItemSchema).max(LIST_MAX_ITEMS),
   targetAudience: Joi.array().items(listItemSchema).max(LIST_MAX_ITEMS),
@@ -304,7 +368,11 @@ export const createCourseByTeacherSchema = Joi.object({
   teacher: Joi.forbidden(),
   status: Joi.forbidden(),
   startDate: teacherCourseStartDateSchema.optional(),
-  shortDescription: Joi.string().trim().allow(""),
+  tags: tagsSchema.default([]),
+  timezone: timezoneSchema.default("Asia/Kabul"),
+  certificate: certificateSchema.required(),
+  coursePolicies: coursePoliciesSchema.required(),
+  agreements: agreementsSchema.required(),
   requirements: Joi.array().items(listItemSchema).min(1).max(LIST_MAX_ITEMS).required(),
   whatYouWillLearn: Joi.array().items(listItemSchema).min(1).max(LIST_MAX_ITEMS).required(),
   targetAudience: Joi.array().items(listItemSchema).min(1).max(LIST_MAX_ITEMS).required(),
@@ -323,8 +391,7 @@ export const createCourseByTeacherSchema = Joi.object({
 }).messages({ "any.invalid": "{{#message}}" });
 
 export const updateCourseByTeacherSchema = Joi.object({
-  title: Joi.string().trim().min(TITLE_MIN_CHARS).max(TITLE_MAX_CHARS),
-  shortDescription: Joi.string().trim(),
+  title: titleSchema,
   description: Joi.string().trim().min(DESCRIPTION_MIN_CHARS).max(DESCRIPTION_MAX_CHARS),
   category: objectId,
   subcategory: objectId.allow(null, ""),
@@ -334,6 +401,11 @@ export const updateCourseByTeacherSchema = Joi.object({
   thumbnail: thumbnailSchema,
   promoVideo: Joi.string().uri().allow(""),
   previewVideoUrls: optionalPreviewVideoUrlsSchema,
+  tags: tagsSchema,
+  timezone: timezoneSchema,
+  certificate: certificateSchema,
+  coursePolicies: coursePoliciesSchema,
+  agreements: agreementsSchema,
   price: Joi.number().min(0).max(PRICE_MAX_USD),
   discountPrice: Joi.number().min(0).max(PRICE_MAX_USD),
   teacherDiscountPercentage: Joi.number().min(0).max(100),

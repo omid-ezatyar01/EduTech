@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Eye, Download, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Eye, Download, Loader2 } from "lucide-react";
 import CertificatePreview from "./CertificatePreview.jsx";
 
 const getInitials = (value = "") => {
@@ -19,23 +19,28 @@ export default function CertificateCard({
   language = "fa",
 }) {
   const [isDownloading, setIsDownloading] = useState(false);
-  const [avatarFailed, setAvatarFailed] = useState(false);
+  const [failedAvatarKey, setFailedAvatarKey] = useState("");
   const isCompleted = certificate.status === "completed";
   const isFa = language === "fa";
   const teacherName = String(certificate.teacher || "").trim() || (isFa ? "استاد" : "Teacher");
   const teacherInitials = getInitials(teacherName);
-  const hasTeacherAvatar = Boolean(String(certificate.teacherAvatar || "").trim()) && !avatarFailed;
+  const avatarKey = `${certificate?.id || ""}:${certificate?.teacherAvatar || ""}`;
+  const hasTeacherAvatar =
+    Boolean(String(certificate.teacherAvatar || "").trim()) &&
+    failedAvatarKey !== avatarKey;
   const t = {
     preview: isFa ? "پیش‌نمایش" : "Preview",
     teacher: isFa ? "استاد" : "Teacher",
     issueDate: isFa ? "تاریخ دریافت" : "Issue Date",
     progress: isFa ? "پیشرفت کورس" : "Course Progress",
     download: isFa ? "دانلود" : "Download",
+    requirements: isFa ? "شرایط دریافت گواهینامه" : "Certificate requirements",
+    courseEnd: isFa ? "پایان رسمی کورس" : "Official course completion",
+    attendance: isFa ? "حداقل حضور" : "Minimum attendance",
+    passingGrade: isFa ? "حداقل نمره قبولی" : "Minimum passing grade",
+    fullPayment: isFa ? "تکمیل پرداخت کورس" : "Complete course payment",
   };
-
-  useEffect(() => {
-    setAvatarFailed(false);
-  }, [certificate?.id, certificate?.teacherAvatar]);
+  const requirements = certificate?.certificateRequirements || {};
 
   const handleDownloadClick = async () => {
     setIsDownloading(true);
@@ -68,7 +73,7 @@ export default function CertificateCard({
               src={certificate.teacherAvatar}
               alt={teacherName}
               className="h-6 w-6 rounded-full border border-slate-200 object-cover"
-              onError={() => setAvatarFailed(true)}
+              onError={() => setFailedAvatarKey(avatarKey)}
             />
           ) : (
             <div className="grid h-6 w-6 place-items-center rounded-full border border-slate-200 bg-slate-100 text-[9px] font-black text-slate-700">
@@ -99,6 +104,34 @@ export default function CertificateCard({
             </div>
           </div>
         )}
+
+        <div className="mt-4 rounded-2xl border border-primary-100 bg-primary-50/60 p-3.5">
+          <p className="text-xs font-black text-primary-900">{t.requirements}</p>
+          <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+            <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <CheckCircle2 size={15} className="shrink-0 text-primary-600" />
+              {t.courseEnd}
+            </p>
+            {Number(requirements.minimumAttendance || 0) > 0 ? (
+              <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <CheckCircle2 size={15} className="shrink-0 text-primary-600" />
+                {t.attendance}: {Number(requirements.minimumAttendance).toLocaleString(isFa ? "fa-AF" : "en-US")}%
+              </p>
+            ) : null}
+            {Number(requirements.minimumPassingGrade || 0) > 0 ? (
+              <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <CheckCircle2 size={15} className="shrink-0 text-primary-600" />
+                {t.passingGrade}: {Number(requirements.minimumPassingGrade).toLocaleString(isFa ? "fa-AF" : "en-US")}%
+              </p>
+            ) : null}
+            {requirements.fullPaymentRequired !== false ? (
+              <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <CheckCircle2 size={15} className="shrink-0 text-primary-600" />
+                {t.fullPayment}
+              </p>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {/* Actions */}

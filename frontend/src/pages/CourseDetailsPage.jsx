@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUp,
   Archive,
+  Award,
   BookOpen,
   CalendarDays,
   CheckCircle2,
@@ -48,6 +49,17 @@ import {
   extractRouteIdentifier,
 } from "../utils/routePaths.js";
 import { shareContent } from "../utils/share.js";
+import {
+  formatTimeZoneOffset,
+  getDualTimeDetails,
+} from "../utils/timezone.js";
+import {
+  canEnrollFromPublicState,
+  getPublicActionLabel,
+  getPublicStateLabel,
+  getPublicStateMessage,
+  getPublicStateTone,
+} from "../utils/coursePublicState.js";
 import {
   useCryptoUsdtQuoteLabel,
   useRegionalCoursePrice,
@@ -311,13 +323,6 @@ function resolveCourseStartAt(course = {}) {
   if (!course?.startDate) return null;
   const date = new Date(course.startDate);
   if (Number.isNaN(date.getTime())) return null;
-
-  const firstSlot = Array.isArray(course.scheduleRows) ? course.scheduleRows[0] : null;
-  const timeMatch = String(firstSlot?.startTime || "").match(/^(\d{1,2}):(\d{2})$/);
-  if (timeMatch) {
-    date.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
-  }
-
   return date;
 }
 
@@ -584,7 +589,7 @@ export default function CourseDetailsPage({ t }) {
           ? `${courseTitle} را با کلاس‌های زنده و آموزش تعاملی در ایجوتک یاد بگیرید.`
           : `Learn ${courseTitle} through live, interactive classes at EduTech Academy.`;
         const description = truncateSeoText(
-          course.description || course.shortDescription || fallbackDescription,
+          course.description || fallbackDescription,
           160,
         );
         const schemaDescription = truncateSeoText(description, 60);
@@ -868,20 +873,17 @@ export default function CourseDetailsPage({ t }) {
     const maxStudents = Number(course?.maxStudents || 0);
     const enrolledStudents = Number(course?.enrolledStudentsCount || 0);
     const remainingSeats = Math.max(0, maxStudents - enrolledStudents);
-    const minimumStudentsToStart = Math.max(1, Number(course?.minimumStudentsToStart || 1));
 
     return {
       maxStudents,
-      minimumStudentsToStart,
       enrolledStudents,
-      minimumReached: enrolledStudents >= minimumStudentsToStart,
       remainingSeats,
       label:
         maxStudents > 0
           ? `${remainingSeats} / ${maxStudents}`
           : String(remainingSeats),
     };
-  }, [course?.maxStudents, course?.enrolledStudentsCount, course?.minimumStudentsToStart]);
+  }, [course?.maxStudents, course?.enrolledStudentsCount]);
 
   const sessionProgress = useMemo(() => {
     if (!course) return null;
@@ -921,6 +923,18 @@ export default function CourseDetailsPage({ t }) {
         : "Pay once and keep access through the end of the course.";
   const startDateText = formatStartDate(course?.startDate, language, null);
   const courseStartAt = resolveCourseStartAt(course);
+  const publicStateLabel = getPublicStateLabel(course, language);
+  const publicStateMessage = getPublicStateMessage(course, language);
+  const publicStateTone = getPublicStateTone(course);
+  const canPublicEnroll = canEnrollFromPublicState(course);
+  const courseTimeDetails = courseStartAt
+    ? getDualTimeDetails(
+        courseStartAt,
+        null,
+        course?.timezone || "Asia/Kabul",
+        language,
+      )
+    : null;
   const countdownText = formatCountdown(courseStartAt, nowMs, language);
   const levelText = formatLevel(course?.level, language);
   const courseLanguageText = formatCourseLanguage(course?.language, language);
@@ -936,14 +950,15 @@ export default function CourseDetailsPage({ t }) {
         : ""),
   ).trim();
   const teacherProfilePath = teacherId
-    ? buildTeacherPath({ _id: teacherId, name: course?.teacher })
+    ? buildTeacherPath({ _id: teacherId, name: course?.teacherName || course?.teacher })
     : "";
-  const teacherName = String(course?.teacher || "").trim() || null;
+  const teacherName =
+    String(course?.teacherName || course?.teacher || "").trim() ||
+    (language === "fa" ? "مدرس کورس" : "Course instructor");
   const courseImage = course?.thumbnail || COURSE_IMAGE_FALLBACK;
   const isHeroDescriptionExpanded = expandedDescriptionSlug === slugParam;
   const courseDescriptionSource = [
     course?.description,
-    course?.shortDescription,
     course?.about,
     detail?.aboutText,
   ].find((value) => String(value || "").trim());
@@ -963,6 +978,18 @@ export default function CourseDetailsPage({ t }) {
   const previewVideos = normalizePreviewVideoLinks(course);
   const isSpecialCourse = course?.courseType === "special";
   const courseEnded = Boolean(course?.classEndedAt);
+  const certificateIncluded =
+    !course?.isFree &&
+    Number(course?.price || 0) > 0 &&
+    course?.certificate?.enabled !== false;
+  const certificateMinimumAttendance = Math.max(
+    0,
+    Math.min(100, Number(course?.certificate?.minimumAttendance ?? 70)),
+  );
+  const certificateMinimumPassingGrade = Math.max(
+    0,
+    Math.min(100, Number(course?.certificate?.minimumPassingGrade ?? 60)),
+  );
   const courseReviews = Array.isArray(course?.reviews) ? course.reviews : [];
   const currentCourseId = String(course?._id || course?.id || "");
   const ownCourseReview = ratingAccess.submitted.find(
@@ -983,73 +1010,100 @@ export default function CourseDetailsPage({ t }) {
     ? Number(right.helpfulCount || 0) - Number(left.helpfulCount || 0)
     : new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
   const reviewCount = Math.max(Number(course?.ratingCount || 0), displayedCourseReviews.length);
-  const quickFacts = []
-    .concat(
-      teacherName
-        ? [{
-          icon: UsersRound,
-          label: language === "fa" ? "مدرس" : "Teacher",
-          value: teacherName,
-          href: teacherProfilePath,
-        }]
-      : [],
-    )
-    .concat(
-      startDateText
-        ? [{
-            icon: CalendarDays,
-            label: detail.nextBatch,
-            value: startDateText,
-          }]
-        : [],
-    )
-    .concat(
-      platformText
-        ? [{ icon: Video, label: detail.stats.platform, value: platformText }]
-        : [],
-    )
-    .concat(
-      levelText
-        ? [{ icon: BookOpen, label: language === "fa" ? "سطح دوره" : "Course level", value: levelText }]
-        : [],
-    )
-    .concat(
-      courseLanguageText
-        ? [{ icon: Languages, label: language === "fa" ? "زبان تدریس" : "Teaching language", value: courseLanguageText }]
-        : [],
-    )
-    .concat(
-      sessionProgress
-        ? [{
-            icon: BookOpen,
-            label: language === "fa" ? "مجموع جلسات" : "Total sessions",
-            value: String(sessionProgress.totalLessons),
-          }]
-        : [],
-    )
-    .concat(
-      !course?.isFree
-        ? [{
-            icon: CreditCard,
-            label: language === "fa" ? "روش پرداخت" : "Payment plan",
-            value: paymentPlanLabel,
-          }]
-        : [],
-    )
-    .concat(
-      seatInfo.maxStudents > 0
-        ? [{ icon: UsersRound, label: detail.stats.remaining, value: seatInfo.label }]
-        : [],
-    )
-    .concat(
-      seatInfo.minimumStudentsToStart > 0
-        ? [{
-            icon: UsersRound,
-            label: language === "fa" ? "حداقل شاگرد برای شروع" : "Minimum to start",
-            value: `${seatInfo.enrolledStudents} / ${seatInfo.minimumStudentsToStart}`,
-          }]
-        : [],
-    );
+  const quickFacts = [
+    {
+      icon: UsersRound,
+      label: language === "fa" ? "مدرس" : "Teacher",
+      value: teacherName,
+      href: teacherProfilePath,
+    },
+    {
+      icon: CalendarDays,
+      label: language === "fa" ? "شروع صنف" : "Class starts",
+      value: startDateText || "-",
+    },
+    {
+      icon: Video,
+      label: detail.stats.platform,
+      value: platformText || "-",
+    },
+    {
+      icon: BookOpen,
+      label: language === "fa" ? "سطح دوره" : "Course level",
+      value: levelText || "-",
+    },
+    {
+      icon: Languages,
+      label: language === "fa" ? "زبان تدریس" : "Teaching language",
+      value: courseLanguageText || "-",
+    },
+    {
+      icon: BookOpen,
+      label: language === "fa" ? "مجموع جلسات" : "Total sessions",
+      value: String(sessionProgress?.totalLessons || course?.totalSessions || "-"),
+    },
+    {
+      icon: CreditCard,
+      label: language === "fa" ? "روش پرداخت" : "Payment plan",
+      value: course?.isFree
+        ? language === "fa"
+          ? "رایگان"
+          : "Free"
+        : paymentPlanLabel,
+    },
+    {
+      icon: UsersRound,
+      label: language === "fa" ? "جای‌های باقی‌مانده" : "Remaining seats",
+      value: seatInfo.maxStudents > 0 ? seatInfo.label : "-",
+    },
+  ];
+  const teacherProfileSection = (
+    <section className="order-[-1] overflow-hidden rounded-3xl border border-primary-100 bg-white shadow-sm">
+      <div className="flex flex-col gap-4 bg-gradient-to-br from-primary-50 via-white to-teal-50 p-5 sm:flex-row sm:items-center sm:p-6">
+        <img
+          src={course?.teacherAvatar || COURSE_IMAGE_FALLBACK}
+          alt={teacherName}
+          className={`h-20 w-20 shrink-0 rounded-2xl border border-white bg-white shadow-sm ${course?.teacherAvatar ? "object-cover" : "object-contain p-3"}`}
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = COURSE_IMAGE_FALLBACK;
+            event.currentTarget.className =
+              "h-20 w-20 shrink-0 rounded-2xl border border-white bg-white object-contain p-3 shadow-sm";
+          }}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-black text-primary-700">
+            {language === "fa" ? "مدرس این کورس" : "Course instructor"}
+          </p>
+          <h2 className="mt-1 break-words text-xl font-black text-slate-950">
+            {teacherName}
+          </h2>
+          {course?.teacherRole ? (
+            <p className="mt-1 text-sm font-bold text-slate-600">
+              {course.teacherRole}
+            </p>
+          ) : null}
+          {course?.teacherBio ? (
+            <p
+              dir="auto"
+              className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-slate-600"
+            >
+              {course.teacherBio}
+            </p>
+          ) : null}
+        </div>
+        {teacherProfilePath ? (
+          <Link
+            to={teacherProfilePath}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-primary-700"
+          >
+            {language === "fa" ? "مشاهده پروفایل مدرس" : "View teacher profile"}
+            <ArrowIcon size={16} />
+          </Link>
+        ) : null}
+      </div>
+    </section>
+  );
 
   const handleShare = async () => {
     const shared = await shareContent({
@@ -1122,13 +1176,7 @@ export default function CourseDetailsPage({ t }) {
     );
   }
 
-  const purchaseButtonLabel = course?.isFree
-    ? language === "fa"
-      ? "ثبت‌نام رایگان"
-      : "Join for free"
-    : language === "fa"
-      ? "ثبت‌نام و پرداخت"
-      : "Enroll & pay";
+  const purchaseButtonLabel = getPublicActionLabel(course, language, false);
 
   const sectionLinks = [
     { href: "#course-overview", label: language === "fa" ? "معرفی کورس" : "Overview" },
@@ -1138,7 +1186,7 @@ export default function CourseDetailsPage({ t }) {
   ];
 
   return (
-    <section className={`overflow-x-hidden bg-slate-50 pt-6 sm:pt-8 ${!isEnrolled && !courseEnded ? "pb-24" : "pb-16"}`} dir={dir}>
+    <section className={`overflow-x-hidden bg-slate-50 pt-6 sm:pt-8 ${!isEnrolled && !courseEnded && canPublicEnroll ? "pb-24" : "pb-16"}`} dir={dir}>
       <div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-center gap-2 px-1 text-xs font-bold text-slate-500 sm:text-sm">
           <Link className="hover:text-primary-700" to="/">
@@ -1166,11 +1214,12 @@ export default function CourseDetailsPage({ t }) {
             </a>
           </div>
         ) : !isEnrolled ? (
-          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900">
-            <BookOpen size={18} className="shrink-0 text-sky-700" />
-            {language === "fa"
-              ? "شما هنوز در این کورس ثبت‌نام نکرده‌اید."
-              : "You are not enrolled in this course yet."}
+          <div className={`mb-5 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${publicStateTone}`}>
+            <BookOpen size={18} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-black">{publicStateLabel}</p>
+              {publicStateMessage ? <p className="mt-1 leading-6">{publicStateMessage}</p> : null}
+            </div>
           </div>
         ) : (
           <div className="mb-5 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
@@ -1183,7 +1232,7 @@ export default function CourseDetailsPage({ t }) {
 
         <div
           className={`grid gap-6 ${
-            isEnrolled || courseEnded ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"
+            isEnrolled || courseEnded || !canPublicEnroll ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"
           }`}
         >
           <div className="flex flex-col gap-5">
@@ -1206,6 +1255,12 @@ export default function CourseDetailsPage({ t }) {
                       {courseEnded ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-800">
                           <Archive size={13} />{language === "fa" ? "کورس پایان‌یافته" : "Ended course"}
+                        </span>
+                      ) : null}
+                      {publicStateLabel ? (
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-black ${publicStateTone}`}>
+                          <Clock3 size={13} />
+                          {publicStateLabel}
                         </span>
                       ) : null}
                       {Number(course?.ratingCount || 0) > 0 ? (
@@ -1329,47 +1384,65 @@ export default function CourseDetailsPage({ t }) {
               </div>
             ) : null}
 
-            {teacherName ? (
-              <div className="overflow-hidden rounded-3xl border border-primary-100 bg-white shadow-sm">
-                <div className="flex flex-col gap-4 bg-gradient-to-br from-primary-50 via-white to-teal-50 p-5 sm:flex-row sm:items-center sm:p-6">
-                  <img
-                    src={course?.teacherAvatar || COURSE_IMAGE_FALLBACK}
-                    alt={teacherName}
-                    className={`h-20 w-20 shrink-0 rounded-2xl border border-white bg-white shadow-sm ${course?.teacherAvatar ? "object-cover" : "object-contain p-3"}`}
-                    onError={(event) => {
-                      event.currentTarget.onerror = null;
-                      event.currentTarget.src = COURSE_IMAGE_FALLBACK;
-                      event.currentTarget.className = "h-20 w-20 shrink-0 rounded-2xl border border-white bg-white object-contain p-3 shadow-sm";
-                    }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-black text-primary-700">
-                      {language === "fa" ? "مدرس این کورس" : "Your instructor"}
-                    </p>
-                    <h2 className="mt-1 break-words text-xl font-black text-slate-950">
-                      {teacherName}
-                    </h2>
-                    {course?.teacherRole ? (
-                      <p className="mt-1 text-sm font-bold text-slate-600">{course.teacherRole}</p>
-                    ) : null}
-                    {course?.teacherBio ? (
-                      <p dir="auto" className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-slate-600">
-                        {course.teacherBio}
-                      </p>
-                    ) : null}
+            <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <div
+                className={`p-5 sm:p-6 ${
+                  certificateIncluded
+                    ? "bg-gradient-to-br from-amber-50 via-white to-primary-50"
+                    : "bg-slate-50"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${
+                      certificateIncluded
+                        ? "bg-amber-500 text-white"
+                        : "bg-slate-200 text-slate-500"
+                    }`}
+                  >
+                    <Award size={21} />
                   </div>
-                  {teacherProfilePath ? (
-                    <Link
-                      to={teacherProfilePath}
-                      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-primary-700"
-                    >
-                      {language === "fa" ? "مشاهده پروفایل" : "View profile"}
-                      <ArrowIcon size={16} />
-                    </Link>
-                  ) : null}
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-black text-slate-950">
+                      {language === "fa"
+                        ? "شرایط دریافت گواهینامه"
+                        : "Certificate requirements"}
+                    </h2>
+                    <p className="mt-1 text-sm font-semibold leading-7 text-slate-600">
+                      {certificateIncluded
+                        ? language === "fa"
+                          ? "این کورس پولی شامل گواهینامه ایجوتک است؛ برای دریافت آن باید همه شرایط زیر را تکمیل کنید."
+                          : "This paid course includes an EduTech certificate after all requirements below are completed."
+                        : language === "fa"
+                          ? "این کورس رایگان است و شامل گواهینامه نمی‌شود."
+                          : "This free course does not include a certificate."}
+                    </p>
+                  </div>
                 </div>
+                {certificateIncluded ? (
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      language === "fa" ? "پایان رسمی کورس" : "Official course completion",
+                      language === "fa"
+                        ? `حداقل ${certificateMinimumAttendance}٪ حضور`
+                        : `At least ${certificateMinimumAttendance}% attendance`,
+                      language === "fa"
+                        ? `حداقل ${certificateMinimumPassingGrade}٪ نمره قبولی`
+                        : `At least ${certificateMinimumPassingGrade}% passing grade`,
+                      language === "fa" ? "پرداخت کامل کورس" : "Full course payment",
+                    ].map((requirement) => (
+                      <div
+                        key={requirement}
+                        className="flex items-center gap-2 rounded-xl border border-white bg-white/90 px-3 py-3 text-xs font-black text-slate-800 shadow-sm"
+                      >
+                        <CheckCircle2 size={16} className="shrink-0 text-emerald-600" />
+                        <span>{requirement}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
+            </section>
 
             {previewVideos.length ? (
               <div className="overflow-hidden rounded-3xl border border-red-100 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
@@ -1533,8 +1606,39 @@ export default function CourseDetailsPage({ t }) {
                     </p>
                   </div>
                 ) : null}
+                {courseTimeDetails ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-blue-700">
+                        {language === "fa" ? "وقت تعیین‌شده استاد" : "Teacher’s scheduled time"}
+                      </p>
+                      <p className="mt-1.5 text-sm font-black text-slate-950">
+                        {courseTimeDetails.teacherDate}
+                      </p>
+                      <p className="mt-1 break-all text-[11px] font-bold text-slate-500" dir="ltr">
+                        {formatTimeZoneOffset(courseTimeDetails.teacherZone, language, courseStartAt)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-teal-100 bg-teal-50/70 p-4">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-teal-700">
+                        {language === "fa" ? "وقت محل فعلی شما" : "Your local time"}
+                      </p>
+                      <p className="mt-1.5 text-sm font-black text-slate-950">
+                        {courseTimeDetails.localDate}
+                      </p>
+                      <p className="mt-1 break-all text-[11px] font-bold text-slate-500" dir="ltr">
+                        {formatTimeZoneOffset(courseTimeDetails.localZone, language, courseStartAt)}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
                 {weeklyScheduleRows.length ? (
                   <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                    <p className="border-b border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-500">
+                      {language === "fa"
+                        ? "تقسیم اوقات هفتگی بر اساس وقت استاد"
+                        : "Weekly schedule in the teacher’s timezone"}
+                    </p>
                     <div className="grid grid-cols-3 gap-2 bg-slate-100 px-3 py-2.5 text-[11px] font-black text-slate-500">
                       <span>{language === "fa" ? "روز" : "Day"}</span>
                       <span>{language === "fa" ? "شروع" : "Starts"}</span>
@@ -1558,6 +1662,8 @@ export default function CourseDetailsPage({ t }) {
                 )}
               </div>
             </div>
+
+            {teacherProfileSection}
 
             <div className="grid gap-5 lg:grid-cols-2">
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -1716,7 +1822,7 @@ export default function CourseDetailsPage({ t }) {
 
           </div>
 
-          {!isEnrolled && !courseEnded ? (
+          {!isEnrolled && !courseEnded && canPublicEnroll ? (
             <aside className="hidden xl:block">
               <div className="sticky top-24 overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.10)]">
                 <p className="text-center text-xs font-black uppercase tracking-wide text-slate-500">
@@ -1766,30 +1872,6 @@ export default function CourseDetailsPage({ t }) {
                       </span>
                     </div>
                   ) : null}
-                  {seatInfo.minimumStudentsToStart > 0 ? (
-                    <div className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
-                      seatInfo.minimumReached ? "bg-emerald-50" : "bg-amber-50"
-                    }`}>
-                      <div className={`flex items-center gap-2 text-sm font-semibold ${
-                        seatInfo.minimumReached ? "text-emerald-800" : "text-amber-800"
-                      }`}>
-                        <UsersRound size={15} className={seatInfo.minimumReached ? "text-emerald-700" : "text-amber-700"} />
-                        {language === "fa" ? "حداقل شاگرد برای شروع" : "Minimum students to start"}
-                      </div>
-                      <span className={`text-xs font-black ${
-                        seatInfo.minimumReached ? "text-emerald-900" : "text-amber-900"
-                      }`}>
-                        {seatInfo.enrolledStudents} / {seatInfo.minimumStudentsToStart}
-                      </span>
-                    </div>
-                  ) : null}
-                  {!seatInfo.minimumReached ? (
-                    <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-6 text-amber-900">
-                      {language === "fa"
-                        ? "کورس بعد از رسیدن به حداقل شاگردها آماده شروع می‌شود، اما مدرس می‌تواند خودش زودتر صنف را شروع کند."
-                        : "The course becomes ready once the minimum student count is reached, but the teacher can still start the class manually earlier."}
-                    </div>
-                  ) : null}
                   {startDateText ? (
                     <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
@@ -1836,7 +1918,7 @@ export default function CourseDetailsPage({ t }) {
         </div>
       </div>
 
-      {!isEnrolled && !courseEnded ? (
+      {!isEnrolled && !courseEnded && canPublicEnroll ? (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur xl:hidden">
           <div className="mx-auto flex max-w-[1340px] items-center gap-3">
             <div className="min-w-0">
@@ -1876,7 +1958,7 @@ export default function CourseDetailsPage({ t }) {
       <button
         type="button"
         onClick={() => window.scrollTo({ top: 0, left: 0, behavior: "smooth" })}
-        className={`fixed right-5 z-[29] grid h-12 w-12 place-items-center rounded-full border border-primary-400 bg-white text-primary-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100 ${!isEnrolled && !courseEnded ? "bottom-24 xl:bottom-5" : "bottom-5"} ${showScrollTop ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"}`}
+        className={`fixed right-5 z-[29] grid h-12 w-12 place-items-center rounded-full border border-primary-400 bg-white text-primary-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100 ${!isEnrolled && !courseEnded && canPublicEnroll ? "bottom-24 xl:bottom-5" : "bottom-5"} ${showScrollTop ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"}`}
         aria-label={language === "fa" ? "رفتن به بالای صفحه" : "Scroll to top"}
         title={language === "fa" ? "رفتن به بالای صفحه" : "Scroll to top"}
       >

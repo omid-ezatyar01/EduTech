@@ -103,7 +103,7 @@ const mapTeacherCourse = (course = {}) => {
     _id: course._id,
     slug: course.slug || "",
     title: course.title || "",
-    description: course.shortDescription || course.description || "",
+    description: course.description || "",
     level: course.level || "beginner",
     language: course.language || "English",
     duration: course.duration || "",

@@ -21,6 +21,7 @@ import {
   getLocalizedRequestErrorMessage,
   isUnauthorizedError,
 } from "../../services/http.js";
+import { getDualTimeDetails } from "../utils/timezone.js";
 
 const mockStudent = {
   id: "",
@@ -185,25 +186,20 @@ const formatLocalizedDate = (date, language) => {
   return `${year} ${month} ${day}, ${weekday}`.trim();
 };
 
-const parseDate = (value) => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const getEffectiveSessionStatus = (session = {}, now = new Date()) => {
+const getEffectiveSessionStatus = (session = {}) => {
   const rawStatus = String(session.status || "scheduled").toLowerCase();
-  if (rawStatus === "cancelled") return "cancelled";
-
-  const startAt = parseDate(session.startAt);
-  const endAt = parseDate(session.endAt);
-  const closeAt = parseDate(session?.linkAvailability?.closeAt);
-
-  if (rawStatus === "completed") return "completed";
-  if (endAt && now >= endAt) return "completed";
-  if (closeAt && now > closeAt) return "completed";
-  if (startAt && endAt && now >= startAt && now < endAt) return "live";
-  return rawStatus === "pending" ? "pending" : "scheduled";
+  const supportedStatuses = new Set([
+    "scheduled",
+    "ready",
+    "live",
+    "delayed",
+    "completed",
+    "cancelled",
+    "rescheduled",
+    "missed",
+    "pending",
+  ]);
+  return supportedStatuses.has(rawStatus) ? rawStatus : "scheduled";
 };
 
 const getSessionSortTime = (row = {}) => {
@@ -233,14 +229,18 @@ export default function LiveClass({ language = "fa" }) {
         : "You do not have any registered classes yet.",
       importantNoteTitle: isFa ? "نکته مهم" : "Important Note",
       importantNoteText: isFa
-        ? "لینک صنف فقط در زمان مجاز فعال است و ۱۰ دقیقه بعد از شروع صنف بسته می‌شود."
-        : "The class link is active only during the allowed window and closes 10 minutes after class start time.",
+        ? "لینک ورود زمانی فعال می‌شود که استاد جلسه را شروع کند و تا پایان رسمی همان جلسه در دسترس می‌ماند."
+        : "The join link becomes active when the teacher starts the session and remains available until the session is officially ended.",
       joining: isFa ? "در حال ورود به صنف" : "Joining class",
       statusLabels: {
         scheduled: isFa ? "برنامه‌ریزی شده" : "Scheduled",
+        ready: isFa ? "آماده شروع" : "Ready to start",
         live: isFa ? "در حال برگزاری" : "Live now",
+        delayed: isFa ? "با تأخیر" : "Delayed",
         completed: isFa ? "پایان یافته" : "Ended",
         cancelled: isFa ? "لغو شده" : "Cancelled",
+        rescheduled: isFa ? "زمان‌بندی مجدد" : "Rescheduled",
+        missed: isFa ? "برگزار نشده" : "Missed",
         pending: isFa ? "در انتظار تایید" : "Pending approval",
       },
     }),
@@ -283,29 +283,26 @@ export default function LiveClass({ language = "fa" }) {
         if (!mounted) return;
         const statusLabelMap = t.statusLabels;
 
-        const now = new Date();
         const mapped = (Array.isArray(sessions) ? sessions : [])
           .map((session) => {
             const startAt = new Date(session.startAt);
             const endAt = new Date(session.endAt);
             const isTimeValid =
               !Number.isNaN(startAt.getTime()) && !Number.isNaN(endAt.getTime());
-            const effectiveStatus = getEffectiveSessionStatus(session, now);
+            const effectiveStatus = getEffectiveSessionStatus(session);
 
             const dateLabel = isTimeValid
               ? formatLocalizedDate(startAt, language)
               : "-";
-                const timeLabel = isTimeValid
-                  ? `${startAt.toLocaleTimeString(isFa ? "fa-AF" : "en-US", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                    })} - ${endAt.toLocaleTimeString(isFa ? "fa-AF" : "en-US", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                })}`
-              : "-";
+            const dualTime = isTimeValid
+              ? getDualTimeDetails(
+                  startAt,
+                  endAt,
+                  session.timezone || "Asia/Kabul",
+                  language,
+                )
+              : null;
+            const timeLabel = dualTime?.localRange || "-";
 
             return {
               id: session._id,
@@ -316,6 +313,10 @@ export default function LiveClass({ language = "fa" }) {
               topic: getLocalizedTopicTitle(session.title, isFa) || t.topicFallback,
               date: dateLabel,
               time: timeLabel,
+              localTime: dualTime?.localRange || "-",
+              teacherTime: dualTime?.teacherRange || "-",
+              localTimeZone: dualTime?.localZone || "",
+              teacherTimeZone: dualTime?.teacherZone || "",
               platform:
                 session.platform === "zoom"
                   ? "Zoom"
@@ -397,10 +398,12 @@ export default function LiveClass({ language = "fa" }) {
   const currentClass = useMemo(() => {
     const now = nowMs || 0;
     return (
+      rows.find((row) => row.status === "live") ||
+      rows.find((row) => ["ready", "delayed"].includes(row.status)) ||
       rows.find((row) => {
-        if (row.status === "cancelled" || row.status === "completed") return false;
-        const closeAt = new Date(row.linkCloseAt || row.endAt || 0).getTime();
-        return Number.isFinite(closeAt) && closeAt > now;
+        if (row.status !== "scheduled") return false;
+        const endAt = new Date(row.endAt || 0).getTime();
+        return Number.isFinite(endAt) && endAt > now;
       }) || null
     );
   }, [nowMs, rows]);
@@ -409,7 +412,11 @@ export default function LiveClass({ language = "fa" }) {
     const now = nowMs || Date.now();
     return rows
       .filter((row) => {
-        if (row.status === "cancelled" || row.status === "completed" || row.status === "live") {
+        if (
+          ["cancelled", "completed", "live", "missed", "rescheduled"].includes(
+            row.status,
+          )
+        ) {
           return false;
         }
         const startAt = new Date(row.startAt || 0).getTime();

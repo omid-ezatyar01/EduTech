@@ -38,6 +38,7 @@ import {
 } from "../services/webPush.service.js";
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 import { sendCourseEnrollmentCongratsEmail } from "../utils/Email.js";
+import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 const DIRECT_CRYPTO_VERIFY_COOLDOWN_AFTER_FAILED_ATTEMPTS = 5;
@@ -600,7 +601,7 @@ export const createCheckout = async (req, res) => {
           provider: "BSC_DIRECT",
           exchangeRate: "1",
           exchangeRateSource: null,
-          expiresAt: new Date(Date.now() + Number(process.env.BSC_PAYMENT_EXPIRY_MINUTES || 20) * 60 * 1000),
+          expiresAt: new Date(Date.now() + Number(process.env.BSC_PAYMENT_EXPIRY_MINUTES || 60) * 60 * 1000),
           providerUrl: directDetails.paymentUrl,
           rawCreateSessionResponse: {
             baseAmount: directQuote.baseAmount,
@@ -1283,6 +1284,13 @@ const approveExternalBankTransferPayment = async ({
     course.enrolledStudentsCount = Number(course.enrolledStudentsCount || 0) + 1;
   }
 
+  if (shouldSendEnrollmentEmail) {
+    await publishCourseEnrollmentEvents({
+      courseId: course._id,
+      enrollmentId: enrollment._id,
+      studentId: enrollment.studentId,
+    });
+  }
   await ensureCourseAutoStarted(course);
 
   if (shouldSendEnrollmentEmail) {
@@ -1352,7 +1360,7 @@ export const getCourseBankPaymentDetails = async (req, res) => {
     }
 
     const course = await Course.findById(courseId)
-      .select("title teacher teacherId createdBy status isPublished")
+      .select("title price discountPrice teacherDiscountPercentage currency isFree paymentPlan teacher teacherId createdBy status isPublished")
       .lean();
 
     if (!course || !isCoursePurchasable(course)) {
@@ -1393,6 +1401,19 @@ export const getCourseBankPaymentDetails = async (req, res) => {
       .lean();
 
     const submissionState = normalizeBankTransferSubmissionState(latestBankTransferPayment);
+    const pricing = await getPlatformPricingSettings();
+    const displayPricing = resolveCourseDisplayPricing(
+      course,
+      pricing?.globalCourseDiscountPercentage || 0,
+    );
+    const baseAmountUsdCents = normalizeUsdToCents(displayPricing.finalPrice);
+    if (baseAmountUsdCents <= 0) {
+      return apiError(res, 400, "Bank transfer is not available for free courses");
+    }
+    const quoteCurrency = String(bankPaymentInfo.country || "").toUpperCase() === "IR"
+      ? "IRR"
+      : "AFN";
+    const quote = await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
 
     return apiSuccess(res, {
       course: {
@@ -1404,6 +1425,12 @@ export const getCourseBankPaymentDetails = async (req, res) => {
         name: teacher.name || "",
       },
       bankPaymentInfo,
+      paymentAmount: {
+        amount: Number(quote.amount || 0),
+        currency: quoteCurrency,
+        baseAmountUsd: baseAmountUsdCents / 100,
+        paymentPlan: course.paymentPlan || "monthly",
+      },
       submissionState,
     });
   } catch (error) {

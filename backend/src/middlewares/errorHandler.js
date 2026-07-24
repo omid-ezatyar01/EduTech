@@ -30,6 +30,8 @@ const errorHandler = (err, _req, res, _next) => {
       ? "Article cover image size must be 300 KB or less"
       : err?.field === "proof"
         ? "Proof image size must be 300 KB or less"
+        : err?.field === "thumbnailFile"
+          ? "Course image size must be 500 KB or less"
         : "The selected file is too large"
     : err.message || "Internal server error";
 

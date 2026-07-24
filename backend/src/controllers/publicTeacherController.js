@@ -147,7 +147,6 @@ const mapTeacherCourses = (courses = [], globalCourseDiscountPercentage = 0, rat
         totalSessions: Number(course.totalSessions || 0),
         startDate: course.startDate || null,
         endDate: course.endDate || null,
-        shortDescription: course.shortDescription || "",
         description: course.description || "",
         schedule: Array.isArray(course.schedule) ? course.schedule : [],
         price: Number(pricing.finalPrice || 0),
@@ -402,13 +401,13 @@ export const getPublicTeacherById = asyncHandler(async (req, res) => {
     Course.countDocuments(filter),
     Course.find(filter)
       .select(
-        "slug title shortDescription description level language duration durationWeeks startDate endDate schedule price discountPrice teacherDiscountPercentage currency isFree meetingType maxStudents enrolledStudentsCount thumbnail",
+        "slug title description level language duration durationWeeks startDate endDate schedule price discountPrice teacherDiscountPercentage currency isFree meetingType maxStudents enrolledStudentsCount thumbnail",
       )
       .sort({ createdAt: -1 })
       .limit(12),
     Course.find(endedFilter)
       .select(
-        "slug title shortDescription description level language duration durationWeeks startDate endDate classEndedAt schedule price discountPrice teacherDiscountPercentage currency isFree meetingType maxStudents enrolledStudentsCount thumbnail",
+        "slug title description level language duration durationWeeks startDate endDate classEndedAt schedule price discountPrice teacherDiscountPercentage currency isFree meetingType maxStudents enrolledStudentsCount thumbnail",
       )
       .sort({ classEndedAt: -1, createdAt: -1 })
       .limit(6),

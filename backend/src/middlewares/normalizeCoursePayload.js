@@ -43,6 +43,10 @@ const normalizeCoursePayload = (req, _res, next) => {
     "targetAudience",
     "curriculumTopics",
     "previewVideoUrls",
+    "tags",
+    "certificate",
+    "coursePolicies",
+    "agreements",
   ];
   const booleanFields = ["isFree"];
   const numberFields = [

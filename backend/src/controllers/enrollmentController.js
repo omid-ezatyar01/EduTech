@@ -18,6 +18,9 @@ import {
   expireEnrollmentIfNeeded,
   isEnrollmentExpired,
 } from "../utils/courseAccess.js";
+import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
+import { getCoursePublicState } from "../utils/coursePublicState.js";
+import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
 
 const makePaymentReference = (studentId) => {
   const userSuffix = String(studentId).slice(-6).toUpperCase();
@@ -58,7 +61,6 @@ const mapEnrollmentToResources = (enrollment = {}) => {
     id: `${enrollmentId}-overview`,
     title: `جزوه ${courseTitle}`,
     description:
-      course.shortDescription ||
       course.description ||
       "خلاصه محتوای کورس برای مطالعه شاگردان.",
     course: courseTitle,
@@ -169,10 +171,18 @@ const isCertificateEligible = (enrollment = {}, course = null) => {
       ? enrollment.courseId
       : null) ||
     {};
+  const certificateRules = resolvedCourse?.certificate || {};
+  const hasConfiguredRequirements =
+    Number(certificateRules.minimumAttendance || 0) > 0 ||
+    Number(certificateRules.minimumPassingGrade || 0) > 0;
   return (
     String(enrollment?.enrollmentStatus || "") === "completed" &&
     Boolean(resolvedCourse?.classEndedAt) &&
-    isPaidCourse(resolvedCourse)
+    isPaidCourse(resolvedCourse) &&
+    (
+      !hasConfiguredRequirements ||
+      Boolean(enrollment?.certificateId || enrollment?.certificateIssuedAt)
+    )
   );
 };
 
@@ -262,6 +272,12 @@ export const enrollInCourse = asyncHandler(async (req, res) => {
       await Course.findByIdAndUpdate(course._id, {
         $inc: { enrolledStudentsCount: 1 },
       });
+      await publishCourseEnrollmentEvents({
+        courseId: course._id,
+        enrollmentId: existingEnrollment._id,
+        studentId: req.user._id,
+      });
+      await ensureCourseAutoStarted(course);
 
       return res.status(200).json(
         new ApiResponse({
@@ -299,6 +315,12 @@ export const enrollInCourse = asyncHandler(async (req, res) => {
     await Course.findByIdAndUpdate(course._id, {
       $inc: { enrolledStudentsCount: 1 },
     });
+    await publishCourseEnrollmentEvents({
+      courseId: course._id,
+      enrollmentId: enrollment._id,
+      studentId: req.user._id,
+    });
+    await ensureCourseAutoStarted(course);
 
     return res.status(201).json(
       new ApiResponse({
@@ -358,7 +380,7 @@ export const getStudentEnrollments = asyncHandler(async (req, res) => {
   const enrollments = await Enrollment.find({ studentId: req.user._id })
     .populate({
       path: "courseId",
-      select: "title slug shortDescription description thumbnail isPublished status price discountPrice currency isFree paymentPlan level duration durationWeeks totalSessions startDate endDate classEndedAt meetingType meetingLink schedule teacher createdBy",
+      select: "title slug description thumbnail isPublished status lifecycleStatus price discountPrice currency isFree paymentPlan level duration durationWeeks totalSessions startDate endDate actualStartedAt classStartedAt classEndedAt classCancelledAt lastAutoRescheduledAt maxStudents enrolledStudentsCount certificate meetingType meetingLink schedule timezone teacher createdBy",
       populate: [
         { path: "teacher", select: "name email avatar" },
         { path: "createdBy", select: "name email avatar" }
@@ -440,6 +462,10 @@ export const getStudentEnrollments = asyncHandler(async (req, res) => {
         ...course,
         teacher: teacherProfile,
         teacherName: teacherProfile?.name || "",
+        publicState: getCoursePublicState({
+          course,
+          enrollment: row,
+        }),
       },
     };
   });
@@ -556,7 +582,7 @@ export const getStudentAssignments = asyncHandler(async (req, res) => {
   const enrollments = await Enrollment.find({ studentId: req.user._id })
     .populate({
       path: "courseId",
-      select: "title shortDescription description schedule teacher createdBy isFree price startDate classEndedAt",
+      select: "title description schedule teacher createdBy isFree price startDate classEndedAt",
       populate: [
         { path: "teacher", select: "name" },
         { path: "createdBy", select: "name" }
@@ -694,7 +720,7 @@ export const getStudentResources = asyncHandler(async (req, res) => {
   const enrollments = await Enrollment.find({ studentId: req.user._id })
     .populate(
       "courseId",
-      "title shortDescription description thumbnail promoVideo updatedAt isFree price startDate classEndedAt",
+      "title description thumbnail promoVideo updatedAt isFree price startDate classEndedAt",
     )
     .sort({ createdAt: -1 });
 

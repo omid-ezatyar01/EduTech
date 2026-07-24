@@ -7,6 +7,7 @@ import TeacherPageLoader from "../components/common/TeacherPageLoader";
 const loadTeacherLogin = () => import("../auth/TeacherLogin");
 const loadTeacherDashboard = () => import("../pages/TeacherDashboard");
 const loadTeacherCourses = () => import("../pages/TeacherCourses");
+const loadTeacherCourseWorkspace = () => import("../pages/TeacherCourseWorkspace");
 const loadTeacherReports = () => import("../pages/TeacherReports");
 const loadTeacherStudents = () => import("../pages/TeacherStudents");
 const loadTeacherLiveClasses = () => import("../pages/TeacherLiveClasses");
@@ -24,6 +25,7 @@ const loadTeacherPasswordRecovery = () => import("../auth/TeacherPasswordRecover
 const TeacherLogin = lazy(loadTeacherLogin);
 const TeacherDashboard = lazy(loadTeacherDashboard);
 const TeacherCourses = lazy(loadTeacherCourses);
+const TeacherCourseWorkspace = lazy(loadTeacherCourseWorkspace);
 const TeacherReports = lazy(loadTeacherReports);
 const TeacherStudents = lazy(loadTeacherStudents);
 const TeacherLiveClasses = lazy(loadTeacherLiveClasses);
@@ -42,6 +44,11 @@ const preloadRoutes = [
   { key: "login", test: (path) => path === "/teacher/login", load: loadTeacherLogin },
   { key: "dashboard", test: (path) => path === "/teacher/dashboard", load: loadTeacherDashboard },
   { key: "courses", test: (path) => path === "/teacher/courses", load: loadTeacherCourses },
+  {
+    key: "course-workspace",
+    test: (path) => /^\/teacher\/courses\/[^/]+$/.test(path),
+    load: loadTeacherCourseWorkspace,
+  },
   { key: "students", test: (path) => path === "/teacher/students", load: loadTeacherStudents },
   {
     key: "live-classes",
@@ -195,6 +202,14 @@ export default function TeacherRoutes() {
             element={
               <TeacherProtectedRoute>
                 <TeacherCourses />
+              </TeacherProtectedRoute>
+            }
+          />
+          <Route
+            path="/teacher/courses/:courseId"
+            element={
+              <TeacherProtectedRoute>
+                <TeacherCourseWorkspace />
               </TeacherProtectedRoute>
             }
           />

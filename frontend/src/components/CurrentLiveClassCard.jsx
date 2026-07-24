@@ -13,7 +13,8 @@ export default function CurrentLiveClassCard({ course, onJoin, language = "fa" }
       ? "لینک صنف هنوز فعال نشده است"
       : "The class link is not active yet",
     todayTopic: isFa ? "موضوع امروز" : "Today's topic",
-    time: isFa ? "زمان" : "Time",
+    time: isFa ? "وقت محل شما" : "Your local time",
+    teacherTime: isFa ? "وقت استاد" : "Teacher time",
     date: isFa ? "تاریخ" : "Date",
     platform: isFa ? "پلتفرم" : "Platform",
     teacher: isFa ? "استاد" : "Teacher",
@@ -53,7 +54,10 @@ export default function CurrentLiveClassCard({ course, onJoin, language = "fa" }
             </div>
             <div>
               <p className="text-xs font-bold text-slate-500">{t.time}</p>
-              <p className="font-black text-slate-900">{course.time}</p>
+              <p className="font-black text-slate-900">{course.localTime || course.time}</p>
+              <p className="mt-1 text-[11px] font-bold text-slate-500">
+                {t.teacherTime}: {course.teacherTime || course.time}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">

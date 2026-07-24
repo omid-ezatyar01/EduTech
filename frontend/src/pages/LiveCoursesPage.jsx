@@ -655,7 +655,7 @@ export default function LiveCoursesPage({ t }) {
             itemListElement: seoCourses.map((course, index) => {
               const name = String(course?.title || "Course").trim();
               const rawDescription = String(
-                course?.description || course?.shortDescription || name,
+                course?.description || name,
               )
                 .replace(/<[^>]*>/g, " ")
                 .replace(/\s+/g, " ")
@@ -763,19 +763,6 @@ export default function LiveCoursesPage({ t }) {
             <img className="mx-auto h-24 w-auto object-contain sm:order-none sm:h-28 lg:h-32" src="/courses-hero.png" width="270" height="150" decoding="async" alt={page.titleHighlight} />
           </div>
         </div>
-
-        {rootCategories.length > 0 ? (
-          <nav className="mt-5" aria-label={language === "fa" ? "موضوعات محبوب" : "Popular subjects"}>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-sm font-black text-slate-900">{language === "fa" ? "موضوعات محبوب" : "Popular subjects"}</h2>
-              {category !== "all" ? <button type="button" onClick={() => { setCategoryPath([]); setCurrentPage(INITIAL_LIST_PAGE_COUNT); }} className="text-xs font-black text-primary-700">{language === "fa" ? "نمایش همه" : "View all"}</button> : null}
-            </div>
-            <div className="edutech-scrollbar flex gap-2 overflow-x-auto pb-2">
-              <button type="button" onClick={() => { setCategoryPath([]); setCurrentPage(INITIAL_LIST_PAGE_COUNT); }} className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-black transition ${category === "all" ? "border-primary-600 bg-primary-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-primary-200"}`}>{language === "fa" ? "همه کورس‌ها" : "All courses"}</button>
-              {rootCategories.slice(0, 8).map((item) => <button key={item._id} type="button" onClick={() => { setCategoryPath([String(item._id)]); setCurrentPage(INITIAL_LIST_PAGE_COUNT); coursesTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }} className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-black transition ${categoryPath[0] === String(item._id) ? "border-teal-600 bg-teal-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-teal-200 hover:text-teal-700"}`}>{item.name}</button>)}
-            </div>
-          </nav>
-        ) : null}
 
         <div className="mt-5 space-y-6" ref={coursesTopRef}>
           <div className="min-w-0">

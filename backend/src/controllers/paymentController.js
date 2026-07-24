@@ -7,6 +7,8 @@ import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { resolveCourseAccessWindow } from "../utils/courseAccess.js";
 import { sendCourseEnrollmentCongratsEmail } from "../utils/Email.js";
+import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
+import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
 
 const isPaidStatus = (payment) => {
   return payment.status === "paid" || payment.paymentStatus === "paid";
@@ -192,6 +194,15 @@ export const verifyPaymentByAdmin = asyncHandler(async (req, res) => {
       $inc: { enrolledStudentsCount: 1 },
     });
   }
+
+  if (shouldSendEnrollmentEmail) {
+    await publishCourseEnrollmentEvents({
+      courseId: course._id,
+      enrollmentId: enrollment._id,
+      studentId: enrollment.studentId,
+    });
+  }
+  await ensureCourseAutoStarted(course);
 
   if (shouldSendEnrollmentEmail && payment?.studentId) {
     const student = await User.findById(payment.studentId).select("name email").lean();

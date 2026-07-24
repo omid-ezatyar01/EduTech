@@ -40,6 +40,8 @@ export const unfollowTeacher = asyncHandler(async (req, res) => {
 export const getStudentTeacherNotifications = asyncHandler(async (req, res) => {
   const notifications = await StudentNotification.find({ recipient: req.user._id })
     .populate("teacher", "name avatar")
+    .populate("course", "title slug")
+    .populate("session", "title startAt endAt status")
     .sort({ createdAt: -1 }).limit(100).lean();
   const unreadCount = notifications.filter((row) => !row.isRead).length;
   return res.json(new ApiResponse({ message: "Notifications fetched", data: { notifications, unreadCount } }));

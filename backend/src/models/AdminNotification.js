@@ -4,7 +4,12 @@ const adminNotificationSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["course_review", "course_end_review", "teacher_application_review"],
+      enum: [
+        "course_review",
+        "course_end_review",
+        "course_minimum_override",
+        "teacher_application_review",
+      ],
       required: true,
       index: true,
     },

@@ -30,6 +30,14 @@ import {
   useRegionalCoursePrice,
   useRegionalPricing,
 } from "../context/RegionalPricingContext.jsx";
+import {
+  canEnrollFromPublicState,
+  getPublicActionLabel,
+  getPublicStateKey,
+  getPublicStateLabel,
+  getPublicStateMessage,
+  getPublicStateTone,
+} from "../utils/coursePublicState.js";
 
 const fallbackCourseImage = "/logo.png";
 const COURSE_IMAGE_ASPECT_RATIO = "750 / 422";
@@ -54,27 +62,13 @@ function resolveCourseStartAt(course = {}) {
   if (!course?.startDate) return null;
   const date = new Date(course.startDate);
   if (Number.isNaN(date.getTime())) return null;
-
-  const scheduleRows = Array.isArray(course.scheduleRows)
-    ? course.scheduleRows
-    : Array.isArray(course.schedule)
-      ? course.schedule
-      : [];
-  const firstSlot = scheduleRows[0] || null;
-  const timeMatch = String(firstSlot?.startTime || "").match(/^(\d{1,2}):(\d{2})$/);
-  if (timeMatch) {
-    date.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
-  }
-
   return date;
 }
 
 function formatCountdown(targetDate, nowMs, language) {
   if (!targetDate) return "";
   const diffMs = targetDate.getTime() - nowMs;
-  if (diffMs <= 0) {
-    return language === "fa" ? "کورس شروع شده است" : "Course has started";
-  }
+  if (diffMs <= 0) return "";
 
   const totalMinutes = Math.ceil(diffMs / 60000);
   const days = Math.floor(totalMinutes / 1440);
@@ -193,6 +187,15 @@ export default function CourseCard({
   const countdownText = formatCountdown(courseStartAt, nowMs, language);
   const isSpecialCourse = course?.courseType === "special";
   const coursePath = coursePathOverride || buildCoursePath(course);
+  const publicStateKey = getPublicStateKey(course);
+  const publicStateLabel = getPublicStateLabel(course, language);
+  const publicStateMessage = getPublicStateMessage(course, language);
+  const publicStateTone = getPublicStateTone(course);
+  const canEnroll = canEnrollFromPublicState(course);
+  const publicActionLabel = getPublicActionLabel(course, language, isEnrolled);
+  const workspacePath =
+    course?.publicState?.primaryAction?.url ||
+    `/student/course/${encodeURIComponent(course?._id || course?.id || "")}`;
   const handleShareCourse = async () => {
     const shared = await shareContent({
       title: course?.title || "EduTech Course",
@@ -453,6 +456,18 @@ export default function CourseCard({
       </div>
 
       <div className="flex flex-1 flex-col p-4 sm:p-5">
+        {publicStateLabel ? (
+          <div className="mb-3">
+            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-black ${publicStateTone}`}>
+              {publicStateLabel}
+            </span>
+            {publicStateMessage ? (
+              <p className="mt-1.5 text-xs font-bold leading-5 text-slate-500">
+                {publicStateMessage}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="mb-3 flex items-center gap-2">
           {hasTeacherAvatar ? (
             <img
@@ -525,6 +540,16 @@ export default function CourseCard({
             </div>
           ) : null}
 
+          {course?.publicState?.remainingSeats !== null &&
+          course?.publicState?.remainingSeats !== undefined &&
+          !["completed", "canceled"].includes(publicStateKey) ? (
+            <p className="mt-3 text-xs font-black text-slate-600">
+              {language === "fa"
+                ? `${Number(course.publicState.remainingSeats).toLocaleString("fa-AF")} جای باقی مانده`
+                : `${Number(course.publicState.remainingSeats).toLocaleString("en-US")} seats remaining`}
+            </p>
+          ) : null}
+
           <div className={`mt-4 text-sm text-slate-500 ${language === "fa" ? "text-right" : "text-left"}`}>
             <p className="inline-flex flex-wrap items-center gap-1.5">
               <Star size={14} fill="currentColor" className="text-amber-500" />
@@ -549,7 +574,7 @@ export default function CourseCard({
 
           <div
             className={`mt-4 grid grid-cols-1 gap-2 border-t border-slate-100 pt-3 ${
-              isEnrolled ? "" : "sm:grid-cols-2"
+              isEnrolled || canEnroll ? "sm:grid-cols-2" : ""
             }`}
           >
             <Link
@@ -561,7 +586,15 @@ export default function CourseCard({
               <ArrowIcon size={15} />
             </Link>
 
-            {!isEnrolled ? (
+            {isEnrolled ? (
+              <Link
+                to={workspacePath}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-primary-700 to-primary-600 px-3 text-sm font-black text-white transition hover:from-primary-600 hover:to-primary-500"
+              >
+                <ArrowIcon size={15} />
+                {publicActionLabel}
+              </Link>
+            ) : canEnroll ? (
               <button
                 type="button"
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-primary-700 to-primary-600 px-3 text-sm font-black text-white transition hover:from-primary-600 hover:to-primary-500 disabled:cursor-not-allowed disabled:opacity-70"
@@ -576,7 +609,7 @@ export default function CourseCard({
                 ) : (
                   <>
                     <CreditCard size={15} />
-                    {buyLabel}
+                    {publicActionLabel || buyLabel}
                   </>
                 )}
               </button>

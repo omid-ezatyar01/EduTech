@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   CalendarCheck,
   CheckCircle2,
@@ -18,6 +19,7 @@ import {
   updateTeacherLiveSessionAttendance,
 } from "../../services/liveSessionService";
 import {
+  clearTeacherPageCache,
   getTeacherPageCacheKey,
   readTeacherPageCache,
   writeTeacherPageCache,
@@ -115,11 +117,13 @@ const getCourseStatusLabel = (status, isFa) => {
   return map[String(status || "").toLowerCase()] || (status || "-");
 };
 
-const ATTENDANCE_OVERVIEW_CACHE_KEY = getTeacherPageCacheKey("attendance-overview");
+const getAttendanceOverviewCacheKey = (courseId = "") =>
+  getTeacherPageCacheKey("attendance-overview", { courseId });
 const getAttendanceSessionCacheKey = (sessionId) =>
   getTeacherPageCacheKey("attendance-session", { sessionId: String(sessionId || "") });
 
 export default function TeacherAttendance() {
+  const location = useLocation();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
   const isFa = language === "fa";
   const statusLabels = useMemo(() => getStatusLabels(isFa), [isFa]);
@@ -127,12 +131,18 @@ export default function TeacherAttendance() {
     () => getAuthUser() || { name: "Teacher", email: "teacher@edutech.study", role: "teacher" },
     [],
   );
-  const initialAttendanceCache = sanitizeAttendanceOverview(readTeacherPageCache(ATTENDANCE_OVERVIEW_CACHE_KEY) || {});
+  const requestedCourseId = useMemo(
+    () => new URLSearchParams(location.search).get("courseId") || "",
+    [location.search],
+  );
+  const initialAttendanceCache = sanitizeAttendanceOverview(
+    readTeacherPageCache(getAttendanceOverviewCacheKey(requestedCourseId)) || {},
+  );
 
   const [courses, setCourses] = useState(initialAttendanceCache?.courses || []);
   const [allSessions, setAllSessions] = useState(initialAttendanceCache?.allSessions || []);
   const [overviewStats, setOverviewStats] = useState(initialAttendanceCache?.overviewStats || {});
-  const [selectedCourseId, setSelectedCourseId] = useState("");
+  const [selectedCourseId, setSelectedCourseId] = useState(requestedCourseId);
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [attendees, setAttendees] = useState([]);
   const [sessionStats, setSessionStats] = useState({});
@@ -145,6 +155,14 @@ export default function TeacherAttendance() {
   const [toast, setToast] = useState("");
   const [refreshSeed, setRefreshSeed] = useState(0);
   const [attendeeSearch, setAttendeeSearch] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSelectedCourseId(requestedCourseId);
+      setSelectedSessionId("");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedCourseId]);
 
   const sessions = useMemo(() => {
     if (!selectedCourseId) return allSessions;
@@ -235,13 +253,14 @@ export default function TeacherAttendance() {
       }
       return String(left.title || "").localeCompare(String(right.title || ""), language === "fa" ? "fa" : "en");
     });
-  }, [allSessions, courses, isFa]);
+  }, [allSessions, courses, isFa, language]);
 
   useEffect(() => {
     let mounted = true;
 
     const loadOverview = async () => {
-      const cached = readTeacherPageCache(ATTENDANCE_OVERVIEW_CACHE_KEY);
+      const cacheKey = getAttendanceOverviewCacheKey(requestedCourseId);
+      const cached = readTeacherPageCache(cacheKey);
       if (cached) {
         const sanitizedCached = sanitizeAttendanceOverview(cached);
         setCourses(sanitizedCached.courses);
@@ -257,6 +276,7 @@ export default function TeacherAttendance() {
         const result = await fetchTeacherAttendanceOverview({
           page: 1,
           limit: 100,
+          ...(requestedCourseId ? { courseId: requestedCourseId } : {}),
         });
         if (!mounted) return;
         const sanitizedResult = sanitizeAttendanceOverview({
@@ -267,7 +287,7 @@ export default function TeacherAttendance() {
         setCourses(sanitizedResult.courses);
         setAllSessions(sanitizedResult.allSessions);
         setOverviewStats(sanitizedResult.overviewStats);
-        writeTeacherPageCache(ATTENDANCE_OVERVIEW_CACHE_KEY, {
+        writeTeacherPageCache(cacheKey, {
           courses: sanitizedResult.courses,
           allSessions: sanitizedResult.allSessions,
           overviewStats: sanitizedResult.overviewStats,
@@ -284,18 +304,21 @@ export default function TeacherAttendance() {
     return () => {
       mounted = false;
     };
-  }, [isFa, refreshSeed]);
+  }, [isFa, refreshSeed, requestedCourseId]);
 
   useEffect(() => {
-    const selectableSessions = selectedCourseId
-      ? allSessions.filter((session) => getSessionCourseId(session) === String(selectedCourseId))
-      : allSessions;
-    setSelectedSessionId((previous) => {
-      if (previous && selectableSessions.some((session) => String(session._id) === String(previous))) {
-        return previous;
-      }
-      return selectableSessions[0]?._id || "";
-    });
+    const timer = window.setTimeout(() => {
+      const selectableSessions = selectedCourseId
+        ? allSessions.filter((session) => getSessionCourseId(session) === String(selectedCourseId))
+        : allSessions;
+      setSelectedSessionId((previous) => {
+        if (previous && selectableSessions.some((session) => String(session._id) === String(previous))) {
+          return previous;
+        }
+        return selectableSessions[0]?._id || "";
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [allSessions, selectedCourseId]);
 
   useEffect(() => {
@@ -436,7 +459,10 @@ export default function TeacherAttendance() {
     }
   };
 
-  const visibleAttendees = selectedSessionId ? attendees : [];
+  const visibleAttendees = useMemo(
+    () => (selectedSessionId ? attendees : []),
+    [attendees, selectedSessionId],
+  );
   const filteredAttendees = useMemo(() => {
     const query = normalizeSearchValue(attendeeSearch);
     if (!query) return visibleAttendees;
@@ -450,10 +476,6 @@ export default function TeacherAttendance() {
     if (!selectedCourseId) return courseSummaries;
     return courseSummaries.filter((course) => String(course.id) === String(selectedCourseId));
   }, [courseSummaries, selectedCourseId]);
-  const selectedCourseSummary = useMemo(
-    () => filteredCourseSummaries.find((course) => String(course.id) === String(selectedCourseId)) || null,
-    [filteredCourseSummaries, selectedCourseId],
-  );
   const getStudentAttendanceDays = (studentId) => {
     if (studentAttendanceDays.key !== attendanceDaysKey) return null;
     return studentAttendanceDays.rows[String(studentId)] || { present: 0, absent: 0 };

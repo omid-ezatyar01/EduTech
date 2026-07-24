@@ -2,7 +2,16 @@ import Joi from "joi";
 import { objectId, paginationQuerySchema } from "./common.validators.js";
 
 const platformSchema = Joi.string().valid("google_meet", "zoom", "manual", "physical");
-const statusSchema = Joi.string().valid("scheduled", "live", "completed", "cancelled");
+const statusSchema = Joi.string().valid(
+  "scheduled",
+  "ready",
+  "live",
+  "delayed",
+  "completed",
+  "cancelled",
+  "rescheduled",
+  "missed",
+);
 const attendanceStatusSchema = Joi.string().valid("present", "absent");
 
 const ensureValidTimeRange = (value, helpers) => {
@@ -39,6 +48,7 @@ export const createLiveSessionSchema = Joi.object({
   description: Joi.string().trim().allow("").default(""),
   platform: platformSchema.default("google_meet"),
   meetingLink: Joi.string().uri().allow("").default(""),
+  timezone: Joi.string().trim().max(100).default(process.env.APP_TIMEZONE || "Asia/Kabul"),
   autoGenerateMeet: Joi.boolean().default(false),
   calendarId: Joi.string().trim().allow("").default("primary"),
   startAt: Joi.date().required(),
@@ -56,6 +66,7 @@ export const updateLiveSessionSchema = Joi.object({
   description: Joi.string().trim().allow(""),
   platform: platformSchema,
   meetingLink: Joi.string().uri().allow(""),
+  timezone: Joi.string().trim().max(100),
   startAt: Joi.date(),
   endAt: Joi.date(),
   status: statusSchema,
@@ -80,12 +91,12 @@ export const liveSessionListQuerySchema = paginationQuerySchema.keys({
 });
 
 export const studentLiveSessionQuerySchema = paginationQuerySchema.keys({
-  status: Joi.string().valid("scheduled", "live", "completed", "cancelled"),
+  status: statusSchema,
   courseId: objectId,
 });
 
 export const attendanceListQuerySchema = paginationQuerySchema.keys({
-  status: Joi.string().valid("scheduled", "live", "completed", "cancelled"),
+  status: statusSchema,
   courseId: objectId,
   dateFrom: Joi.date(),
   dateTo: Joi.date(),

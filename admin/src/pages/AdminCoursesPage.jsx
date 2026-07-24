@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Ban,
   BadgeCheck,
+  BellRing,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -9,10 +10,10 @@ import {
   Eye,
   Globe2,
   ListChecks,
+  Loader2,
   ScanSearch,
   Search,
   XCircle,
-  UploadCloud,
   Trash2,
   Plus,
   X,
@@ -28,7 +29,6 @@ import {
   fetchAdminCourseById,
   fetchAdminCourseSessions,
   fetchAdminCourses,
-  fetchGoogleAuthUrl,
   fetchAdminTeachers,
   publishAdminCourse,
   rejectCourseCancellationRequest,
@@ -53,6 +53,10 @@ import {
 } from "../utils/adminPageCache.js";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 import AdminPageLoader from "../components/common/AdminPageLoader.jsx";
+import {
+  formatDateTimeInZone,
+  getBrowserTimeZone,
+} from "../utils/timezone.js";
 
 const statusOptions = ["all", "draft", "pending", "approved", "published", "rejected", "cancelled"];
 const statusFilterOptions = [
@@ -121,7 +125,6 @@ const PAGE_TEXT = {
   "No description provided.": "توضیحی ارائه نشده است.",
   "Course profile": "پروفایل کورس",
   "Course activity": "فعالیت کورس",
-  Price: "قیمت",
   Discount: "تخفیف",
   "Teacher discount": "تخفیف مدرس",
   Updated: "به‌روزرسانی",
@@ -161,20 +164,17 @@ const PAGE_TEXT = {
   "Reject Cancellation": "رد لغو",
   "Approve Cancellation": "تایید لغو",
   "Approve Course": "تایید کورس",
-  Status: "وضعیت",
   Pricing: "قیمت‌گذاری",
   Joined: "ایجاد",
   "Edit course": "ویرایش کورس",
   "Course content": "محتوای کورس",
   "Editable setup": "تنظیمات قابل ویرایش",
-  Teacher: "مدرس",
   "Teacher email": "ایمیل مدرس",
   Level: "سطح",
   Language: "زبان",
   "Max students": "حداکثر شاگردان",
   Duration: "مدت",
   "Course title": "عنوان کورس",
-  "Short description": "توضیح کوتاه",
   "Full description": "توضیح کامل",
   "Search teacher by email": "جستجوی مدرس با ایمیل",
   "No matching teachers": "مدرس مطابق پیدا نشد",
@@ -227,6 +227,30 @@ const formatNumber = (value, language = "en") =>
   new Intl.NumberFormat(language === "fa" ? "fa-AF" : "en-US").format(Number(value || 0));
 
 const mapStatusLabel = (value, pageTr) => pageTr(String(value || "").toLowerCase() || "-");
+const getLifecycleLabel = (value, language = "en") => {
+  const labels = {
+    draft: { en: "Draft", fa: "پیش‌نویس" },
+    pending_review: { en: "Pending review", fa: "در انتظار بررسی" },
+    changes_requested: { en: "Changes requested", fa: "نیازمند اصلاح" },
+    approved: { en: "Approved", fa: "تأییدشده" },
+    enrollment_open: { en: "Enrollment open", fa: "ثبت‌نام باز" },
+    enrollment_closed: { en: "Enrollment closed", fa: "ثبت‌نام بسته" },
+    minimum_not_reached: { en: "Minimum not reached", fa: "حداقل شاگرد تکمیل نشده" },
+    ready_to_start: { en: "Ready to start", fa: "آماده شروع" },
+    in_progress: { en: "In progress", fa: "در حال برگزاری" },
+    paused: { en: "Paused", fa: "موقتاً متوقف" },
+    awaiting_completion: { en: "Awaiting completion", fa: "آماده تکمیل" },
+    completed: { en: "Completed", fa: "تکمیل‌شده" },
+    canceled: { en: "Cancelled", fa: "لغوشده" },
+    archived: { en: "Archived", fa: "آرشیوشده" },
+  };
+  return labels[String(value || "")]?.[language === "fa" ? "fa" : "en"] || "";
+};
+const getPublicStatusLabel = (publicState, language = "en") => {
+  const label = publicState?.label;
+  if (typeof label === "string") return label;
+  return label?.[language === "fa" ? "fa" : "en"] || "";
+};
 const formatMeetingTypeLabel = (value = "") => {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "google_meet") return "Google Meet";
@@ -265,6 +289,7 @@ const DAY_OPTIONS = [
   { key: "sunday", enumKey: "SUNDAY", label: "Sunday" },
 ];
 const DESCRIPTION_MIN_CHARS = 120;
+const COURSE_THUMBNAIL_MAX_BYTES = 500 * 1024;
 const DESCRIPTION_MAX_CHARS = 2000;
 const TITLE_MIN_CHARS = 5;
 const TITLE_MAX_CHARS = 120;
@@ -604,16 +629,12 @@ export default function AdminCoursesPage() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [reviewCourse, setReviewCourse] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
-  const [courseApprovalModal, setCourseApprovalModal] = useState({
-    open: false,
-    course: null,
-    payload: DEFAULT_NOTIFICATION_PAYLOAD,
-  });
   const [coursePublishModal, setCoursePublishModal] = useState({
     open: false,
     course: null,
     payload: DEFAULT_NOTIFICATION_PAYLOAD,
   });
+  const [publishSubmitting, setPublishSubmitting] = useState(false);
   const [pricingSettings, setPricingSettings] = useState(DEFAULT_PRICING_SETTINGS);
   const [createForm, setCreateForm] = useState({
     title: "",
@@ -737,11 +758,13 @@ export default function AdminCoursesPage() {
   ]);
 
   useEffect(() => {
-    loadCourses();
+    const timer = window.setTimeout(() => loadCourses(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadCourses]);
 
   useEffect(() => {
-    setPage(1);
+    const timer = window.setTimeout(() => setPage(1), 0);
+    return () => window.clearTimeout(timer);
   }, [category, debouncedSearch, pricingFilter, status, teacherFilter]);
 
   useEffect(() => {
@@ -1016,15 +1039,6 @@ export default function AdminCoursesPage() {
     }
   };
 
-  const openCourseApprovalModal = (course) => {
-    if (!course?._id) return;
-    setCourseApprovalModal({
-      open: true,
-      course,
-      payload: DEFAULT_NOTIFICATION_PAYLOAD,
-    });
-  };
-
   const openCoursePublishModal = (course) => {
     if (!course?._id) return;
     setCoursePublishModal({
@@ -1034,15 +1048,8 @@ export default function AdminCoursesPage() {
     });
   };
 
-  const closeCourseApprovalModal = () => {
-    setCourseApprovalModal({
-      open: false,
-      course: null,
-      payload: DEFAULT_NOTIFICATION_PAYLOAD,
-    });
-  };
-
   const closeCoursePublishModal = () => {
+    if (publishSubmitting) return;
     setCoursePublishModal({
       open: false,
       course: null,
@@ -1088,17 +1095,6 @@ export default function AdminCoursesPage() {
     });
   };
 
-  const handleConnectGoogle = async () => {
-    try {
-      const url = await fetchGoogleAuthUrl();
-      if (url) {
-        window.open(url, "_blank", "noopener,noreferrer");
-      }
-    } catch (err) {
-      setToast(err?.message || "Failed to open Google OAuth");
-    }
-  };
-
   const openSessionsModal = async (course) => {
     if (!course?._id) return;
     setSessionModalCourse(course);
@@ -1133,8 +1129,9 @@ export default function AdminCoursesPage() {
 
     try {
       if (decision === "approved") {
-        openCourseApprovalModal(reviewCourse);
-        return;
+        await approveAdminCourse(reviewCourse._id);
+        setReviewCourse(null);
+        setToast("Course approved");
       } else {
         const reason = window.prompt("Rejection reason:", "Needs improvement");
         if (!reason) return;
@@ -1149,27 +1146,6 @@ export default function AdminCoursesPage() {
     }
   };
 
-  const handleApproveCourseWithModal = async () => {
-    if (!courseApprovalModal.course?._id) return;
-    if (!courseApprovalModal.payload.confirmationChecked) {
-      setToast("Please confirm that everything was checked before approval.");
-      return;
-    }
-
-    try {
-      await approveAdminCourse(
-        courseApprovalModal.course._id,
-        buildNotificationRequestPayload(courseApprovalModal.payload),
-      );
-      closeCourseApprovalModal();
-      setReviewCourse(null);
-      setToast("Course approved");
-      await loadCourses();
-    } catch (err) {
-      setToast(err.message || "Review action failed");
-    }
-  };
-
   const handlePublishCourseWithModal = async () => {
     if (!coursePublishModal.course?._id) return;
     if (!coursePublishModal.payload.confirmationChecked) {
@@ -1178,15 +1154,22 @@ export default function AdminCoursesPage() {
     }
 
     try {
+      setPublishSubmitting(true);
       await publishAdminCourse(
         coursePublishModal.course._id,
         buildNotificationRequestPayload(coursePublishModal.payload),
       );
-      closeCoursePublishModal();
+      setCoursePublishModal({
+        open: false,
+        course: null,
+        payload: DEFAULT_NOTIFICATION_PAYLOAD,
+      });
       setToast("Course published");
       await loadCourses();
     } catch (err) {
       setToast(err.message || "Publish action failed");
+    } finally {
+      setPublishSubmitting(false);
     }
   };
 
@@ -1878,7 +1861,6 @@ export default function AdminCoursesPage() {
                       </div>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-black text-slate-900">{course.title}</p>
-                        <p className="truncate text-xs font-semibold text-slate-500">{course.shortDescription || "-"}</p>
                         {course.cancellationRequest?.status === "pending" ? (
                           <span className="mt-1 inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-black text-rose-700">
                             {pageTr("Cancellation requested")}
@@ -1901,9 +1883,22 @@ export default function AdminCoursesPage() {
                   <td className="px-5 py-4 text-sm font-semibold text-slate-700">{course.isFree ? pageTr("Free") : `${course.price || 0} ${course.currency || "USD"}`}</td>
                   <td className="px-5 py-4 text-sm font-semibold text-slate-700">{formatNumber(course.enrolledStudentsCount || 0, language)}</td>
                   <td className="px-5 py-4">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${statusBadgeClass[course.status] || "bg-slate-100 text-slate-700"}`}>
-                      {mapStatusLabel(course.status, pageTr)}
-                    </span>
+                    <div className="flex flex-col items-center gap-1.5">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${statusBadgeClass[course.status] || "bg-slate-100 text-slate-700"}`}>
+                        {mapStatusLabel(course.status, pageTr)}
+                      </span>
+                      {course.lifecycleStatus ? (
+                        <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[10px] font-black text-blue-700">
+                          {getLifecycleLabel(course.lifecycleStatus, language)}
+                        </span>
+                      ) : null}
+                      {getPublicStatusLabel(course.publicState, language) ? (
+                        <span className="text-[10px] font-black text-slate-500">
+                          {language === "fa" ? "نمایش شاگرد: " : "Student view: "}
+                          {getPublicStatusLabel(course.publicState, language)}
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
@@ -1928,7 +1923,12 @@ export default function AdminCoursesPage() {
                       {course.status === "pending" ? (
                         <>
                           <button
-                            onClick={() => openCourseApprovalModal(course)}
+                            onClick={() =>
+                              handleAction(
+                                () => approveAdminCourse(course._id),
+                                "Course approved",
+                              )
+                            }
                             className="rounded-xl p-2 text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-600"
                             title={pageTr("Approve")}
                           >
@@ -2223,6 +2223,17 @@ export default function AdminCoursesPage() {
                           <p className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-black ${statusBadgeClass[reviewCourse.status] || "bg-slate-100 text-slate-700"}`}>
                             {reviewCourse.status || "draft"}
                           </p>
+                          {reviewCourse.lifecycleStatus ? (
+                            <p className="mt-2 inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">
+                              {getLifecycleLabel(reviewCourse.lifecycleStatus, language)}
+                            </p>
+                          ) : null}
+                          {getPublicStatusLabel(reviewCourse.publicState, language) ? (
+                            <p className="mt-2 block text-xs font-black text-slate-500">
+                              {language === "fa" ? "نمایش شاگرد: " : "Student view: "}
+                              {getPublicStatusLabel(reviewCourse.publicState, language)}
+                            </p>
+                          ) : null}
                         </article>
                         <article className="border border-slate-200 bg-white p-4 shadow-sm">
                           <p className="text-xs font-black uppercase tracking-wide text-slate-400">{pageTr("Pricing")}</p>
@@ -2345,8 +2356,27 @@ export default function AdminCoursesPage() {
                       <section className="border border-slate-200 bg-white p-5 shadow-sm">
                     <h4 className="text-base font-black text-slate-950">{pageTr("Schedule")}</h4>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <InfoRow label={pageTr("Start date")} value={formatDateTime(reviewCourse.startDate)} />
+                      <InfoRow
+                        label={language === "fa" ? "شروع به وقت استاد" : "Start in teacher time"}
+                        value={formatDateTimeInZone(
+                          reviewCourse.startDate,
+                          reviewCourse.timezone || "Asia/Kabul",
+                          language,
+                        )}
+                      />
+                      <InfoRow
+                        label={language === "fa" ? "شروع به وقت محل شما" : "Start in your local time"}
+                        value={formatDateTimeInZone(
+                          reviewCourse.startDate,
+                          getBrowserTimeZone(),
+                          language,
+                        )}
+                      />
                       <InfoRow label={pageTr("End date")} value={formatDateTime(reviewCourse.endDate)} />
+                      <InfoRow
+                        label={language === "fa" ? "منطقه زمانی کورس" : "Course timezone"}
+                        value={reviewCourse.timezone || "Asia/Kabul"}
+                      />
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-3">
                       <InfoRow label={pageTr("Class started")} value={formatDateTime(reviewCourse.classStartedAt)} />
@@ -2469,13 +2499,15 @@ export default function AdminCoursesPage() {
               >
                 {pageTr("Close")}
               </button>
-              <button
-                type="button"
-                onClick={() => handleReviewDecision("rejected")}
-                className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-700"
-              >
-                {pageTr("Reject Course")}
-              </button>
+              {reviewCourse.status === "pending" ? (
+                <button
+                  type="button"
+                  onClick={() => handleReviewDecision("rejected")}
+                  className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-700"
+                >
+                  {pageTr("Reject Course")}
+                </button>
+              ) : null}
               {reviewCourse.cancellationRequest?.status === "pending" ? (
                 <>
                   <button
@@ -2512,13 +2544,15 @@ export default function AdminCoursesPage() {
                   </button>
                 </>
               ) : null}
+              {reviewCourse.status === "pending" ? (
                 <button
                   type="button"
                   onClick={() => handleReviewDecision("approved")}
-                className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
-              >
-                {pageTr("Approve Course")}
-              </button>
+                  className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
+                >
+                  {pageTr("Approve Course")}
+                </button>
+              ) : null}
             </div>
                   </div>
                 </div>
@@ -2529,9 +2563,9 @@ export default function AdminCoursesPage() {
       ) : null}
 
       {isCreateOpen ? (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 p-4">
+        <div className="fixed inset-0 z-[130] flex items-end justify-center bg-slate-950/50 p-0 sm:items-center sm:p-4">
+          <div className="flex h-[100dvh] w-full max-w-2xl flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl sm:h-auto sm:max-h-[95vh] sm:rounded-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-200 p-4">
               <h3 className="text-lg font-black text-slate-900">Create Course</h3>
               <button
                 type="button"
@@ -2542,7 +2576,7 @@ export default function AdminCoursesPage() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateCourse} className="grid gap-3 p-4 sm:grid-cols-2">
+            <form onSubmit={handleCreateCourse} className="grid min-h-0 flex-1 gap-3 overflow-y-auto p-4 sm:grid-cols-2">
               <input
                 required
                 value={createForm.title}
@@ -2819,10 +2853,21 @@ export default function AdminCoursesPage() {
               <div className="sm:col-span-2">
                 <input
                   type="file"
-                  accept="image/*"
-                  onChange={(e) => setCreateForm((prev) => ({ ...prev, thumbnailFile: e.target.files?.[0] || null }))}
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] || null;
+                    if (file?.size > COURSE_THUMBNAIL_MAX_BYTES) {
+                      event.target.value = "";
+                      setToast("Course image size must be 500 KB or less");
+                      return;
+                    }
+                    setCreateForm((prev) => ({ ...prev, thumbnailFile: file }));
+                  }}
                   className="block w-full text-sm font-semibold text-slate-700"
                 />
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  PNG, JPG or WEBP — maximum 500 KB
+                </p>
               </div>
               <textarea
                 value={createForm.targetAudienceText}
@@ -3267,16 +3312,25 @@ export default function AdminCoursesPage() {
                               </div>
                               <input
                                 type="file"
-                                accept="image/*"
-                                onChange={(e) =>
+                                accept="image/png,image/jpeg,image/webp"
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0] || null;
+                                  if (file?.size > COURSE_THUMBNAIL_MAX_BYTES) {
+                                    event.target.value = "";
+                                    setToast("Course image size must be 500 KB or less");
+                                    return;
+                                  }
                                   setEditForm((prev) => ({
                                     ...prev,
-                                    thumbnailFile: e.target.files?.[0] || null,
-                                  }))
-                                }
+                                    thumbnailFile: file,
+                                  }));
+                                }}
                                 className="block w-full text-sm font-semibold text-slate-700"
                               />
                             </div>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              PNG, JPG or WEBP — maximum 500 KB
+                            </p>
                           </div>
                         </div>
                       </section>
@@ -3426,24 +3480,8 @@ export default function AdminCoursesPage() {
         </div>
       ) : null}
       <AdminNotificationModal
-        open={courseApprovalModal.open}
-        title="Approve course"
-        description="Confirm you checked everything needed, then choose whether to send notifications now."
-        payload={courseApprovalModal.payload}
-        onChange={(updater) =>
-          setCourseApprovalModal((prev) => ({
-            ...prev,
-            payload: typeof updater === "function" ? updater(prev.payload) : updater,
-          }))
-        }
-        onClose={closeCourseApprovalModal}
-        onConfirm={handleApproveCourseWithModal}
-        confirmLabel="Approve course"
-      />
-      <AdminNotificationModal
         open={coursePublishModal.open}
-        title="Publish course"
-        description="Confirm this course is ready to go live, then choose which notifications to send."
+        course={coursePublishModal.course}
         payload={coursePublishModal.payload}
         onChange={(updater) =>
           setCoursePublishModal((prev) => ({
@@ -3453,7 +3491,9 @@ export default function AdminCoursesPage() {
         }
         onClose={closeCoursePublishModal}
         onConfirm={handlePublishCourseWithModal}
-        confirmLabel="Publish course"
+        language={language}
+        isRTL={isRTL}
+        isSubmitting={publishSubmitting}
       />
     </div>
   );
@@ -3461,50 +3501,144 @@ export default function AdminCoursesPage() {
 
 function AdminNotificationModal({
   open,
-  title,
-  description,
+  course,
   payload,
   onChange,
   onClose,
   onConfirm,
-  confirmLabel,
+  language = "en",
+  isRTL = false,
+  isSubmitting = false,
 }) {
+  const isFa = language === "fa";
+  const sendsNotification = Boolean(
+    payload.notificationChannels?.push ||
+      payload.notificationChannels?.telegram,
+  );
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !isSubmitting) onClose();
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isSubmitting, onClose, open]);
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 px-4 py-6">
-      <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-xl font-black text-slate-950">{title}</h3>
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">{description}</p>
+    <div
+      className="fixed inset-0 z-[150] flex items-end justify-center bg-slate-950/65 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+      dir={isRTL ? "rtl" : "ltr"}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="publish-course-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isSubmitting) onClose();
+      }}
+    >
+      <div className="flex max-h-[100dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-slate-200 bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-[28px]">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-6 sm:py-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary-50 text-primary-700">
+              <Globe2 size={21} />
+            </span>
+            <div className="min-w-0">
+              <h3 id="publish-course-title" className="text-lg font-black text-slate-950 sm:text-xl">
+                {isFa ? "نشر کورس" : "Publish course"}
+              </h3>
+              <p className="mt-1 truncate text-sm font-bold text-slate-500">
+                {course?.title || (isFa ? "کورس انتخاب‌شده" : "Selected course")}
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            disabled={isSubmitting}
+            aria-label={isFa ? "بستن" : "Close"}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="mt-6 space-y-4">
-          <label className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+            <p className="text-sm font-black text-blue-950">
+              {isFa ? "کورس برای همه کاربران قابل مشاهده می‌شود." : "The course will become visible to users."}
+            </p>
+            <p className="mt-1 text-xs font-semibold leading-5 text-blue-800">
+              {isFa
+                ? "ارسال اعلان اختیاری است. اگر هیچ کانالی را انتخاب نکنید، کورس بدون اعلان نشر می‌شود."
+                : "Notifications are optional. If no channel is selected, the course is published silently."}
+            </p>
+          </div>
+
+          <label
+            className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3.5 transition ${
+              payload.confirmationChecked
+                ? "border-emerald-300 bg-emerald-50"
+                : "border-slate-200 bg-slate-50 hover:border-emerald-200"
+            }`}
+          >
             <input
               type="checkbox"
               checked={Boolean(payload.confirmationChecked)}
               onChange={(event) =>
                 onChange((prev) => ({ ...prev, confirmationChecked: event.target.checked }))
               }
-              className="mt-1 h-4 w-4"
+              className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-600"
             />
-            <span className="text-sm font-bold text-emerald-900">
-              I checked everything needed before continuing.
+            <span>
+              <span className="block text-sm font-black text-slate-900">
+                {isFa ? "آماده نشر است" : "Ready to publish"}
+              </span>
+              <span className="mt-1 block text-xs font-semibold leading-5 text-slate-600">
+                {isFa
+                  ? "محتوا، قیمت، زمان‌بندی و معلومات استاد را بررسی کرده‌ام."
+                  : "I reviewed the content, pricing, schedule, and teacher information."}
+              </span>
             </span>
           </label>
 
-          <div>
-            <FieldLabel>Notification audience</FieldLabel>
+          <section className="rounded-2xl border border-slate-200 p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <BellRing size={18} className="text-primary-600" />
+                <div>
+                  <p className="text-sm font-black text-slate-900">
+                    {isFa ? "اعلان نشر" : "Publication notifications"}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                    {sendsNotification
+                      ? isFa
+                        ? "اعلان ارسال خواهد شد"
+                        : "A notification will be sent"
+                      : isFa
+                        ? "بدون اعلان نشر می‌شود"
+                        : "Publishing without notifications"}
+                  </p>
+                </div>
+              </div>
+              <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
+                sendsNotification
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-slate-100 text-slate-600"
+              }`}>
+                {sendsNotification
+                  ? isFa ? "فعال" : "Enabled"
+                  : isFa ? "اختیاری" : "Optional"}
+              </span>
+            </div>
+
+            <FieldLabel>{isFa ? "دریافت‌کنندگان" : "Notification audience"}</FieldLabel>
             <select
               value={payload.notificationAudience}
               onChange={(event) =>
@@ -3512,14 +3646,17 @@ function AdminNotificationModal({
               }
               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none"
             >
-              <option value="all">All</option>
-              <option value="students">Students</option>
-              <option value="teachers">Teachers</option>
+              <option value="all">{isFa ? "همه کاربران" : "Everyone"}</option>
+              <option value="students">{isFa ? "شاگردان" : "Students"}</option>
+              <option value="teachers">{isFa ? "استادان" : "Teachers"}</option>
             </select>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-bold transition ${
+              payload.notificationChannels?.push
+                ? "border-primary-200 bg-primary-50 text-primary-800"
+                : "border-slate-200 bg-slate-50 text-slate-700"
+            }`}>
               <input
                 type="checkbox"
                 checked={Boolean(payload.notificationChannels?.push)}
@@ -3532,11 +3669,15 @@ function AdminNotificationModal({
                     },
                   }))
                 }
-                className="h-4 w-4"
+                className="h-5 w-5 accent-primary-600"
               />
-              Send web push
+              {isFa ? "اعلان داخل وب" : "Send web push"}
             </label>
-            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800">
+            <label className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-bold transition ${
+              payload.notificationChannels?.telegram
+                ? "border-sky-200 bg-sky-50 text-sky-800"
+                : "border-slate-200 bg-slate-50 text-slate-700"
+            }`}>
               <input
                 type="checkbox"
                 checked={Boolean(payload.notificationChannels?.telegram)}
@@ -3549,28 +3690,36 @@ function AdminNotificationModal({
                     },
                   }))
                 }
-                className="h-4 w-4"
+                className="h-5 w-5 accent-sky-600"
               />
-              Send Telegram announcement
+              {isFa ? "اعلان تلگرام" : "Telegram announcement"}
             </label>
-          </div>
+            </div>
+          </section>
         </div>
 
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-primary-700"
-          >
-            {confirmLabel}
-          </button>
+        <div className="shrink-0 border-t border-slate-200 bg-white px-5 py-4 sm:px-6">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              {isFa ? "لغو" : "Cancel"}
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={!payload.confirmationChecked || isSubmitting}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 py-2.5 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSubmitting ? <Loader2 size={17} className="animate-spin" /> : <CheckCircle2 size={17} />}
+              {isSubmitting
+                ? isFa ? "در حال نشر..." : "Publishing..."
+                : isFa ? "نشر کورس" : "Publish course"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

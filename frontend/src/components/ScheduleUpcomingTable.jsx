@@ -78,7 +78,14 @@ export default function ScheduleUpcomingTable({
                 <td className="px-4 py-5 text-slate-600">
                   {dayLabels[cls.day || cls.date] || cls.date}
                 </td>
-                <td className="px-4 py-5">{cls.time}</td>
+                <td className="px-4 py-5">
+                  <p className="font-black text-slate-800">
+                    {isFa ? "وقت شما: " : "Your time: "}{cls.localTime || cls.time}
+                  </p>
+                  <p className="mt-1 text-[11px] font-bold text-slate-500">
+                    {isFa ? "وقت استاد: " : "Teacher: "}{cls.teacherTime || cls.time}
+                  </p>
+                </td>
                 <td className="px-4 py-5">{cls.teacher}</td>
                 <td className="px-4 py-5">
                   <span

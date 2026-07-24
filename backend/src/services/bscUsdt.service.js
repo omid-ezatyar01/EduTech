@@ -20,7 +20,7 @@ const getBscConfig = () => {
   const rpcUrl = String(process.env.BSC_RPC_URL || "").trim();
   const recipientAddress = String(process.env.BSC_RECIPIENT_ADDRESS || "").trim();
   const usdtContractAddress = String(process.env.BSC_USDT_CONTRACT_ADDRESS || "").trim();
-  const expiryMinutes = Number(process.env.BSC_PAYMENT_EXPIRY_MINUTES || 20);
+  const expiryMinutes = Number(process.env.BSC_PAYMENT_EXPIRY_MINUTES || 60);
   const confirmationCount = Number(process.env.BSC_CONFIRMATIONS_REQUIRED || 1);
   const chainId = Number(process.env.BSC_CHAIN_ID || 56);
   const explorerBaseUrl = String(process.env.BSC_EXPLORER_BASE_URL || "https://bscscan.com").trim().replace(/\/+$/, "");
@@ -35,7 +35,7 @@ const getBscConfig = () => {
     rpcUrl,
     recipientAddress: getAddress(recipientAddress),
     usdtContractAddress: getAddress(usdtContractAddress),
-    expiryMinutes: Number.isFinite(expiryMinutes) && expiryMinutes > 0 ? expiryMinutes : 20,
+    expiryMinutes: Number.isFinite(expiryMinutes) && expiryMinutes > 0 ? expiryMinutes : 60,
     confirmationCount: Number.isFinite(confirmationCount) && confirmationCount > 0 ? confirmationCount : 1,
     chainId: Number.isFinite(chainId) && chainId > 0 ? chainId : 56,
     explorerBaseUrl: explorerBaseUrl || "https://bscscan.com",

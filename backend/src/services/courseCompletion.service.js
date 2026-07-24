@@ -1,4 +1,7 @@
 import Enrollment from "../models/Enrollment.js";
+import Assignment from "../models/Assignment.js";
+import AssignmentSubmission from "../models/AssignmentSubmission.js";
+import LiveSession from "../models/LiveSession.js";
 import { buildCertificateId, normalizeCertificateId } from "../utils/certificate.js";
 import {
   notifyStudentCertificateIssued,
@@ -10,8 +13,13 @@ import {
 const isPaidCourse = (course = null) =>
   !Boolean(course?.isFree) && Number(course?.price || 0) > 0;
 
-const ensureEnrollmentCertificate = (enrollment, fallbackDate, course = null) => {
-  if (!isPaidCourse(course)) {
+const ensureEnrollmentCertificate = (
+  enrollment,
+  fallbackDate,
+  course = null,
+  requirementsMet = true,
+) => {
+  if (!isPaidCourse(course) || !requirementsMet) {
     return {
       issuedAt: null,
       certificateId: null,
@@ -27,6 +35,77 @@ const ensureEnrollmentCertificate = (enrollment, fallbackDate, course = null) =>
     issuedAt,
     certificateId,
   };
+};
+
+const buildCertificateEligibilityByStudent = async (course, enrollments = []) => {
+  const rules = course?.certificate || {};
+  const minimumAttendance = Math.max(0, Math.min(100, Number(rules.minimumAttendance || 0)));
+  const minimumPassingGrade = Math.max(0, Math.min(100, Number(rules.minimumPassingGrade || 0)));
+  const studentIds = enrollments.map((row) => row.studentId).filter(Boolean);
+  const eligibility = new Map(studentIds.map((id) => [String(id), true]));
+
+  if (minimumAttendance > 0) {
+    const sessions = await LiveSession.find({
+      courseId: course._id,
+      status: "completed",
+    }).select("attendance").lean();
+    for (const studentId of studentIds) {
+      const presentCount = sessions.reduce(
+        (count, session) =>
+          count +
+          (session.attendance?.some(
+            (row) =>
+              String(row.studentId) === String(studentId) &&
+              row.status === "present",
+          )
+            ? 1
+            : 0),
+        0,
+      );
+      const attendancePercentage = sessions.length
+        ? (presentCount / sessions.length) * 100
+        : 0;
+      if (attendancePercentage < minimumAttendance) {
+        eligibility.set(String(studentId), false);
+      }
+    }
+  }
+
+  if (minimumPassingGrade > 0) {
+    const assignments = await Assignment.find({
+      courseId: course._id,
+      status: { $in: ["published", "closed"] },
+    }).select("_id maxScore").lean();
+    const assignmentIds = assignments.map((row) => row._id);
+    const maximumScore = assignments.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.maxScore || 0)),
+      0,
+    );
+    const submissions = assignmentIds.length
+      ? await AssignmentSubmission.find({
+          courseId: course._id,
+          studentId: { $in: studentIds },
+          assignmentId: { $in: assignmentIds },
+          status: "reviewed",
+        }).select("studentId score").lean()
+      : [];
+    const earnedByStudent = submissions.reduce((map, row) => {
+      const key = String(row.studentId);
+      map.set(key, Number(map.get(key) || 0) + Math.max(0, Number(row.score || 0)));
+      return map;
+    }, new Map());
+
+    for (const studentId of studentIds) {
+      const passingPercentage = maximumScore > 0
+        ? (Number(earnedByStudent.get(String(studentId)) || 0) / maximumScore) * 100
+        : 0;
+      if (passingPercentage < minimumPassingGrade) {
+        eligibility.set(String(studentId), false);
+      }
+    }
+  }
+
+  return eligibility;
 };
 
 const getVerifyOrigin = () =>
@@ -104,6 +183,7 @@ export const finalizeCourseEnd = async ({
 
   if (shouldUpdateCourse) {
     course.classEndedAt = effectiveEndedAt;
+    course.lifecycleStatus = "completed";
     if (!course.endDate || new Date(course.endDate).getTime() > effectiveEndedAt.getTime()) {
       course.endDate = effectiveEndedAt;
     }
@@ -129,6 +209,10 @@ export const finalizeCourseEnd = async ({
   let newlyCompletedStudents = 0;
   let certificatesIssued = 0;
   const notificationTargets = [];
+  const certificateEligibility = await buildCertificateEligibilityByStudent(
+    course,
+    enrollments,
+  );
 
   const ops = enrollments.map((enrollment) => {
     if (enrollment.enrollmentStatus !== "completed") {
@@ -139,6 +223,7 @@ export const finalizeCourseEnd = async ({
       enrollment,
       effectiveEndedAt,
       course,
+      certificateEligibility.get(String(enrollment.studentId)) !== false,
     );
 
     if (certificateId) {

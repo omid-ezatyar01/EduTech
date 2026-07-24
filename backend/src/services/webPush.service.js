@@ -156,6 +156,133 @@ const sendToSubscription = async (row, payload) => {
   }
 };
 
+const sendCourseEventToUsers = async ({
+  userIds = [],
+  role,
+  app,
+  payload,
+} = {}) => {
+  const uniqueUserIds = [...new Set(userIds.map((value) => String(value || "")).filter(Boolean))];
+  if (!uniqueUserIds.length) return { sent: 0, failed: 0 };
+  if (!configureWebPush()) return { skipped: true, reason: "web_push_not_configured" };
+
+  const rows = await PushSubscription.find({
+    role,
+    app,
+    userId: { $in: uniqueUserIds },
+  })
+    .populate("userId", "status notifications")
+    .lean();
+
+  const eligibleRows = rows.filter((row) => {
+    const user = row.userId;
+    return user?.status === "active" && user.notifications?.course !== false;
+  });
+
+  let sent = 0;
+  let failed = 0;
+  for (let index = 0; index < eligibleRows.length; index += 50) {
+    const results = await Promise.all(
+      eligibleRows.slice(index, index + 50).map((row) => sendToSubscription(row, payload)),
+    );
+    sent += results.filter((result) => result.ok).length;
+    failed += results.filter((result) => !result.ok).length;
+  }
+
+  return { sent, failed };
+};
+
+export const notifyTeacherCourseEvent = async ({
+  teacherId,
+  type,
+  title,
+  body = "",
+  url = "/teacher/courses",
+  courseId = "",
+} = {}) =>
+  sendCourseEventToUsers({
+    userIds: teacherId ? [teacherId] : [],
+    role: "teacher",
+    app: "teacher",
+    payload: {
+      type,
+      title,
+      body,
+      icon: "/icons/web-app-manifest-192x192.png",
+      badge: "/icons/favicon-96x96.png",
+      url: `${getTeacherSiteOrigin()}${url.startsWith("/") ? url : `/${url}`}`,
+      courseId: String(courseId || ""),
+    },
+  });
+
+export const notifyStudentsCourseStarted = async ({
+  studentIds = [],
+  courseTitle = "",
+  courseSlug = "",
+  courseId = "",
+} = {}) => {
+  const identifier = String(courseSlug || courseId || "").trim();
+  const relativeUrl = identifier
+    ? `/course/${encodeURIComponent(identifier)}`
+    : "/student/courses";
+
+  return sendCourseEventToUsers({
+    userIds: studentIds,
+    role: "student",
+    app: "student",
+    payload: {
+      type: "course_started",
+      title: "Course started",
+      body: `${courseTitle || "Your course"} has started. You can now continue from your dashboard.`,
+      icon: "/icons/web-app-manifest-192x192.png",
+      badge: "/icons/favicon-96x96.png",
+      url: `${getPublicSiteOrigin()}${relativeUrl}`,
+      courseId: String(courseId || ""),
+    },
+  });
+};
+
+export const notifyStudentsLiveSessionStarted = async ({
+  studentIds = [],
+  courseTitle = "",
+  sessionTitle = "",
+  courseId = "",
+  sessionId = "",
+} = {}) =>
+  sendCourseEventToUsers({
+    userIds: studentIds,
+    role: "student",
+    app: "student",
+    payload: {
+      type: "live_session_started",
+      title: "Live session started",
+      body: `${sessionTitle || "Your live session"} for ${courseTitle || "your course"} is now open.`,
+      icon: "/icons/web-app-manifest-192x192.png",
+      badge: "/icons/favicon-96x96.png",
+      url: `${getPublicSiteOrigin()}/student/live`,
+      courseId: String(courseId || ""),
+      sessionId: String(sessionId || ""),
+    },
+  });
+
+export const notifyStudentCalendarConnectionRequired = async ({
+  studentId,
+  courseTitle = "",
+} = {}) =>
+  sendCourseEventToUsers({
+    userIds: studentId ? [studentId] : [],
+    role: "student",
+    app: "student",
+    payload: {
+      type: "calendar_connect_required",
+      title: "Connect Google Calendar",
+      body: `Connect Google Calendar to receive automatic session reminders for ${courseTitle || "your course"}.`,
+      icon: "/icons/web-app-manifest-192x192.png",
+      badge: "/icons/favicon-96x96.png",
+      url: `${getPublicSiteOrigin()}/student/schedule?connectGoogle=1`,
+    },
+  });
+
 const normalizeAudienceRoles = (audience = "all") => {
   if (audience === "students") return ["student"];
   if (audience === "teachers") return ["teacher"];

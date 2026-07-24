@@ -7,6 +7,8 @@ const DEFAULT_OG_IMAGE = "/logo.png";
 const OFFICIAL_SOCIAL_URLS = [
   "https://www.instagram.com/edutech_main/",
   "https://t.me/edutech_main",
+  "https://www.facebook.com/share/1KuPqHbFMv/",
+  "https://www.youtube.com/@edutech_main",
 ];
 
 const BASE_KEYWORDS = [

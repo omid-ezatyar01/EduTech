@@ -61,7 +61,10 @@ export default function TeacherStudents() {
   const location = useLocation();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
   const initialCourse = useMemo(
-    () => new URLSearchParams(location.search).get("course") || "all",
+    () =>
+      new URLSearchParams(location.search).get("courseId") ||
+      new URLSearchParams(location.search).get("course") ||
+      "all",
     [location.search],
   );
   const initialStudentsCache = readTeacherPageCache(getStudentsCacheKey({
@@ -181,6 +184,12 @@ export default function TeacherStudents() {
   const handleCourseChange = (value) => {
     setCourse(value);
     setPage(1);
+    navigate(
+      value && value !== "all"
+        ? `/teacher/students?courseId=${encodeURIComponent(value)}`
+        : "/teacher/students",
+      { replace: true },
+    );
   };
 
   const visibleCourseOptions = useMemo(() => {
@@ -251,11 +260,19 @@ export default function TeacherStudents() {
     }
 
     if (action === "createAssignment") {
-      navigate("/teacher/assignments");
+      navigate(
+        course && course !== "all"
+          ? `/teacher/assignments?courseId=${encodeURIComponent(course)}`
+          : "/teacher/assignments",
+      );
       return;
     }
 
-    navigate("/teacher/attendance");
+    navigate(
+      course && course !== "all"
+        ? `/teacher/attendance?courseId=${encodeURIComponent(course)}`
+        : "/teacher/attendance",
+    );
   };
 
   const stats = [

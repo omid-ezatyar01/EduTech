@@ -11,6 +11,9 @@ import OtpVerification from "../models/OtpVerification.js";
 import Payment from "../models/Payment.js";
 import PushSubscription from "../models/PushSubscription.js";
 import TeacherIncomeSettlement from "../models/TeacherIncomeSettlement.js";
+import StudentNotification from "../models/StudentNotification.js";
+import TeacherNotification from "../models/TeacherNotification.js";
+import TeacherFollow from "../models/TeacherFollow.js";
 import { deleteCoursesWithRelationsByFilter } from "./courseCascadeDelete.service.js";
 
 const userIdOf = (user) => user?._id || user;
@@ -110,6 +113,15 @@ export const deleteUserRelatedData = async (user) => {
     }),
     TeacherIncomeSettlement.deleteMany(buildCourseScopedDeleteFilter(userId, preservedCourseIds)),
     PushSubscription.deleteMany({ userId }),
+    StudentNotification.deleteMany({
+      $or: [{ recipient: userId }, { teacher: userId }],
+    }),
+    TeacherNotification.deleteMany({
+      $or: [{ recipient: userId }, { student: userId }],
+    }),
+    TeacherFollow.deleteMany({
+      $or: [{ teacher: userId }, { follower: userId }],
+    }),
     OtpVerification.deleteMany({ userId }),
     GoogleAccount.deleteMany({ userId }),
   ]);

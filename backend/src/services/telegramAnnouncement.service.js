@@ -225,7 +225,6 @@ const resolveCourseDescription = (course = {}) =>
   compactText(
     normalizeReadableText(
       course?.description ||
-        course?.shortDescription ||
         `Join ${course?.title || "this course"} on EduTech Online Academy and start learning with expert guidance.`,
     ),
     850,

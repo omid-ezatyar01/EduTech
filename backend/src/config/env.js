@@ -48,7 +48,7 @@ const envSchema = Joi.object({
   BSCSCAN_TIMEOUT_MS: Joi.number().integer().min(1000).default(15000),
   BSC_RECIPIENT_ADDRESS: Joi.string().trim().allow("").default(""),
   BSC_USDT_CONTRACT_ADDRESS: Joi.string().trim().allow("").default(""),
-  BSC_PAYMENT_EXPIRY_MINUTES: Joi.number().integer().min(1).default(20),
+  BSC_PAYMENT_EXPIRY_MINUTES: Joi.number().integer().min(1).default(60),
   BSC_CONFIRMATIONS_REQUIRED: Joi.number().integer().min(1).default(1),
   BSC_CHAIN_ID: Joi.number().integer().min(1).default(56),
   BSC_EXPLORER_BASE_URL: Joi.string().uri().default("https://bscscan.com"),

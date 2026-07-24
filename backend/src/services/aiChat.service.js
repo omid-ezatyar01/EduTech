@@ -1491,7 +1491,7 @@ const getStudentContextBase = async ({ user }) => {
 
   const [courses, assignments, resources, sessions] = await Promise.all([
     Course.find({ _id: { $in: courseIds } })
-      .select("title shortDescription description whatYouWillLearn curriculumTopics requirements targetAudience language level")
+      .select("title description whatYouWillLearn curriculumTopics requirements targetAudience language level")
       .lean(),
     Assignment.find({
       courseId: { $in: courseIds },
@@ -1538,7 +1538,6 @@ const getStudentContextBase = async ({ user }) => {
         priority: 5,
         text: [
           course?.title ? `Course: ${course.title}` : "",
-          course?.shortDescription ? `Short description: ${course.shortDescription}` : "",
           course?.description ? `Description: ${course.description}` : "",
           Array.isArray(course?.whatYouWillLearn) && course.whatYouWillLearn.length
             ? `Learning outcomes: ${course.whatYouWillLearn.slice(0, 6).join("; ")}`
@@ -1619,7 +1618,7 @@ const getTeacherContextBase = async ({ user }) => {
   const ownedCourses = await Course.find({
     $or: [{ teacher: user?._id }, { teacherId: user?._id }, { createdBy: user?._id }],
   })
-    .select("title shortDescription description curriculumTopics whatYouWillLearn language level enrolledStudentsCount status")
+    .select("title description curriculumTopics whatYouWillLearn language level enrolledStudentsCount status")
     .sort({ updatedAt: -1 })
     .limit(16)
     .lean();
@@ -1684,7 +1683,6 @@ const getTeacherContextBase = async ({ user }) => {
         text: [
           course?.title ? `Course: ${course.title}` : "",
           course?.status ? `Status: ${course.status}` : "",
-          course?.shortDescription ? `Short description: ${course.shortDescription}` : "",
           course?.description ? `Description: ${course.description}` : "",
           course?.language ? `Language: ${course.language}` : "",
           course?.level ? `Level: ${course.level}` : "",
@@ -1839,7 +1837,7 @@ const getPublicContextBase = async () => {
     getPlatformSummaryData(),
     Category.find({ isActive: true }).select("name description").sort({ createdAt: -1 }).limit(8).lean(),
     Course.find({ status: "published", isPublished: true })
-      .select("title shortDescription description language level isFree price startDate")
+      .select("title description language level isFree price startDate")
       .sort({ createdAt: -1 })
       .limit(10)
       .lean(),
@@ -1884,7 +1882,6 @@ const getPublicContextBase = async () => {
         priority: 5,
         text: [
           course?.title ? `Course: ${course.title}` : "",
-          course?.shortDescription ? `Short description: ${course.shortDescription}` : "",
           course?.description ? `Description: ${course.description}` : "",
           course?.language ? `Language: ${course.language}` : "",
           course?.level ? `Level: ${course.level}` : "",

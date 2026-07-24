@@ -225,7 +225,7 @@ function mapEnrollmentToCourse(enrollment = {}, language = "fa") {
     courseId: String(course._id || course.id || ""),
     title: course.title || "Course",
     titleEn: course.title || "Course",
-    description: course.shortDescription || course.description || "",
+    description: course.description || "",
     teacher: teacher.name || "Teacher",
     teacherAvatar: resolveAvatarUrl(teacher.avatar || ""),
     thumbnail: resolveAvatarUrl(

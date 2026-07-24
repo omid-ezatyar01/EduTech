@@ -15,6 +15,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { formatProgressLabel } from "../../utils/courseProgress";
+import {
+  formatDateTimeInZone,
+  getBrowserTimeZone,
+} from "../../utils/timezone";
 
 const COURSE_IMAGE_FALLBACK = "/logo.png";
 
@@ -285,7 +289,7 @@ export default function CourseDetailsModal({
     const currency = current.currency || "USD";
     return {
       description:
-        String(current.description || current.shortDescription || current.subtitle || "").trim() ||
+        String(current.description || current.subtitle || "").trim() ||
         (language === "fa" ? "توضیحات ثبت نشده است." : "No description added."),
       schedule,
       previewLinks,
@@ -457,7 +461,22 @@ export default function CourseDetailsModal({
                   </div>
                   <div className="rounded-2xl bg-white px-4 py-2 shadow-sm">
                     <KeyValueRow label={language === "fa" ? "ایجاد شده" : "Created"} value={formatDate(normalizedCourse.createdAt, language)} />
-                    <KeyValueRow label={language === "fa" ? "تاریخ شروع" : "Start date"} value={formatDate(normalizedCourse.startDate, language, true)} />
+                    <KeyValueRow
+                      label={language === "fa" ? "شروع به وقت کورس" : "Start in course time"}
+                      value={formatDateTimeInZone(
+                        normalizedCourse.startDate,
+                        normalizedCourse.timezone || "Asia/Kabul",
+                        language,
+                      )}
+                    />
+                    <KeyValueRow
+                      label={language === "fa" ? "شروع به وقت محل شما" : "Start in your local time"}
+                      value={formatDateTimeInZone(
+                        normalizedCourse.startDate,
+                        getBrowserTimeZone(),
+                        language,
+                      )}
+                    />
                     <KeyValueRow label={language === "fa" ? "تاریخ پایان" : "End date"} value={formatDate(normalizedCourse.endDate, language, true)} />
                     <KeyValueRow label={language === "fa" ? "شروع واقعی صنف" : "Class started"} value={formatDate(normalizedCourse.classStartedAt, language, true)} />
                     <KeyValueRow label={language === "fa" ? "پایان واقعی صنف" : "Class ended"} value={formatDate(normalizedCourse.classEndedAt, language, true)} />

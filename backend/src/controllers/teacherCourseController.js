@@ -1,4 +1,5 @@
 import Course from "../models/Course.js";
+import Enrollment from "../models/Enrollment.js";
 import AdminNotification from "../models/AdminNotification.js";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
@@ -24,7 +25,12 @@ import {
   deriveCourseSchedule,
   getUniqueTeachingDays,
 } from "../utils/courseSchedule.js";
-import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
+import {
+  ensureCourseAutoStarted,
+  resolveCourseScheduledStartAt,
+} from "../utils/courseAutoStart.js";
+import { getCoursePublicState } from "../utils/coursePublicState.js";
+import { publishCourseStarted } from "../services/courseNotification.service.js";
 
 const buildSort = ({ sortBy = "newest", sortOrder = "desc" }) => {
   if (sortBy === "price") return { price: sortOrder === "asc" ? 1 : -1 };
@@ -44,18 +50,6 @@ const normalizeDateTime = (value) => {
 };
 
 const sameDateTime = (left, right) => normalizeDateTime(left) === normalizeDateTime(right);
-
-const localDateKey = (value) => {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const isSameLocalDate = (left, right) =>
-  Boolean(localDateKey(left)) && localDateKey(left) === localDateKey(right);
 
 const normalizeScheduleRows = (rows = []) =>
   (Array.isArray(rows) ? rows : [])
@@ -195,7 +189,6 @@ export const getTeacherCoursePricingSettings = asyncHandler(async (_req, res) =>
 
 export const createTeacherCourse = asyncHandler(async (req, res) => {
   const payload = { ...req.body };
-  delete payload.shortDescription;
   const pricing = await getPlatformPricingSettings();
 
   const categoryAssignment = await resolveCourseCategoryAssignment(
@@ -218,12 +211,19 @@ export const createTeacherCourse = asyncHandler(async (req, res) => {
   payload.teacherId = req.user._id;
   payload.createdBy = req.user._id;
   payload.status = "pending";
+  payload.lifecycleStatus = "pending_review";
   payload.isPublished = false;
   payload.currency = "USD";
   payload.isFree = Boolean(payload.isFree);
   payload.price = normalizeCoursePriceInput(payload.price);
   payload.previewVideoUrls = normalizePreviewVideoUrls(payload.previewVideoUrls);
   payload.promoVideo = payload.previewVideoUrls[0] || "";
+  if (payload.agreements) {
+    payload.agreements = {
+      ...payload.agreements,
+      acceptedAt: new Date(),
+    };
+  }
   applyTeacherSessionSchedule(payload);
 
   const existingTeacherCourses = await Course.find({
@@ -265,6 +265,11 @@ export const createTeacherCourse = asyncHandler(async (req, res) => {
       );
     }
   }
+  payload.certificate = {
+    ...(payload.certificate || {}),
+    enabled: !payload.isFree,
+    fullPaymentRequired: !payload.isFree,
+  };
 
   delete payload.enrolledStudentsCount;
   delete payload.rejectionReason;
@@ -353,7 +358,13 @@ export const getTeacherCourses = asyncHandler(async (req, res) => {
   return res.json(
     new ApiResponse({
       message: "Teacher courses fetched successfully",
-      data: courses,
+      data: courses.map((course) => {
+        const row = course.toObject();
+        return {
+          ...row,
+          publicState: getCoursePublicState({ course: row }),
+        };
+      }),
       meta: {
         page,
         limit,
@@ -382,7 +393,10 @@ export const getTeacherCourseById = asyncHandler(async (req, res) => {
   return res.json(
     new ApiResponse({
       message: "Course fetched successfully",
-      data: course,
+      data: {
+        ...course.toObject(),
+        publicState: getCoursePublicState({ course }),
+      },
     }),
   );
 });
@@ -399,9 +413,29 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
   if (!existingCourse) {
     throw new ApiError(404, "Course not found");
   }
+  const nextIsFreeForCertificate = Object.prototype.hasOwnProperty.call(payload, "isFree")
+    ? Boolean(payload.isFree)
+    : Boolean(existingCourse.isFree);
+  if (payload.certificate || Object.prototype.hasOwnProperty.call(payload, "isFree")) {
+    payload.certificate = {
+      ...(existingCourse.certificate?.toObject?.() || existingCourse.certificate || {}),
+      ...(payload.certificate || {}),
+      enabled: !nextIsFreeForCertificate,
+      fullPaymentRequired: !nextIsFreeForCertificate,
+    };
+  }
 
   if (existingCourse.classEndedAt) {
     throw new ApiError(400, "Ended courses cannot be edited by teacher");
+  }
+  if (
+    existingCourse.status === "pending" ||
+    existingCourse.lifecycleStatus === "pending_review"
+  ) {
+    throw new ApiError(
+      409,
+      "This course is locked while admin review is pending",
+    );
   }
 
   const nextMaxStudents = Object.prototype.hasOwnProperty.call(payload, "maxStudents")
@@ -436,7 +470,12 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
   delete payload.teacher;
   delete payload.teacherId;
   delete payload.rejectionReason;
+  delete payload.lifecycleStatus;
   delete payload.classStartedAt;
+  delete payload.actualStartedAt;
+  delete payload.startedBy;
+  delete payload.currentSessionNumber;
+  delete payload.minimumReachedAt;
   delete payload.classEndedAt;
 
   if (Object.prototype.hasOwnProperty.call(payload, "isFree")) {
@@ -508,6 +547,35 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
       throw new ApiError(
         400,
         "Course price settings cannot be changed after the class starts",
+      );
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(payload, "startDate") &&
+      new Date(payload.startDate).getTime() !==
+        new Date(existingCourse.startDate).getTime()
+    ) {
+      throw new ApiError(
+        400,
+        "The official course start date cannot be changed after the class starts",
+      );
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(payload, "totalSessions") &&
+      Number(payload.totalSessions) < Number(existingCourse.totalSessions || 0)
+    ) {
+      throw new ApiError(
+        400,
+        "Total sessions cannot be reduced after the class starts",
+      );
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(payload, "language") &&
+      String(payload.language) !== String(existingCourse.language)
+    ) {
+      throw new ApiError(
+        400,
+        "Course language cannot be changed after the class starts",
       );
     }
   }
@@ -620,19 +688,66 @@ export const startTeacherCourseClass = asyncHandler(async (req, res) => {
   }
 
   const now = new Date();
-  const isScheduledToday = course.startDate && isSameLocalDate(course.startDate, now);
-  const wasAutoRescheduledToday =
-    course.lastAutoRescheduledAt && isSameLocalDate(course.lastAutoRescheduledAt, now);
-  if (!isScheduledToday && !wasAutoRescheduledToday) {
-    throw new ApiError(400, "Class can only be started on the scheduled start date");
+  const scheduledStartAt = resolveCourseScheduledStartAt(course);
+  if (!scheduledStartAt || now < scheduledStartAt) {
+    throw new ApiError(400, "The course cannot be started before its scheduled start time");
+  }
+
+  const activeStudentsCount = await Enrollment.countDocuments({
+    courseId: course._id,
+    enrollmentStatus: { $in: ["active", "completed"] },
+    accessStatus: "allowed",
+    $or: [
+      { accessExpiresAt: { $exists: false } },
+      { accessExpiresAt: null },
+      { accessExpiresAt: { $gt: now } },
+    ],
+  });
+  const minimumStudentsToStart = Math.max(
+    1,
+    Number(course.minimumStudentsToStart || 1),
+  );
+  const startsBelowMinimum = activeStudentsCount < minimumStudentsToStart;
+  if (startsBelowMinimum && req.body?.startBelowMinimum !== true) {
+    throw new ApiError(
+      409,
+      `Minimum enrollment has not been reached (${activeStudentsCount}/${minimumStudentsToStart}). Confirm starting with the current students.`,
+    );
   }
 
   course.classStartedAt = now;
+  course.actualStartedAt = now;
+  course.startedBy = req.user._id;
+  course.currentSessionNumber = Math.max(
+    1,
+    Number(course.currentSessionNumber || 0),
+  );
+  course.lifecycleStatus = "in_progress";
   await course.save();
+  await publishCourseStarted({ courseId: course._id });
+
+  if (startsBelowMinimum) {
+    try {
+      await AdminNotification.create({
+        type: "course_minimum_override",
+        dedupeKey: `course_minimum_override:${course._id}:${now.getTime()}`,
+        title: "Course started below minimum enrollment",
+        message: `${req.user?.name || "A teacher"} started “${course.title}” with ${activeStudentsCount} of ${minimumStudentsToStart} required students.`,
+        course: course._id,
+        submittedBy: req.user._id,
+      });
+    } catch (notificationError) {
+      if (notificationError?.code !== 11000) {
+        console.warn(
+          `Failed to record below-minimum course start: ${notificationError.message}`,
+        );
+      }
+    }
+  }
 
   return res.json(
     new ApiResponse({
-      message: "Class started successfully. Start date and class time are now locked.",
+      message: "Course officially started. Live sessions remain independently managed.",
       data: course,
     }),
   );
@@ -709,6 +824,7 @@ export const requestTeacherCourseEndReview = asyncHandler(async (req, res) => {
     reviewedBy: undefined,
     adminResponse: "",
   };
+  course.lifecycleStatus = "awaiting_completion";
   await course.save();
 
   try {

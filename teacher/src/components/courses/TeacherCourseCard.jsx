@@ -65,10 +65,10 @@ export default function TeacherCourseCard({
       : course.status !== "published"
         ? "Publish course first"
         : !course.canStartToday
-          ? "Can start only on course start date"
+          ? "Available when the scheduled time is reached"
           : !course.minimumStudentsReached
             ? "Minimum students not reached yet, but teacher can still start manually"
-          : "Start class";
+          : "Start course officially";
   const canRequestEndReview =
     Boolean(course.classStartedAt) &&
     !course.classEndedAt &&
@@ -85,7 +85,9 @@ export default function TeacherCourseCard({
     !course.classCancelledAt &&
     !course.classEndedAt &&
     course.cancellationRequest?.status !== "pending";
-  const canEditCourse = !course.classEndedAt;
+  const canEditCourse =
+    !course.classEndedAt &&
+    course.lifecycleStatus !== "pending_review";
   const cancelTitle = course.cancellationRequest?.status === "pending"
     ? "Cancellation request pending"
     : course.status === "cancelled" || course.classCancelledAt
@@ -102,7 +104,7 @@ export default function TeacherCourseCard({
     actions: language === "fa" ? "عملیات" : "Actions",
     view: language === "fa" ? "دیدن جزئیات" : "View details",
     edit: language === "fa" ? "ویرایش" : "Edit",
-    start: language === "fa" ? "شروع صنف" : "Start class",
+    start: language === "fa" ? "شروع رسمی کورس" : "Start course officially",
     endReview: language === "fa" ? "درخواست پایان" : "Request end review",
     cancel: language === "fa" ? "درخواست لغو" : "Request cancel",
   };
@@ -137,9 +139,17 @@ export default function TeacherCourseCard({
         </div>
         <div className="col-span-2 flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
           <p className="text-[11px] font-black text-slate-500">{labels.status}</p>
-          <span className={`inline-flex max-w-[70%] items-center justify-center rounded-full px-3 py-1.5 text-[11px] font-bold ${statusClass}`}>
-            {course.statusLabel}
-          </span>
+          <div className="flex max-w-[72%] flex-col items-end gap-1">
+            <span className={`inline-flex items-center justify-center rounded-full px-3 py-1.5 text-[11px] font-bold ${statusClass}`}>
+              {course.statusLabel}
+            </span>
+            {course.publicStatusLabel ? (
+              <span className="text-[10px] font-black text-slate-500">
+                {language === "fa" ? "نمایش شاگرد: " : "Student view: "}
+                {course.publicStatusLabel}
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 

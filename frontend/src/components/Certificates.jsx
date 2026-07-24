@@ -110,7 +110,7 @@ const formatCertificateCourseTitle = (value = "") => {
 };
 
 const isPaidCourse = (course = {}) =>
-  !Boolean(course?.isFree) && Number(course?.price || 0) > 0;
+  !course?.isFree && Number(course?.price || 0) > 0;
 
 const isCertificateReady = (enrollment = {}) => {
   const course =
@@ -122,6 +122,7 @@ const isCertificateReady = (enrollment = {}) => {
     String(enrollment?.enrollmentStatus || "") === "completed" &&
     Boolean(course?.classEndedAt) &&
     isPaidCourse(course) &&
+    (enrollment?.certificateId || enrollment?.certificateIssuedAt) &&
     approvalStatus !== "rejected"
   );
 };
@@ -151,6 +152,10 @@ const mapEnrollmentToCertificate = (
   const teacherName = String(teacher?.name || course.teacherName || "").trim();
   const safeTeacherName = teacherName || teacherFallback;
   const progress = resolveStudentCourseProgressPercent(enrollment, course, 0);
+  const certificateRules =
+    course?.certificate && typeof course.certificate === "object"
+      ? course.certificate
+      : {};
 
   return {
     id: enrollment._id,
@@ -166,6 +171,17 @@ const mapEnrollmentToCertificate = (
     issueDateRaw: issuedAtRaw,
     issueDateCertificate: formatCertificateIssueDate(issuedAtRaw),
     progress,
+    certificateRequirements: {
+      minimumAttendance: Math.max(
+        0,
+        Math.min(100, Number(certificateRules.minimumAttendance || 0)),
+      ),
+      minimumPassingGrade: Math.max(
+        0,
+        Math.min(100, Number(certificateRules.minimumPassingGrade || 0)),
+      ),
+      fullPaymentRequired: certificateRules.fullPaymentRequired !== false,
+    },
     certificateId:
       certificateReady
         ? String(enrollment.certificateId || "").trim().toUpperCase() ||

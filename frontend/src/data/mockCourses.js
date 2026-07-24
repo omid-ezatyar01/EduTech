@@ -175,7 +175,6 @@ function buildMockCourse(index) {
     slug,
     title,
     description: `Build real skills in ${subcategory.name.toLowerCase()} with guided lessons, live support, and practical assignments.`,
-    shortDescription: `A hands-on ${subcategory.name.toLowerCase()} course for learners who want structured progress.`,
     about: `This temporary mock course helps populate the frontend catalog with realistic ${category.name.toLowerCase()} examples.`,
     level,
     language,

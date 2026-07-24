@@ -11,6 +11,7 @@ import { getPlatformPricingSettings, resolveCourseDisplayPricing } from "../util
 import { getCourseRatingAggregates, getPublicCourseReviews } from "../utils/courseRatings.js";
 import { buildCourseCategoryFilter } from "../utils/courseCategory.js";
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
+import { getCoursePublicState } from "../utils/coursePublicState.js";
 
 const activeEnrollmentFilter = (now = new Date()) => ({
   enrollmentStatus: { $in: ["active", "completed"] },
@@ -73,6 +74,26 @@ const resolvePreviewVideoUrls = (course = {}) => {
   if (videos.length) return videos;
   const promoVideo = String(course?.promoVideo || "").trim();
   return promoVideo ? [promoVideo] : [];
+};
+
+const stripPrivateTeacherPaymentInfo = (teacher = null) => {
+  if (!teacher || typeof teacher !== "object") return teacher;
+  const { bankPaymentInfo: _privateBankPaymentInfo, ...safeTeacher } = teacher;
+  return safeTeacher;
+};
+
+const sanitizePublicCourse = (course = {}) => {
+  const {
+    meetingLink: _privateMeetingLink,
+    shortDescription: _legacyShortDescription,
+    ...safeCourse
+  } = course;
+  return {
+    ...safeCourse,
+    teacher: stripPrivateTeacherPaymentInfo(safeCourse.teacher),
+    teacherId: stripPrivateTeacherPaymentInfo(safeCourse.teacherId),
+    createdBy: stripPrivateTeacherPaymentInfo(safeCourse.createdBy),
+  };
 };
 
 export const getPublishedCourses = asyncHandler(async (req, res) => {
@@ -218,10 +239,14 @@ export const getPublishedCourses = asyncHandler(async (req, res) => {
   );
   const normalizedCourses = (Array.isArray(courses) ? courses : []).map((courseDoc) => {
     const row = typeof courseDoc?.toObject === "function" ? courseDoc.toObject() : courseDoc;
+    const enrolledStudentsCount = enrollmentCounts.get(String(row._id)) || 0;
+    const publicState = getCoursePublicState({
+      course: { ...row, enrolledStudentsCount },
+    });
     const pricing = resolveCourseDisplayPricing(row, globalDiscountPercentage);
     const ratingStats = ratingAggregates.get(String(row._id)) || { rating: 0, ratingCount: 0 };
     return {
-      ...row,
+      ...sanitizePublicCourse(row),
       price: pricing.finalPrice,
       discountPrice: pricing.originalPriceForDisplay || 0,
       teacherDiscountPercentage: pricing.teacherDiscountPercentage,
@@ -236,7 +261,8 @@ export const getPublishedCourses = asyncHandler(async (req, res) => {
         hasTeacherBankPaymentInfo(row?.teacher) ||
         hasTeacherBankPaymentInfo(row?.teacherId) ||
         hasTeacherBankPaymentInfo(row?.createdBy),
-      enrolledStudentsCount: enrollmentCounts.get(String(row._id)) || 0,
+      enrolledStudentsCount,
+      publicState,
       rating: ratingStats.rating,
       ratingCount: ratingStats.ratingCount,
     };
@@ -334,7 +360,7 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
   const pricing = resolveCourseDisplayPricing(row, globalDiscountPercentage);
   const ratingStats = ratingAggregates.get(String(courseId)) || { rating: 0, ratingCount: 0 };
   const normalizedCourse = {
-    ...row,
+    ...sanitizePublicCourse(row),
     price: pricing.finalPrice,
     discountPrice: pricing.originalPriceForDisplay || 0,
     teacherDiscountPercentage: pricing.teacherDiscountPercentage,
@@ -350,6 +376,12 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
       hasTeacherBankPaymentInfo(row?.teacherId) ||
       hasTeacherBankPaymentInfo(row?.createdBy),
     enrolledStudentsCount: enrollmentCounts.get(String(courseId)) || 0,
+    publicState: getCoursePublicState({
+      course: {
+        ...row,
+        enrolledStudentsCount: enrollmentCounts.get(String(courseId)) || 0,
+      },
+    }),
     rating: ratingStats.rating,
     ratingCount: ratingStats.ratingCount,
     ratingDistribution: ratingStats.ratingDistribution || {},

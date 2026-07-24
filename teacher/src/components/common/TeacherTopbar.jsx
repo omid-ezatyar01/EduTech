@@ -1,11 +1,32 @@
 import {
+  Bell,
   Check,
+  CheckCheck,
   ChevronDown,
   Menu,
   Search,
+  UserPlus,
+  UsersRound,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import {
+  fetchTeacherNotifications,
+  markAllTeacherNotificationsRead,
+  markTeacherNotificationRead,
+} from "../../../services/notificationService.js";
+
+const relativeTime = (value, language) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const minutes = Math.max(1, Math.round((Date.now() - date.getTime()) / 60_000));
+  if (minutes < 60) return language === "fa" ? `${minutes} دقیقه پیش` : `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return language === "fa" ? `${hours} ساعت پیش` : `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return language === "fa" ? `${days} روز پیش` : `${days}d ago`;
+};
 
 export default function TeacherTopbar({
   language,
@@ -14,19 +35,77 @@ export default function TeacherTopbar({
   onOpenMobileSidebar,
 }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [openLangs, setOpenLangs] = useState(false);
+  const [openNotifications, setOpenNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(true);
   const langRef = useRef(null);
+  const notificationRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (langRef.current && !langRef.current.contains(event.target)) {
         setOpenLangs(false);
       }
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setOpenNotifications(false);
+      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadNotifications = async ({ quiet = false } = {}) => {
+      if (!quiet) setNotificationsLoading(true);
+      try {
+        const data = await fetchTeacherNotifications();
+        if (!active) return;
+        setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
+        setUnreadCount(Number(data.unreadCount || 0));
+      } catch {
+        // Keep the teacher portal usable if notifications are temporarily unavailable.
+      } finally {
+        if (active && !quiet) setNotificationsLoading(false);
+      }
+    };
+
+    loadNotifications();
+    const timer = window.setInterval(() => loadNotifications({ quiet: true }), 45_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") loadNotifications({ quiet: true });
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, []);
+
+  const openNotification = async (notification) => {
+    if (!notification.isRead) {
+      setNotifications((rows) =>
+        rows.map((row) =>
+          row._id === notification._id ? { ...row, isRead: true } : row,
+        ),
+      );
+      setUnreadCount((count) => Math.max(0, count - 1));
+      markTeacherNotificationRead(notification._id).catch(() => {});
+    }
+    setOpenNotifications(false);
+    navigate(notification.url || "/teacher/courses");
+  };
+
+  const markAllRead = async () => {
+    setNotifications((rows) => rows.map((row) => ({ ...row, isRead: true })));
+    setUnreadCount(0);
+    await markAllTeacherNotificationsRead().catch(() => {});
+  };
 
   const languages = [
     { value: "fa", label: "فارسی" },
@@ -89,6 +168,127 @@ export default function TeacherTopbar({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
+        <div className="relative" ref={notificationRef}>
+          <button
+            type="button"
+            onClick={() => setOpenNotifications((value) => !value)}
+            className="relative grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+            aria-label={language === "fa" ? "اعلان‌ها" : "Notifications"}
+          >
+            <Bell size={19} />
+            {unreadCount > 0 ? (
+              <span className="absolute -end-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-black text-white ring-2 ring-white">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            ) : null}
+          </button>
+
+          {openNotifications ? (
+            <div
+              className={`fixed inset-x-3 bottom-3 top-[calc(var(--teacher-shell-header-height)+0.5rem)] z-50 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:h-auto sm:max-h-[min(560px,calc(100vh-96px))] sm:w-[370px] ${
+                isRTL ? "sm:left-0" : "sm:right-0"
+              }`}
+              dir={isRTL ? "rtl" : "ltr"}
+            >
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 p-3 sm:p-4">
+                <div className="min-w-0">
+                  <p className="font-black text-slate-950">
+                    {language === "fa" ? "اعلان‌ها" : "Notifications"}
+                  </p>
+                  <p className="mt-0.5 text-xs font-bold text-slate-500">
+                    {language === "fa"
+                      ? `${unreadCount} اعلان خوانده‌نشده`
+                      : `${unreadCount} unread`}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {unreadCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={markAllRead}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 text-[11px] font-black text-slate-700 hover:bg-slate-200 sm:text-xs"
+                    >
+                      <CheckCheck size={14} />
+                      <span className="hidden min-[390px]:inline">
+                        {language === "fa" ? "خواندن همه" : "Read all"}
+                      </span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setOpenNotifications(false)}
+                    className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 sm:hidden"
+                    aria-label={language === "fa" ? "بستن اعلان‌ها" : "Close notifications"}
+                  >
+                    <X size={17} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain sm:max-h-[470px]">
+                {notificationsLoading ? (
+                  <p className="p-8 text-center text-sm font-bold text-slate-500">
+                    {language === "fa" ? "در حال بارگذاری…" : "Loading…"}
+                  </p>
+                ) : notifications.length ? (
+                  notifications.map((notification) => {
+                    const Icon =
+                      notification.type === "student_enrolled" ? UserPlus : UsersRound;
+                    const localizedBody = language === "fa"
+                      ? notification.type === "student_enrolled"
+                        ? `${notification.student?.name || "یک شاگرد"} در کورس «${notification.course?.title || "شما"}» ثبت‌نام کرد.`
+                        : `کورس «${notification.course?.title || "شما"}» به حداقل تعداد شاگردان رسیده و آماده شروع است.`
+                      : notification.body;
+                    return (
+                      <button
+                        key={notification._id}
+                        type="button"
+                        onClick={() => openNotification(notification)}
+                        className={`flex w-full items-start gap-3 border-b border-slate-100 p-3 text-start transition last:border-b-0 hover:bg-slate-50 sm:p-4 ${
+                          notification.isRead ? "bg-white" : "bg-blue-50/70"
+                        }`}
+                      >
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-100 text-blue-700">
+                          <Icon size={18} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <strong className="line-clamp-2 break-words text-sm text-slate-950">
+                              {notification.type === "student_enrolled"
+                                ? language === "fa"
+                                  ? "ثبت‌نام شاگرد جدید"
+                                  : notification.title
+                                : language === "fa"
+                                  ? "حداقل شاگردان تکمیل شد"
+                                  : notification.title}
+                            </strong>
+                            {!notification.isRead ? (
+                              <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                            ) : null}
+                          </span>
+                          <span className="mt-1 block line-clamp-2 text-xs font-semibold leading-5 text-slate-600">
+                            {localizedBody}
+                          </span>
+                          <span className="mt-1.5 block text-[11px] font-bold text-slate-400">
+                            {relativeTime(notification.createdAt, language)}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="p-8 text-center">
+                    <Bell className="mx-auto text-slate-300" size={32} />
+                    <p className="mt-2 text-sm font-bold text-slate-500">
+                      {language === "fa" ? "هنوز اعلانی ندارید." : "No notifications yet."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         <div className="relative" ref={langRef}>
           <button
             type="button"

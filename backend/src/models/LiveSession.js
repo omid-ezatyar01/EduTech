@@ -93,9 +93,28 @@ const liveSessionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["scheduled", "live", "completed", "cancelled"],
+      enum: [
+        "scheduled",
+        "ready",
+        "live",
+        "delayed",
+        "completed",
+        "cancelled",
+        "rescheduled",
+        "missed",
+      ],
       default: "scheduled",
       index: true,
+    },
+    sessionNumber: {
+      type: Number,
+      min: 1,
+    },
+    actualStartedAt: {
+      type: Date,
+    },
+    actualEndedAt: {
+      type: Date,
     },
     notifyStudents: {
       type: Boolean,

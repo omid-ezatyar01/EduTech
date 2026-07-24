@@ -67,10 +67,10 @@ export default function TeacherCourseRow({
       : course.status !== "published"
         ? "Publish course first"
         : !course.canStartToday
-          ? "Can start only on course start date"
+          ? "Available when the scheduled time is reached"
           : !course.minimumStudentsReached
             ? "Minimum students not reached yet, but teacher can still start manually"
-          : "Start class";
+          : "Start course officially";
   const canRequestEndReview =
     Boolean(course.classStartedAt) &&
     !course.classEndedAt &&
@@ -87,7 +87,9 @@ export default function TeacherCourseRow({
     !course.classCancelledAt &&
     !course.classEndedAt &&
     course.cancellationRequest?.status !== "pending";
-  const canEditCourse = !course.classEndedAt;
+  const canEditCourse =
+    !course.classEndedAt &&
+    course.lifecycleStatus !== "pending_review";
   const canDeleteCourse = !course.classEndedAt;
   const cancelTitle = course.cancellationRequest?.status === "pending"
     ? "Cancellation request pending"
@@ -126,9 +128,17 @@ export default function TeacherCourseRow({
         </div>
       </td>
       <td className="px-3 py-4 text-center">
-        <span className={`inline-flex max-w-full items-center justify-center rounded-full px-3 py-1.5 text-xs font-bold ${statusClass}`}>
-          {course.statusLabel}
-        </span>
+        <div className="flex flex-col items-center gap-1">
+          <span className={`inline-flex max-w-full items-center justify-center rounded-full px-3 py-1.5 text-xs font-bold ${statusClass}`}>
+            {course.statusLabel}
+          </span>
+          {course.publicStatusLabel ? (
+            <span className="text-[10px] font-black text-slate-500">
+              {language === "fa" ? "نمایش شاگرد: " : "Student view: "}
+              {course.publicStatusLabel}
+            </span>
+          ) : null}
+        </div>
       </td>
       <td className="px-3 py-4 text-center text-sm font-semibold text-slate-600">{course.createdAt}</td>
       <td className="px-4 py-4 text-center">

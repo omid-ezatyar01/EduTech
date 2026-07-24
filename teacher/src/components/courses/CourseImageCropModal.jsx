@@ -221,11 +221,13 @@ export default function CourseImageCropModal({
           ? await cropFittedImageRegionFile({
               file,
               crop,
+              quality: 0.82,
               targetWidth: 1200,
               targetHeight: 675,
             })
           : await fitImageFile({
               file,
+              quality: 0.82,
               targetWidth: 1200,
               targetHeight: 675,
             });

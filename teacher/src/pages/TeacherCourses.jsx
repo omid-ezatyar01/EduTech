@@ -15,7 +15,6 @@ import TeacherCourseFilterBar from "../components/courses/TeacherCourseFilterBar
 import TeacherCoursesTable from "../components/courses/TeacherCoursesTable";
 import CreateCourseModal from "../components/courses/CreateCourseModal";
 import EditCourseModal from "../components/courses/EditCourseModal";
-import CourseDetailsModal from "../components/courses/CourseDetailsModal";
 import useLiveDataRefresh from "../hooks/useLiveDataRefresh";
 import {
   calculateCourseProgress,
@@ -46,7 +45,6 @@ import {
   writeTeacherPageCache,
 } from "../utils/teacherPageCache";
 import { formatCategoryPathLabel } from "../utils/categoryTree";
-import { buildCourseQueryValue } from "../utils/routePaths";
 
 const resolveAssetUrl = (rawPath = "") => {
   const value = String(rawPath || "").trim();
@@ -72,6 +70,32 @@ function getStatusLabel(status, language) {
   return map[status]?.[language] || (language === "fa" ? "پیش‌نویس" : "Draft");
 }
 
+function getLifecycleLabel(status, language) {
+  const map = {
+    draft: { fa: "پیش‌نویس", en: "Draft" },
+    pending_review: { fa: "در انتظار بررسی مدیر", en: "Pending admin review" },
+    changes_requested: { fa: "نیازمند اصلاح", en: "Changes requested" },
+    approved: { fa: "تأییدشده", en: "Approved" },
+    enrollment_open: { fa: "ثبت‌نام باز است", en: "Enrollment open" },
+    enrollment_closed: { fa: "ثبت‌نام بسته است", en: "Enrollment closed" },
+    minimum_not_reached: { fa: "حداقل شاگرد تکمیل نشده", en: "Minimum not reached" },
+    ready_to_start: { fa: "آماده شروع", en: "Ready to start" },
+    in_progress: { fa: "در حال برگزاری", en: "In progress" },
+    paused: { fa: "موقتاً متوقف", en: "Paused" },
+    awaiting_completion: { fa: "آماده تکمیل", en: "Awaiting completion" },
+    completed: { fa: "تکمیل‌شده", en: "Completed" },
+    canceled: { fa: "لغوشده", en: "Cancelled" },
+    archived: { fa: "آرشیوشده", en: "Archived" },
+  };
+  return map[status]?.[language] || "";
+}
+
+function getPublicStatusLabel(publicState, language) {
+  const label = publicState?.label;
+  if (typeof label === "string") return label;
+  return label?.[language === "fa" ? "fa" : "en"] || "";
+}
+
 function getTeacherTeachingLanguages(teacher) {
   const rows = Array.isArray(teacher?.teacherApplication?.languages)
     ? teacher.teacherApplication.languages
@@ -86,17 +110,6 @@ function getTeacherTeachingLanguages(teacher) {
       return true;
     });
 }
-
-const localDateKey = (value) => {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const isTodayDate = (value) => Boolean(localDateKey(value)) && localDateKey(value) === localDateKey(new Date());
 
 const DEFAULT_PRICING_SETTINGS = {
   minTeacherCoursePrice: null,
@@ -285,6 +298,7 @@ function mapCourse(course, language, pricingSettings = {}) {
   const classCancelledAt = course.classCancelledAt || null;
   const cancellationRequest = course.cancellationRequest || {};
   const endRequest = course.endRequest || {};
+  const lifecycleStatus = String(course.lifecycleStatus || "");
   const progress = calculateCourseProgress(course);
   const receivePricing = resolveTeacherReceiveAmount(course, pricingSettings);
 
@@ -313,7 +327,9 @@ function mapCourse(course, language, pricingSettings = {}) {
     progress,
     progressLabel: formatProgressLabel(progress, language),
     status: course.status,
-    statusLabel: course.status === "cancelled" || classCancelledAt
+    lifecycleStatus,
+    publicStatusLabel: getPublicStatusLabel(course.publicState, language),
+    statusLabel: getLifecycleLabel(lifecycleStatus, language) || (course.status === "cancelled" || classCancelledAt
       ? language === "fa"
         ? "صنف لغو شد"
         : "Class cancelled"
@@ -333,7 +349,7 @@ function mapCourse(course, language, pricingSettings = {}) {
         ? language === "fa"
           ? "صنف شروع شد"
           : "Class started"
-      : getStatusLabel(course.status, language),
+      : getStatusLabel(course.status, language)),
     createdAt: new Date(course.createdAt).toLocaleDateString(),
     thumbnailUrl: resolveAssetUrl(course.thumbnail),
     thumbnailType: course.level === "advanced" ? "python" : course.level === "intermediate" ? "api" : "mern",
@@ -360,7 +376,7 @@ function mapCourse(course, language, pricingSettings = {}) {
       course.teacherReceiveAmount ?? receivePricing.teacherReceiveAmount,
     ),
     endDate: course.endDate || null,
-    canStartToday: isTodayDate(course.startDate),
+    canStartToday: ["ready_to_start", "minimum_not_reached"].includes(lifecycleStatus),
     canEndNow: Boolean(classStartedAt) && !classEndedAt && endRequest?.status !== "pending",
     cancellationRequest,
     endRequest,
@@ -408,8 +424,6 @@ export default function TeacherCourses() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createFormSession, setCreateFormSession] = useState(0);
   const [editingCourse, setEditingCourse] = useState(null);
-  const [detailsCourse, setDetailsCourse] = useState(null);
-  const [detailsLoading, setDetailsLoading] = useState(false);
   const [cancellationCourse, setCancellationCourse] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancellationSubmitting, setCancellationSubmitting] = useState(false);
@@ -659,14 +673,14 @@ export default function TeacherCourses() {
     try {
       createCourseRequestRef.current = true;
       setCreateSubmitting(true);
-      await createTeacherCourse(form);
+      const createdCourse = await createTeacherCourse(form);
       clearTeacherPageCache("teacher:courses");
+      localStorage.removeItem("edutech:teacher:create-course-draft:v2");
       setRefreshSeed((prev) => prev + 1);
 
-      setCreateFormSession((previous) => previous + 1);
-      setCreateOpen(false);
       setToast(language === "fa" ? "کورس ایجاد شد" : "Course created");
       window.dispatchEvent(new Event("edutech_data_changed"));
+      return createdCourse;
     } catch (err) {
       if (isNetworkError(err)) {
         try {
@@ -681,18 +695,18 @@ export default function TeacherCourses() {
 
           if (matchingCourse) {
             clearTeacherPageCache("teacher:courses");
+            localStorage.removeItem("edutech:teacher:create-course-draft:v2");
             setRefreshSeed((prev) => prev + 1);
-            setCreateFormSession((previous) => previous + 1);
-            setCreateOpen(false);
             setToast(language === "fa" ? "کورس ایجاد شد" : "Course created");
             window.dispatchEvent(new Event("edutech_data_changed"));
-            return;
+            return matchingCourse;
           }
         } catch {
           // If verification also fails, keep the original error handling below.
         }
       }
       setToast(err.message || "Create failed");
+      throw err;
     } finally {
       createCourseRequestRef.current = false;
       setCreateSubmitting(false);
@@ -726,16 +740,14 @@ export default function TeacherCourses() {
         setCourses((prevCourses) =>
           prevCourses.map((course) => (course.id === mappedCourse.id ? mappedCourse : course)),
         );
-        if (detailsCourse?.id === mappedCourse.id) {
-          setDetailsCourse(mappedCourse);
-        }
       }
       setRefreshSeed((prev) => prev + 1);
-      setEditingCourse(null);
       setToast(language === "fa" ? "تغییرات ذخیره شد" : "Changes saved");
       window.dispatchEvent(new Event("edutech_data_changed"));
+      return updatedCourse;
     } catch (err) {
       setToast(err.message || "Update failed");
+      throw err;
     }
   };
 
@@ -796,8 +808,8 @@ export default function TeacherCourses() {
     if (!course?.canStartToday) {
       setToast(
         language === "fa"
-          ? "صنف فقط در همان تاریخ شروع کورس قابل شروع است."
-          : "Class can only be started on the scheduled course start date.",
+          ? "کورس پس از رسیدن تاریخ و زمان برنامه‌ریزی‌شده قابل شروع است."
+          : "The course can be started after its scheduled date and time.",
       );
       return;
     }
@@ -814,8 +826,10 @@ export default function TeacherCourses() {
     if (!shouldStart) return;
 
     try {
-      await startTeacherCourseClass(course.id);
-      setToast(language === "fa" ? "صنف شروع شد و تاریخ/زمان شروع قفل شد." : "Class started and start date/time is locked.");
+      await startTeacherCourseClass(course.id, {
+        startBelowMinimum: !course.minimumStudentsReached,
+      });
+      setToast(language === "fa" ? "کورس به‌صورت رسمی آغاز شد. هر جلسه جداگانه شروع می‌شود." : "Course officially started. Each live session is started separately.");
       window.dispatchEvent(new Event("edutech_data_changed"));
     } catch (err) {
       setToast(err?.message || (language === "fa" ? "شروع صنف ناموفق بود" : "Failed to start class"));
@@ -878,53 +892,9 @@ export default function TeacherCourses() {
     setPage(1);
   };
 
-  const handleManageCourseStudents = (course) => {
-    if (!course?.title) return;
-    if (isEndedCourse(course)) {
-      setToast(language === "fa" ? "برای کورس پایان‌یافته مدیریت شاگردان غیرفعال است." : "Student management is disabled for ended courses.");
-      return;
-    }
-    setDetailsCourse(null);
-    navigate(`/teacher/students?course=${encodeURIComponent(course.title)}`);
-  };
-
-  const handleManageCourseContent = (course) => {
+  const handleOpenCourseDetails = (course) => {
     if (!course?.id) return;
-    if (isEndedCourse(course)) {
-      setToast(language === "fa" ? "برای کورس پایان‌یافته مدیریت محتوا غیرفعال است." : "Content management is disabled for ended courses.");
-      return;
-    }
-    const params = new URLSearchParams({
-      course: buildCourseQueryValue(course),
-    });
-    setDetailsCourse(null);
-    navigate(`/teacher/resources?${params.toString()}`);
-  };
-
-  const handleOpenCourseDetails = async (course) => {
-    if (!course?.id) return;
-
-    setDetailsCourse(course);
-    setDetailsLoading(true);
-
-    try {
-      const latestPricingSettings = await refreshPricingSettings();
-      const fullCourse = await fetchTeacherCourseById(course.id);
-      if (!fullCourse) {
-        setToast(language === "fa" ? "اطلاعات کامل کورس پیدا نشد" : "Full course data not found");
-        return;
-      }
-      setDetailsCourse(mapCourse(fullCourse, language, latestPricingSettings));
-    } catch (err) {
-      setToast(
-        err?.message ||
-          (language === "fa"
-            ? "بارگذاری جزئیات کورس ناموفق بود"
-            : "Failed to load course details"),
-      );
-    } finally {
-      setDetailsLoading(false);
-    }
+    navigate(`/teacher/courses/${encodeURIComponent(course.id)}`);
   };
 
   const handleOpenEditCourse = async (course) => {
@@ -1046,7 +1016,10 @@ export default function TeacherCourses() {
       <CreateCourseModal
         key={createFormSession}
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => {
+          setCreateOpen(false);
+          setCreateFormSession((previous) => previous + 1);
+        }}
         onSubmit={handleCreateCourse}
         isSubmitting={createSubmitting}
         language={language}
@@ -1054,6 +1027,7 @@ export default function TeacherCourses() {
         categories={categories}
         pricingSettings={pricingSettings}
         teacherLanguages={teacherLanguages}
+        defaultTimeZone={teacher?.timezone || ""}
       />
 
       {editingCourse ? (
@@ -1068,19 +1042,9 @@ export default function TeacherCourses() {
           isRTL={isRTL}
           pricingSettings={pricingSettings}
           teacherLanguages={teacherLanguages}
+          defaultTimeZone={teacher?.timezone || ""}
         />
       ) : null}
-
-      <CourseDetailsModal
-        open={Boolean(detailsCourse)}
-        course={detailsCourse}
-        isLoading={detailsLoading}
-        onClose={() => setDetailsCourse(null)}
-        language={language}
-        isRTL={isRTL}
-        onManageStudents={() => handleManageCourseStudents(detailsCourse)}
-        onManageContent={() => handleManageCourseContent(detailsCourse)}
-      />
 
       {cancellationCourse ? (
         <div className="fixed inset-0 z-[120] flex items-end justify-center bg-[#0F172A]/55 p-0 sm:items-center sm:p-4">

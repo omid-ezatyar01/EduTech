@@ -526,7 +526,9 @@ export const getTeacherStudents = asyncHandler(async (req, res) => {
   const start = (page - 1) * limit;
   const students = rows.slice(start, start + limit);
 
-  const statsRows = allRows;
+  // Keep summary cards aligned with the active course/search filters. Previously
+  // the table was filtered while its totals still represented every teacher course.
+  const statsRows = rows;
   const uniqueStudentHealth = new Map();
 
   statsRows.forEach((item) => {
@@ -545,7 +547,7 @@ export const getTeacherStudents = asyncHandler(async (req, res) => {
     ? Math.round(attendanceRows.reduce((sum, item) => sum + item.attendance, 0) / attendanceRows.length)
     : 0;
 
-  const newStudents = allRows
+  const newStudents = rows
     .slice()
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5)

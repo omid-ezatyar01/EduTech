@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle,
   CheckCircle2,
   Clock3,
   Copy,
@@ -18,39 +17,6 @@ import {
   normalizeEvmTransactionHash,
   verifyDirectCryptoPayment,
 } from "../../services/paymentGateway.js";
-
-const STATUS_META = {
-  SUCCEEDED: {
-    icon: CheckCircle2,
-    tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    ring: "#10B981",
-  },
-  PENDING: {
-    icon: Clock3,
-    tone: "border-amber-200 bg-amber-50 text-amber-700",
-    ring: "#F59E0B",
-  },
-  FAILED: {
-    icon: AlertTriangle,
-    tone: "border-rose-200 bg-rose-50 text-rose-700",
-    ring: "#EF4444",
-  },
-  EXPIRED: {
-    icon: AlertTriangle,
-    tone: "border-rose-200 bg-rose-50 text-rose-700",
-    ring: "#EF4444",
-  },
-  MANUAL_REVIEW: {
-    icon: ShieldCheck,
-    tone: "border-sky-200 bg-sky-50 text-sky-700",
-    ring: "#0EA5E9",
-  },
-  DUPLICATE_PAYMENT: {
-    icon: ShieldCheck,
-    tone: "border-primary-200 bg-primary-50 text-primary-700",
-    ring: "#2563EB",
-  },
-};
 
 const glassCardClass =
   "rounded-[20px] border border-white/70 bg-white/80 shadow-[0_14px_34px_rgba(15,23,42,0.06)] backdrop-blur-xl";
@@ -391,46 +357,6 @@ const StatusStep = ({ title, caption, active, completed, darkMode, icon }) => (
   </div>
 );
 
-const ProgressRing = ({ label, progress, color, darkMode }) => {
-  const radius = 46;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - circumference * progress;
-
-  return (
-    <div className="relative grid h-28 w-28 place-items-center">
-      <svg className="h-28 w-28 -rotate-90" viewBox="0 0 120 120" aria-hidden="true">
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          stroke={darkMode ? "rgba(148,163,184,0.18)" : "#E2E8F0"}
-          strokeWidth="8"
-          fill="none"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          stroke={color}
-          strokeWidth="8"
-          strokeLinecap="round"
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="transition-all duration-1000 ease-out"
-        />
-      </svg>
-      <div className="absolute inset-0 grid place-items-center">
-        <div className="text-center">
-          <p className={`text-xl font-black ${darkMode ? "text-white" : "text-slate-950"}`} dir="ltr">
-            {label}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const resolveQrPayload = (payment) => {
   const provider = String(payment?.provider || "").toUpperCase();
   const method = String(payment?.method || "").toUpperCase();
@@ -515,7 +441,6 @@ export default function NowPaymentsPage({ language: appLanguage }) {
   }, [displayAmountValue, displayCurrencyLabel]);
   const statusKey = String(payment?.status || "PENDING").toUpperCase();
   const isExpiredPayment = statusKey === "EXPIRED";
-  const statusMeta = STATUS_META[statusKey] || STATUS_META.PENDING;
   const statusLabel = isFa
     ? statusLabelMap[statusKey]?.fa || statusKey
     : statusLabelMap[statusKey]?.en || statusKey;
@@ -539,8 +464,10 @@ export default function NowPaymentsPage({ language: appLanguage }) {
     }
 
     let mounted = true;
-    setTxHash("");
-    setDidSendPayment(false);
+    const resetTimer = window.setTimeout(() => {
+      setTxHash("");
+      setDidSendPayment(false);
+    }, 0);
 
     const load = async () => {
       try {
@@ -573,6 +500,7 @@ export default function NowPaymentsPage({ language: appLanguage }) {
     const timer = window.setInterval(load, 10000);
     return () => {
       mounted = false;
+      window.clearTimeout(resetTimer);
       window.clearInterval(timer);
     };
   }, [language, navigate, paymentAttemptId]);
@@ -822,7 +750,7 @@ export default function NowPaymentsPage({ language: appLanguage }) {
   const totalDurationMs =
     Number.isFinite(expiresAtMs - createdAtMs) && expiresAtMs - createdAtMs > 0
       ? expiresAtMs - createdAtMs
-      : 20 * 60 * 1000;
+      : 60 * 60 * 1000;
   const remainingMs =
     expiresAtMs && nowMs ? Math.max(0, expiresAtMs - nowMs) : 0;
   const expiresIn = useMemo(() => {
@@ -888,8 +816,8 @@ export default function NowPaymentsPage({ language: appLanguage }) {
           </div>
 
           <div className="p-2.5 sm:p-4 lg:p-5">
-            <div className="grid items-stretch gap-4 xl:grid-cols-[320px_minmax(0,1fr)]" dir="ltr">
-              <div className={`order-2 ${glassCardClass} ${panelBorderClass} flex h-full min-h-0 flex-col p-4 sm:p-5 xl:order-1 xl:min-h-[520px]`} dir={isFa ? "rtl" : "ltr"}>
+            <div className="grid items-start gap-4 lg:grid-cols-[260px_minmax(0,1fr)]" dir="ltr">
+              <div className={`order-2 ${glassCardClass} ${panelBorderClass} flex h-full min-h-0 flex-col p-4 lg:order-1`} dir={isFa ? "rtl" : "ltr"}>
                 <div className="text-center xl:text-center">
                   <div className="flex items-center justify-center gap-2">
                     <h2 className={`text-lg font-black ${darkMode ? "text-white" : "text-slate-950"}`}>
@@ -903,8 +831,8 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                   </p>
                 </div>
 
-                <div className="mt-5 flex justify-center sm:mt-6" dir="ltr">
-                  <div className={`w-full max-w-[220px] rounded-[20px] border p-3 shadow-[0_12px_28px_rgba(15,23,42,0.07)] ${
+                <div className="mt-4 flex justify-center" dir="ltr">
+                  <div className={`w-full max-w-[180px] rounded-2xl border p-2 shadow-[0_12px_28px_rgba(15,23,42,0.07)] ${
                     darkMode ? "border-slate-700 bg-slate-900" : "border-[#EAEAEA] bg-white"
                   }`}>
                     {qr ? (
@@ -939,14 +867,14 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                   </button>
                 </div>
 
-                <div className={`mt-5 rounded-[20px] border-t pt-4 ${
+                <details className={`mt-4 rounded-2xl border px-3.5 py-3 ${
                   darkMode ? "border-slate-800" : "border-slate-100"
                 }`}>
-                  <h3 className={`text-sm font-black ${darkMode ? "text-white" : "text-slate-900"}`}>
-                    {isFa ? "راهنمای پرداخت" : "Payment guide"}
-                  </h3>
+                  <summary className={`cursor-pointer text-sm font-black ${darkMode ? "text-white" : "text-slate-900"}`}>
+                    {isFa ? "راهنمای کوتاه پرداخت" : "Quick payment guide"}
+                  </summary>
                   <div className="mt-4 space-y-3">
-                    {guideSteps.map((step, index) => (
+                    {guideSteps.slice(0, isDirectBscFlow ? 5 : 3).map((step, index) => (
                       <GuideStepItem
                         key={`${index}-${step}`}
                         index={index + 1}
@@ -964,16 +892,6 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                     <div className="mt-4 space-y-3">
                       <GuideNote
                         darkMode={darkMode}
-                        tone="emerald"
-                        title={isFa ? "یادداشت کیف پول رسمی" : "Official wallet note"}
-                        body={
-                          isFa
-                            ? "این کیف پول رسمی EduTech برای دریافت پرداخت دالری روی شبکه BSC (BEP20) است. لطفاً آن را با آدرس سپرده Binance اشتباه نگیرید."
-                            : "This is EduTech's official wallet for receiving USD-value payments on BSC (BEP20). Please do not confuse it with a Binance deposit address."
-                        }
-                      />
-                      <GuideNote
-                        darkMode={darkMode}
                         tone="amber"
                         title={isFa ? "راهنمای مهم" : "Important"}
                         body={
@@ -984,37 +902,28 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                       />
                     </div>
                   ) : null}
-                </div>
+                </details>
 
-                <div className="mt-auto pt-5">
-                  <div className={`rounded-[20px] border p-3.5 ${
+                <div className="mt-4">
+                  <div className={`rounded-2xl border p-3.5 ${
                     darkMode ? "border-slate-800 bg-slate-900/60" : "border-[#EAEAEA] bg-white/70"
                   }`}>
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <p className={`text-[11px] font-black sm:text-xs ${darkMode ? "text-white" : "text-slate-900"}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className={`text-xs font-black ${darkMode ? "text-white" : "text-slate-900"}`}>
                           {isFa ? "زمان باقی‌مانده" : "Payment countdown"}
                         </p>
-                        <p className={`mt-2 text-[11px] font-semibold leading-5 sm:text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                          {isFa
-                            ? "اگر پرداخت را انجام دهید اما تا پایان این زمان آن را ثبت یا بررسی نکنید، سیستم پرداخت شما را تایید نخواهد کرد."
-                            : "If you pay but do not submit or check it before this time ends, the system will not approve the payment."}
-                        </p>
                       </div>
-                      <div className="flex justify-center sm:justify-start">
-                        <ProgressRing
-                          label={expiresIn || "00:00"}
-                          progress={progress}
-                          color={statusMeta.ring}
-                          darkMode={darkMode}
-                        />
-                      </div>
+                      <p className={`text-lg font-black ${darkMode ? "text-white" : "text-slate-950"}`} dir="ltr">{expiresIn || "00:00"}</p>
+                    </div>
+                    <div className={`mt-3 h-1.5 overflow-hidden rounded-full ${darkMode ? "bg-slate-800" : "bg-slate-100"}`}>
+                      <div className="h-full rounded-full bg-primary-500 transition-all" style={{ width: `${progress * 100}%` }} />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="order-1 space-y-4 xl:order-2" dir={isFa ? "rtl" : "ltr"}>
+              <div className="order-1 space-y-4 lg:order-2" dir={isFa ? "rtl" : "ltr"}>
               <div className={`${glassCardClass} ${panelBorderClass} flex flex-col p-4 sm:p-5 lg:p-6`}>
                 <div className={`rounded-[20px] border p-4 ${
                   darkMode ? "border-slate-800 bg-slate-900/55" : "border-[#EAEAEA] bg-slate-50/70"
@@ -1030,8 +939,8 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                         </h2>
                         <p className={`mt-1 text-xs font-semibold leading-6 ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
                           {isFa
-                            ? "اگر با Trust Wallet پرداخت می‌کنید، مبلغ اول را بفرستید. اگر با Binance پرداخت می‌کنید، مبلغ دوم را بفرستید. اگر با کیف پول یا صرافی دیگری پرداخت می‌کنید، مطمئن شوید مبلغی که در نهایت به این کیف پول می‌رسد کمتر از مبلغ خواسته‌شده نباشد. اگر کارمزد از مبلغ ارسالی کم می‌شود، باید آن را هم حساب کنید؛ چون اگر مبلغ دریافتی کمتر باشد، ثبت‌نام شما تایید نخواهد شد."
-                            : "If you pay with Trust Wallet, send the first amount. If you pay with Binance, send the second amount. If you pay with any other wallet or exchange, make sure the amount that finally arrives in this wallet is not lower than the required amount. If your provider deducts a fee from the sent amount, include that fee too, because registration will not be approved if less than the required amount arrives."}
+                            ? "مبلغ و شبکه را دقیقاً مطابق اطلاعات زیر انتخاب کنید."
+                            : "Use the exact amount and network shown below."}
                         </p>
                       </div>
                     </div>
@@ -1088,13 +997,20 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                   </div>
                 </div>
 
-                <div className="mt-6 grid gap-3 md:grid-cols-1">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <MiniInfoCard
                     label={isFa ? "کد سفارش" : "Order code"}
                     value={payment?.paymentReference || paymentAttemptId}
                     align="ltr"
                     tone="blue"
                     icon={<ShieldCheck size={20} />}
+                  />
+                  <MiniInfoCard
+                    label={isFa ? "شبکه پرداخت" : "Payment network"}
+                    value={networkLabel}
+                    align="ltr"
+                    tone="emerald"
+                    icon={<Wallet size={20} />}
                   />
                 </div>
 
@@ -1131,25 +1047,6 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                     {isFa ? "ثبت و بررسی پرداخت" : "Submit Payment"}
                   </h2>
                 </div>
-              </div>
-
-              <div
-                className={`mt-4 rounded-[18px] border p-3.5 ${
-                  darkMode ? "border-slate-800 bg-slate-900/55" : "border-[#EAEAEA] bg-slate-50/80"
-                }`}
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className={`text-xs font-black ${darkMode ? "text-slate-200" : "text-slate-700"}`}>
-                      {isFa ? "وضعیت ثبت‌نام" : "Enrollment status"}
-                    </p>
-                  </div>
-                  <div className={`inline-flex items-center gap-2 self-start rounded-full border px-3 py-2 text-xs font-black ${statusMeta.tone}`}>
-                    <span className="h-2 w-2 rounded-full bg-current opacity-80" />
-                    <span>{statusLabel}</span>
-                  </div>
-                </div>
-
               </div>
 
               {isDirectBscFlow ? (
@@ -1192,43 +1089,26 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                   </div>
 
                   <div className="mb-3">
-                    <p className={`text-sm font-black ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
-                      {isFa ? "آیا مبلغ را ارسال کرده‌اید؟" : "Did you already send the money?"}
-                    </p>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDidSendPayment(true)}
+                    <label className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-3.5 ${
+                      didSendPayment
+                        ? darkMode
+                          ? "border-emerald-700 bg-emerald-950/30"
+                          : "border-emerald-300 bg-emerald-50"
+                        : darkMode
+                          ? "border-slate-700 bg-slate-900/70"
+                          : "border-slate-200 bg-white"
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={didSendPayment}
+                        onChange={(event) => setDidSendPayment(event.target.checked)}
                         disabled={isExpiredPayment}
-                        className={`inline-flex h-11 items-center justify-center rounded-[16px] border px-4 text-sm font-black transition ${
-                          didSendPayment
-                            ? darkMode
-                              ? "border-emerald-700 bg-emerald-900/30 text-emerald-200"
-                              : "border-emerald-300 bg-emerald-100 text-emerald-800"
-                            : darkMode
-                              ? "border-slate-700 bg-slate-900/70 text-slate-200"
-                              : "border-slate-200 bg-white text-slate-600"
-                        } disabled:cursor-not-allowed disabled:opacity-60`}
-                      >
-                        {isFa ? "بله، پرداخت کردم" : "Yes, I paid"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDidSendPayment(false)}
-                        disabled={isExpiredPayment}
-                        className={`inline-flex h-11 items-center justify-center rounded-[16px] border px-4 text-sm font-black transition ${
-                          !didSendPayment
-                            ? darkMode
-                              ? "border-slate-500 bg-slate-800 text-white"
-                              : "border-slate-300 bg-slate-100 text-slate-800"
-                            : darkMode
-                              ? "border-slate-700 bg-slate-900/70 text-slate-200"
-                              : "border-slate-200 bg-white text-slate-600"
-                        } disabled:cursor-not-allowed disabled:opacity-60`}
-                      >
-                        {isFa ? "هنوز نه" : "Not yet"}
-                      </button>
-                    </div>
+                        className="h-5 w-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className={`text-sm font-black ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
+                        {isFa ? "مبلغ را ارسال کرده‌ام" : "I have sent the payment"}
+                      </span>
+                    </label>
                   </div>
 
                   {!didSendPayment ? (
