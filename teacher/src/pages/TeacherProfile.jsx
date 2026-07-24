@@ -19,9 +19,11 @@ import {
   writeTeacherPageCache,
 } from "../utils/teacherPageCache";
 
-const AVATAR_MAX_SIZE_BYTES = 2 * 1024 * 1024;
+const AVATAR_RAW_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+const AVATAR_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const CV_MAX_SIZE_BYTES = 2 * 1024 * 1024;
-const CERTIFICATE_MAX_SIZE_BYTES = 2 * 1024 * 1024;
+const CERTIFICATE_MAX_SIZE_BYTES = 1.5 * 1024 * 1024;
+const CERTIFICATE_TOTAL_MAX_SIZE_BYTES = 5 * 1024 * 1024;
 const CERTIFICATE_MAX_COUNT = 5;
 const SKILL_RATING_MAX_COUNT = 20;
 const TEACHING_LANGUAGE_MAX_COUNT = 20;
@@ -1618,8 +1620,13 @@ export default function TeacherProfile() {
   const handleAvatarSelect = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (file.size > AVATAR_MAX_SIZE_BYTES) {
-      setSingleFieldError("avatarFile", isFa ? "حجم عکس باید حداکثر 2MB باشد." : "Image size must be 2MB or less.");
+    if (!AVATAR_MIME_TYPES.has(file.type)) {
+      setSingleFieldError("avatarFile", isFa ? "فقط تصویر PNG، JPG یا WEBP مجاز است." : "Only PNG, JPG, or WEBP images are allowed.");
+      event.target.value = "";
+      return;
+    }
+    if (file.size > AVATAR_RAW_MAX_SIZE_BYTES) {
+      setSingleFieldError("avatarFile", isFa ? "حجم تصویر اصلی باید کمتر از ۱۰ مگابایت باشد." : "The source image must be under 10 MB.");
       event.target.value = "";
       return;
     }
@@ -1658,8 +1665,8 @@ export default function TeacherProfile() {
         setSingleFieldError(
           "certificateFiles",
           isFa
-            ? "حجم هر گواهینامه باید کمتر از 2MB باشد."
-            : "Each certificate must be less than 2MB.",
+            ? "حجم هر گواهینامه باید حداکثر ۱.۵ مگابایت باشد."
+            : "Each certificate must be 1.5 MB or less.",
         );
         event.target.value = "";
         return;
@@ -1708,6 +1715,17 @@ export default function TeacherProfile() {
     }
 
     const nextFiles = [...existingSelected, ...uniqueIncoming];
+    const selectedTotalBytes = nextFiles.reduce((total, file) => total + Number(file?.size || 0), 0);
+    if (selectedTotalBytes > CERTIFICATE_TOTAL_MAX_SIZE_BYTES) {
+      setSingleFieldError(
+        "certificateFiles",
+        isFa
+          ? "مجموع گواهینامه‌های جدید نباید بیشتر از ۵ مگابایت باشد."
+          : "New certificate files must not exceed 5 MB in total.",
+      );
+      event.target.value = "";
+      return;
+    }
     setCertificateFiles(nextFiles);
     setSingleFieldError(
       "certificateFiles",
@@ -2071,7 +2089,7 @@ export default function TeacherProfile() {
                   <label className="flex w-full max-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#D1D5DB] bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
                     <Upload size={14} />
                     {isFa ? "آپلود عکس" : "Upload Image"}
-                    <input type="file" className="hidden" accept="image/png, image/jpeg" onChange={handleAvatarSelect} />
+                    <input type="file" className="hidden" accept="image/png,image/jpeg,image/webp" onChange={handleAvatarSelect} />
                   </label>
                   {fieldErrors.avatarFile ? (
                     <p className="text-center text-xs font-semibold text-rose-600">{fieldErrors.avatarFile}</p>
@@ -2351,7 +2369,7 @@ export default function TeacherProfile() {
                     <>
                       <div className="space-y-1.5 md:col-span-2">
                         <span className="text-xs font-bold text-slate-600">
-                          {isFa ? "گواهینامه‌ها (PDF کمتر از 2MB، حداکثر 5 فایل)" : "Certificates (PDF under 2MB, up to 5 files)"}
+                          {isFa ? "گواهینامه‌ها (هر PDF حداکثر ۱.۵MB، مجموع ۵MB، حداکثر ۵ فایل)" : "Certificates (1.5 MB each, 5 MB total, up to 5 PDFs)"}
                         </span>
                         <label className={`flex cursor-pointer items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 ${getPanelClass("certificateFiles")}`}>
                           <span className="truncate">

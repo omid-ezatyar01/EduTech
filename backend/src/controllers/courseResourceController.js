@@ -9,9 +9,10 @@ import {
   moveUploadedCourseResourcePdf,
   removeCourseResourcePdfIfLocal,
   removeUploadedTempCourseResourceFile,
+  uploadedFileHasPdfSignature,
 } from "../utils/courseResourceFile.js";
 
-const COURSE_RESOURCE_TOTAL_MAX_BYTES = 100 * 1024 * 1024;
+const COURSE_RESOURCE_TOTAL_MAX_BYTES = 25 * 1024 * 1024;
 
 const normalizeResourceType = (value = "") => {
   const type = String(value || "").trim();
@@ -107,7 +108,7 @@ const getCoursePdfUsage = async (courseId, teacherId, excludeResourceId = null) 
 const ensureCoursePdfLimit = async (courseId, teacherId, nextFileSize, excludeResourceId = null) => {
   const currentUsage = await getCoursePdfUsage(courseId, teacherId, excludeResourceId);
   if (currentUsage + Number(nextFileSize || 0) > COURSE_RESOURCE_TOTAL_MAX_BYTES) {
-    throw new ApiError(400, "Total PDF resources for this course must not exceed 100MB");
+    throw new ApiError(400, "Total PDF resources for this course must not exceed 25MB");
   }
 };
 
@@ -154,6 +155,9 @@ export const createCourseResource = asyncHandler(async (req, res) => {
     if (payload.type === "PDF") {
       if (!req.file?.path) {
         throw new ApiError(400, "PDF file is required");
+      }
+      if (!(await uploadedFileHasPdfSignature(req.file))) {
+        throw new ApiError(400, "The uploaded file is not a valid PDF");
       }
       await ensureCoursePdfLimit(req.params.id, req.user._id, req.file.size || 0);
       payload.filePath = await moveUploadedCourseResourcePdf(req.user._id, req.params.id, req.file);
@@ -210,6 +214,9 @@ export const updateCourseResource = asyncHandler(async (req, res) => {
 
     if (payload.type === "PDF") {
       if (req.file?.path) {
+        if (!(await uploadedFileHasPdfSignature(req.file))) {
+          throw new ApiError(400, "The uploaded file is not a valid PDF");
+        }
         await ensureCoursePdfLimit(
           req.params.id,
           req.user._id,

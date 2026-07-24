@@ -57,6 +57,7 @@ import {
   formatDateTimeInZone,
   getBrowserTimeZone,
 } from "../utils/timezone.js";
+import { compressImageFileToLimit } from "../utils/imageCompression.js";
 
 const statusOptions = ["all", "draft", "pending", "approved", "published", "rejected", "cancelled"];
 const statusFilterOptions = [
@@ -290,6 +291,8 @@ const DAY_OPTIONS = [
 ];
 const DESCRIPTION_MIN_CHARS = 120;
 const COURSE_THUMBNAIL_MAX_BYTES = 500 * 1024;
+const COURSE_THUMBNAIL_RAW_MAX_BYTES = 10 * 1024 * 1024;
+const COURSE_THUMBNAIL_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const DESCRIPTION_MAX_CHARS = 2000;
 const TITLE_MIN_CHARS = 5;
 const TITLE_MAX_CHARS = 120;
@@ -303,6 +306,28 @@ const LIST_ITEM_MAX_CHARS = 180;
 const LIST_MAX_ITEMS = 30;
 const LIST_ROW_BREAK_REGEX = /\r\n?|\n|\u2028|\u2029/g;
 const ADMIN_COURSES_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const prepareCourseThumbnail = async (file) => {
+  if (!(file instanceof File)) return null;
+  if (!COURSE_THUMBNAIL_TYPES.has(file.type)) {
+    const error = new Error("Only PNG, JPG, or WEBP images are allowed");
+    error.code = "INVALID_IMAGE_TYPE";
+    throw error;
+  }
+  if (file.size > COURSE_THUMBNAIL_RAW_MAX_BYTES) {
+    const error = new Error("The source image must be under 10 MB");
+    error.code = "SOURCE_IMAGE_TOO_LARGE";
+    throw error;
+  }
+  return compressImageFileToLimit({
+    file,
+    maxBytes: COURSE_THUMBNAIL_MAX_BYTES,
+    maxWidth: 1200,
+    maxHeight: 1200,
+    initialQuality: 0.82,
+    baseName: "course-image",
+  });
+};
 const ADMIN_COURSES_CATEGORIES_KEY = getAdminPageCacheKey("courses-categories");
 const ADMIN_COURSES_TEACHERS_KEY = getAdminPageCacheKey("courses-teachers");
 const getDefaultCoursesListCacheKey = (status = "all") =>
@@ -2854,19 +2879,29 @@ export default function AdminCoursesPage() {
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
-                  onChange={(event) => {
+                  onChange={async (event) => {
                     const file = event.target.files?.[0] || null;
-                    if (file?.size > COURSE_THUMBNAIL_MAX_BYTES) {
-                      event.target.value = "";
-                      setToast("Course image size must be 500 KB or less");
-                      return;
+                    event.target.value = "";
+                    if (!file) return;
+                    try {
+                      setToast(language === "fa" ? "در حال فشرده‌سازی تصویر…" : "Compressing image…");
+                      const optimizedFile = await prepareCourseThumbnail(file);
+                      setCreateForm((prev) => ({ ...prev, thumbnailFile: optimizedFile }));
+                      setToast(language === "fa" ? "تصویر آماده شد." : "Image is ready.");
+                    } catch (error) {
+                      setToast(
+                        error?.code === "INVALID_IMAGE_TYPE"
+                          ? language === "fa" ? "فقط تصویر PNG، JPG یا WEBP مجاز است." : "Only PNG, JPG, or WEBP images are allowed."
+                          : error?.code === "SOURCE_IMAGE_TOO_LARGE"
+                            ? language === "fa" ? "حجم تصویر اصلی باید کمتر از ۱۰ مگابایت باشد." : "The source image must be under 10 MB."
+                            : language === "fa" ? "فشرده‌سازی تصویر انجام نشد." : "The image could not be compressed.",
+                      );
                     }
-                    setCreateForm((prev) => ({ ...prev, thumbnailFile: file }));
                   }}
                   className="block w-full text-sm font-semibold text-slate-700"
                 />
                 <p className="mt-1 text-xs font-semibold text-slate-500">
-                  PNG, JPG or WEBP — maximum 500 KB
+                  PNG, JPG or WEBP — automatically compressed below 500 KB
                 </p>
               </div>
               <textarea
@@ -3313,23 +3348,33 @@ export default function AdminCoursesPage() {
                               <input
                                 type="file"
                                 accept="image/png,image/jpeg,image/webp"
-                                onChange={(event) => {
+                                onChange={async (event) => {
                                   const file = event.target.files?.[0] || null;
-                                  if (file?.size > COURSE_THUMBNAIL_MAX_BYTES) {
-                                    event.target.value = "";
-                                    setToast("Course image size must be 500 KB or less");
-                                    return;
+                                  event.target.value = "";
+                                  if (!file) return;
+                                  try {
+                                    setToast(language === "fa" ? "در حال فشرده‌سازی تصویر…" : "Compressing image…");
+                                    const optimizedFile = await prepareCourseThumbnail(file);
+                                    setEditForm((prev) => ({
+                                      ...prev,
+                                      thumbnailFile: optimizedFile,
+                                    }));
+                                    setToast(language === "fa" ? "تصویر آماده شد." : "Image is ready.");
+                                  } catch (error) {
+                                    setToast(
+                                      error?.code === "INVALID_IMAGE_TYPE"
+                                        ? language === "fa" ? "فقط تصویر PNG، JPG یا WEBP مجاز است." : "Only PNG, JPG, or WEBP images are allowed."
+                                        : error?.code === "SOURCE_IMAGE_TOO_LARGE"
+                                          ? language === "fa" ? "حجم تصویر اصلی باید کمتر از ۱۰ مگابایت باشد." : "The source image must be under 10 MB."
+                                          : language === "fa" ? "فشرده‌سازی تصویر انجام نشد." : "The image could not be compressed.",
+                                    );
                                   }
-                                  setEditForm((prev) => ({
-                                    ...prev,
-                                    thumbnailFile: file,
-                                  }));
                                 }}
                                 className="block w-full text-sm font-semibold text-slate-700"
                               />
                             </div>
                             <p className="mt-1 text-xs font-semibold text-slate-500">
-                              PNG, JPG or WEBP — maximum 500 KB
+                              PNG, JPG or WEBP — automatically compressed below 500 KB
                             </p>
                           </div>
                         </div>

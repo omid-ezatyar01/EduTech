@@ -23,7 +23,8 @@ import {
 } from "../utils/teacherPageCache";
 import { extractRouteIdentifier } from "../utils/routePaths";
 
-const PDF_MAX_BYTES = 100 * 1024 * 1024;
+const PDF_FILE_MAX_BYTES = 5 * 1024 * 1024;
+const PDF_TOTAL_MAX_BYTES = 25 * 1024 * 1024;
 const COURSES_PER_PAGE = 10;
 const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
 const getResourceCoursesCacheKey = (coursePage) =>
@@ -186,8 +187,8 @@ export default function TeacherResources() {
       ? "برای افزودن فایل‌ها و لینک‌های آموزشی، اول یکی از کورس‌های خود را انتخاب کنید."
       : "Select one of your courses first, then add PDFs and learning links.",
     subtitle: isFa
-      ? "جلسه صنف را انتخاب کنید تا عنوان محتوا از موضوع صنف پر شود، سپس PDFها و لینک‌های آموزشی را اضافه کنید. مجموع PDFهای هر کورس نباید بیشتر از 100MB باشد."
-      : "Select a class session so the content title follows the session topic, then add PDFs and links. Total PDFs per course must not exceed 100MB.",
+      ? "جلسه صنف را انتخاب کنید و PDFها یا لینک‌های آموزشی را اضافه کنید. هر PDF حداکثر ۵MB و مجموع هر کورس حداکثر ۲۵MB است."
+      : "Select a class session and add PDFs or learning links. Each PDF is limited to 5 MB and each course to 25 MB total.",
     course: isFa ? "انتخاب کورس" : "Select Course",
     backToCourses: isFa ? "برگشت به کورس‌ها" : "Back to Courses",
     selectCourse: isFa ? "یک کورس را انتخاب کنید" : "Choose a course",
@@ -445,18 +446,18 @@ export default function TeacherResources() {
       if (!isPdf) return isFa ? "فقط فایل PDF مجاز است." : "Only PDF files are allowed.";
     }
 
-    if (files.some((file) => file.size > PDF_MAX_BYTES)) {
-      return isFa ? "هیچ PDF نباید بیشتر از 100MB باشد." : "No PDF file can exceed 100MB.";
+    if (files.some((file) => file.size > PDF_FILE_MAX_BYTES)) {
+      return isFa ? "حجم هر PDF باید حداکثر ۵MB باشد." : "Each PDF must be 5 MB or less.";
     }
 
     const nextTotal = editingResource?.type === "PDF"
       ? existingPdfTotal - Number(editingResource.fileSize || 0) + (files[0]?.size || 0)
       : existingPdfTotal + selectedPdfTotal;
 
-    if (nextTotal > PDF_MAX_BYTES) {
+    if (nextTotal > PDF_TOTAL_MAX_BYTES) {
       return isFa
-        ? "مجموع PDFهای این کورس نباید بیشتر از 100MB باشد."
-        : "Total PDFs for this course must not exceed 100MB.";
+        ? "مجموع PDFهای این کورس نباید بیشتر از ۲۵MB باشد."
+        : "Total PDFs for this course must not exceed 25 MB.";
     }
 
     return "";
@@ -598,6 +599,13 @@ export default function TeacherResources() {
 
   const handleFileChange = (files) => {
     const nextFiles = Array.from(files || []);
+    const validationError = validatePdfFiles(nextFiles);
+    if (validationError) {
+      setError(validationError);
+      setForm({ ...form, pdfFiles: [] });
+      return;
+    }
+    setError("");
     setForm({ ...form, pdfFiles: nextFiles });
   };
 
@@ -738,7 +746,7 @@ export default function TeacherResources() {
                 <p className="mt-2 max-w-4xl text-sm font-medium leading-7 text-slate-600">{labels.subtitle}</p>
               </div>
               <div className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 text-sm font-black text-slate-700">
-                {labels.used}: {bytesToMb(existingPdfTotal)} / 100MB
+                {labels.used}: {bytesToMb(existingPdfTotal)} / 25MB
               </div>
             </div>
           </header>
@@ -780,7 +788,16 @@ export default function TeacherResources() {
                     className="w-full cursor-pointer text-xs font-bold file:mr-3 file:rounded-lg file:border-0 file:bg-[#0B4FD8] file:px-3 file:py-2 file:text-xs file:font-black file:text-white disabled:cursor-not-allowed"
                     onChange={(event) => {
                       if (editingResource) {
-                        setEditFile(event.target.files?.[0] || null);
+                        const nextFile = event.target.files?.[0] || null;
+                        const validationError = nextFile ? validatePdfFiles([nextFile]) : "";
+                        if (validationError) {
+                          setError(validationError);
+                          setEditFile(null);
+                          event.target.value = "";
+                          return;
+                        }
+                        setError("");
+                        setEditFile(nextFile);
                         return;
                       }
                       handleFileChange(event.target.files);

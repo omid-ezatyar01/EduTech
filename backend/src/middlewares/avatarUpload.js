@@ -42,6 +42,10 @@ const avatarUpload = multer({
   fileFilter,
   limits: {
     fileSize: AVATAR_MAX_SIZE,
+    files: 7,
+    fields: 80,
+    fieldSize: 256 * 1024,
+    parts: 90,
   },
 });
 

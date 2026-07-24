@@ -38,6 +38,10 @@ import {
 } from "../services/webPush.service.js";
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 import { sendCourseEnrollmentCongratsEmail } from "../utils/Email.js";
+import {
+  removePaymentProofIfLocal,
+  savePaymentProofFromBuffer,
+} from "../utils/paymentProofFile.js";
 import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
@@ -148,9 +152,6 @@ const getCourseTeacherId = (course = {}) =>
   course?.teacherId ||
   course?.createdBy ||
   null;
-
-const buildUploadPath = (file = null) =>
-  file?.filename ? `/uploads/payment-proofs/${file.filename}` : "";
 
 const readDirectCryptoGuardState = (key) => {
   const state = directCryptoVerifyGuard.get(key);
@@ -1439,6 +1440,7 @@ export const getCourseBankPaymentDetails = async (req, res) => {
 };
 
 export const submitBankTransferPayment = async (req, res) => {
+  let savedProofPath = "";
   try {
     const courseId = String(req.body.courseId || "").trim();
     const countryCode = String(req.body.countryCode || "").trim().toUpperCase();
@@ -1505,7 +1507,8 @@ export const submitBankTransferPayment = async (req, res) => {
     const quoteCurrency = countryCode === "IR" ? "IRR" : "AFN";
     const quote = await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
     const paymentReference = makePaymentReference();
-    const proofPath = buildUploadPath(req.file);
+    const proofPath = await savePaymentProofFromBuffer(req.user._id, req.file.buffer);
+    savedProofPath = proofPath;
 
     const enrollment = await Enrollment.findOneAndUpdate(
       {
@@ -1560,6 +1563,7 @@ export const submitBankTransferPayment = async (req, res) => {
       courseId: course._id,
       ...payload,
     });
+    savedProofPath = "";
 
     enrollment.paymentId = payment._id;
     await enrollment.save();
@@ -1581,6 +1585,7 @@ export const submitBankTransferPayment = async (req, res) => {
       payment,
     }, 201);
   } catch (error) {
+    await removePaymentProofIfLocal(savedProofPath);
     console.error("submitBankTransferPayment error:", error.message || error);
     return apiError(res, 500, "Unable to submit bank transfer payment");
   }

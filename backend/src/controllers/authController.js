@@ -4,7 +4,6 @@ import { fileURLToPath } from "url";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import Joi from "joi";
-import sharp from "sharp";
 import { google } from "googleapis";
 import User from "../models/User.js";
 import OtpVerification from "../models/OtpVerification.js";
@@ -17,6 +16,7 @@ import {
   validateAndNormalizeBankPaymentInfo,
 } from "../utils/bankPaymentInfo.js";
 import { notifyAdminTeacherApplicationReview } from "../services/webPush.service.js";
+import { encodeWebpUnderLimit } from "../utils/imageCompression.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +26,14 @@ const teacherCertificatesDirectory = path.resolve(
   __dirname,
   "../../uploads/teacher-certificates",
 );
+const AVATAR_UPLOAD_MAX_BYTES = 500 * 1024;
+const TEACHER_CV_MAX_BYTES = 2 * 1024 * 1024;
+const TEACHER_CERTIFICATE_MAX_BYTES = Math.floor(1.5 * 1024 * 1024);
+const TEACHER_CERTIFICATES_TOTAL_MAX_BYTES = 5 * 1024 * 1024;
+const hasPdfSignature = (file) =>
+  Buffer.isBuffer(file?.buffer) &&
+  file.buffer.length >= 5 &&
+  file.buffer.subarray(0, 5).toString("ascii") === "%PDF-";
 
 const generateToken = (id, role, tokenVersion = 0) => {
   return jwt.sign({ id, role, tokenVersion }, process.env.JWT_SECRET, {
@@ -742,11 +750,16 @@ const saveAvatarFromBuffer = async (userId, fileBuffer) => {
   const filename = `avatar-${userId}-${Date.now()}.webp`;
   const filepath = path.join(avatarDirectory, filename);
 
-  await sharp(fileBuffer)
-    .rotate()
-    .resize(512, 512, { fit: "inside", withoutEnlargement: true })
-    .webp({ lossless: true, effort: 6 })
-    .toFile(filepath);
+  const optimizedBuffer = await encodeWebpUnderLimit(fileBuffer, {
+    width: 512,
+    height: 512,
+    maxBytes: 350 * 1024,
+    initialQuality: 80,
+    fit: "inside",
+    position: "centre",
+    withoutEnlargement: true,
+  });
+  await fs.writeFile(filepath, optimizedBuffer);
 
   return `/uploads/avatars/${filename}`;
 };
@@ -2083,12 +2096,42 @@ export const updateUserProfile = async (req, res) => {
       };
     }
 
+    const avatarFile = req.files?.avatar?.[0] || null;
+    const cvFile = req.files?.cvFile?.[0] || null;
+    const certificateFiles = Array.isArray(req.files?.certificateFiles)
+      ? req.files.certificateFiles
+      : [];
+
+    if (avatarFile && avatarFile.size > AVATAR_UPLOAD_MAX_BYTES) {
+      return res.status(400).json({ message: "Avatar image must be 500KB or smaller" });
+    }
+    if ((cvFile || certificateFiles.length) && user.role !== "teacher") {
+      return res.status(400).json({ message: "CV and certificate uploads are only available to teachers" });
+    }
+    if (cvFile && (cvFile.size > TEACHER_CV_MAX_BYTES || !hasPdfSignature(cvFile))) {
+      return res.status(400).json({ message: "CV must be a valid PDF no larger than 2MB" });
+    }
+    if (
+      certificateFiles.some(
+        (file) => file.size > TEACHER_CERTIFICATE_MAX_BYTES || !hasPdfSignature(file),
+      )
+    ) {
+      return res.status(400).json({
+        message: "Each certificate must be a valid PDF no larger than 1.5MB",
+      });
+    }
+    if (
+      certificateFiles.reduce((total, file) => total + Number(file.size || 0), 0) >
+      TEACHER_CERTIFICATES_TOTAL_MAX_BYTES
+    ) {
+      return res.status(400).json({ message: "Certificate uploads must not exceed 5MB in total" });
+    }
+
     if (value.removeAvatar) {
       await removeOldAvatarIfLocal(user.avatar);
       user.avatar = "";
     }
 
-    const avatarFile = req.files?.avatar?.[0] || null;
     if (avatarFile) {
       const previousAvatar = user.avatar;
       const newAvatar = await saveAvatarFromBuffer(user._id, avatarFile.buffer);
@@ -2096,7 +2139,6 @@ export const updateUserProfile = async (req, res) => {
       await removeOldAvatarIfLocal(previousAvatar);
     }
 
-    const cvFile = req.files?.cvFile?.[0] || null;
     if (cvFile && user.role === "teacher") {
       const previousCvUrl = user.teacherApplication?.cvUrl || "";
       const nextCvUrl = await saveTeacherCvFromBuffer(user._id, cvFile.buffer);
@@ -2107,9 +2149,6 @@ export const updateUserProfile = async (req, res) => {
       await removeOldTeacherCvIfLocal(previousCvUrl);
     }
 
-    const certificateFiles = Array.isArray(req.files?.certificateFiles)
-      ? req.files.certificateFiles
-      : [];
     if (certificateFiles.length && user.role === "teacher") {
       if (certificateFiles.length > 5) {
         return res.status(400).json({ message: "A maximum of 5 certificate PDFs is allowed" });

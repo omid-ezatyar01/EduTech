@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import sharp from "sharp";
+import { encodeWebpUnderLimit } from "./imageCompression.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,11 +12,13 @@ export const saveCourseThumbnailFromBuffer = async (actorId, fileBuffer) => {
   const filename = `course-${actorId}-${Date.now()}.webp`;
   const filepath = path.join(courseImageDirectory, filename);
 
-  await sharp(fileBuffer)
-    .rotate()
-    .resize(1200, 675, { fit: "cover", position: "entropy" })
-    .webp({ quality: 82, effort: 6 })
-    .toFile(filepath);
+  const optimizedBuffer = await encodeWebpUnderLimit(fileBuffer, {
+    width: 1200,
+    height: 675,
+    maxBytes: 500 * 1024,
+    initialQuality: 82,
+  });
+  await fs.writeFile(filepath, optimizedBuffer);
 
   return `/uploads/course-thumbnails/${filename}`;
 };

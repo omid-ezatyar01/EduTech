@@ -28,10 +28,20 @@ const errorHandler = (err, _req, res, _next) => {
   const message = isFileSizeError
     ? err?.field === "cover"
       ? "Article cover image size must be 300 KB or less"
-      : err?.field === "proof"
+      : err?.field === "proof" || err?.field === "paymentProof"
         ? "Proof image size must be 300 KB or less"
         : err?.field === "thumbnailFile"
           ? "Course image size must be 500 KB or less"
+          : err?.field === "avatar"
+            ? "Avatar image size must be 500 KB or less"
+            : err?.field === "cvFile"
+              ? "CV file size must be 2 MB or less"
+              : err?.field === "certificateFiles"
+                ? "Each certificate file must be 1.5 MB or less"
+                : err?.field === "resourceFile"
+                  ? "Course resource PDF size must be 5 MB or less"
+                  : err?.field === "submissionFile"
+                    ? "Assignment submission file size must be 1 MB or less"
         : "The selected file is too large"
     : err.message || "Internal server error";
 

@@ -12,7 +12,13 @@ const articleCoverUpload = multer({
     }
     callback(null, true);
   },
-  limits: { fileSize: ARTICLE_COVER_MAX_SIZE },
+  limits: {
+    fileSize: ARTICLE_COVER_MAX_SIZE,
+    files: 1,
+    fields: 2,
+    fieldSize: 8 * 1024,
+    parts: 4,
+  },
 });
 
 export default articleCoverUpload;

@@ -1,7 +1,23 @@
 import { X, UploadCloud } from "lucide-react";
 import { useState } from "react";
+import { compressImageFileToLimit } from "../utils/imageCrop";
 
 const MAX_FILE_BYTES = 1 * 1024 * 1024;
+const MAX_RAW_IMAGE_BYTES = 10 * 1024 * 1024;
+const ASSIGNMENT_IMAGE_BYTES = 700 * 1024;
+const ALLOWED_FILE_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "audio/mpeg",
+  "audio/wav",
+  "video/mp4",
+  "video/webm",
+]);
 
 export default function SubmitAssignmentModal({
   isOpen,
@@ -91,27 +107,58 @@ export default function SubmitAssignmentModal({
               </span>
               <input
                 type="file"
+                accept=".pdf,.doc,.docx,.txt,.mp3,.wav,.mp4,.webm,.jpg,.jpeg,.png,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,audio/mpeg,audio/wav,video/mp4,video/webm,image/jpeg,image/png,image/webp"
                 className="hidden"
-                onChange={(event) => {
+                onChange={async (event) => {
                   const file = event.target.files?.[0] || null;
+                  event.target.value = "";
                   if (!file) {
                     setSelectedFile(null);
                     setFileError("");
                     return;
                   }
-                  if (Number(file.size || 0) > MAX_FILE_BYTES) {
+                  if (!ALLOWED_FILE_TYPES.has(String(file.type || "").toLowerCase())) {
                     setSelectedFile(null);
-                    setFileError(isFa ? "حداکثر حجم فایل 1MB است." : "Maximum file size is 1MB.");
+                    setFileError(isFa ? "نوع این فایل پشتیبانی نمی‌شود." : "This file type is not supported.");
                     return;
                   }
-                  setSelectedFile(file);
-                  setFileError("");
+                  const isImage = String(file.type || "").startsWith("image/");
+                  if (Number(file.size || 0) > (isImage ? MAX_RAW_IMAGE_BYTES : MAX_FILE_BYTES)) {
+                    setSelectedFile(null);
+                    setFileError(
+                      isImage
+                        ? isFa ? "حجم تصویر اصلی باید کمتر از ۱۰ مگابایت باشد." : "The source image must be under 10 MB."
+                        : isFa ? "حداکثر حجم فایل ۱ مگابایت است." : "Maximum file size is 1 MB.",
+                    );
+                    return;
+                  }
+                  if (!isImage) {
+                    setSelectedFile(file);
+                    setFileError("");
+                    return;
+                  }
+                  try {
+                    setFileError(isFa ? "در حال فشرده‌سازی تصویر…" : "Compressing image…");
+                    const optimizedFile = await compressImageFileToLimit({
+                      file,
+                      maxBytes: ASSIGNMENT_IMAGE_BYTES,
+                      maxWidth: 1600,
+                      maxHeight: 1600,
+                      initialQuality: 0.82,
+                      baseName: "assignment-image",
+                    });
+                    setSelectedFile(optimizedFile);
+                    setFileError("");
+                  } catch {
+                    setSelectedFile(null);
+                    setFileError(isFa ? "فشرده‌سازی تصویر انجام نشد." : "The image could not be compressed.");
+                  }
                 }}
               />
             </label>
             {selectedFile ? (
               <p className="mt-2 text-xs font-semibold text-emerald-700">
-                {isFa ? "فایل انتخاب شد:" : "Selected file:"} {selectedFile.name}
+                {isFa ? "فایل انتخاب شد:" : "Selected file:"} {selectedFile.name} · {(selectedFile.size / 1024).toFixed(0)} KB
               </p>
             ) : null}
             {fileError ? (

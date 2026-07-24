@@ -59,6 +59,8 @@ const toMinutes = (timeText = "") => {
 const DESCRIPTION_MIN_CHARS = 120;
 const DESCRIPTION_MAX_CHARS = 2000;
 const THUMBNAIL_MAX_BYTES = 500 * 1024;
+const THUMBNAIL_RAW_MAX_BYTES = 10 * 1024 * 1024;
+const THUMBNAIL_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const TITLE_MIN_CHARS = 5;
 const TITLE_MAX_CHARS = 120;
 const COURSE_WEEKS_MIN = 1;
@@ -452,6 +454,24 @@ export default function CreateCourseModal({
     const file = event.target.files?.[0] || null;
     event.target.value = "";
     if (!file) return;
+    if (!THUMBNAIL_MIME_TYPES.has(file.type)) {
+      const message =
+        language === "fa"
+          ? "فقط تصویر PNG، JPG یا WEBP مجاز است."
+          : "Only PNG, JPG, or WEBP images are allowed.";
+      setFieldErrors({ thumbnailFile: message });
+      setFormError(message);
+      return;
+    }
+    if (file.size > THUMBNAIL_RAW_MAX_BYTES) {
+      const message =
+        language === "fa"
+          ? "حجم تصویر اصلی باید کمتر از ۱۰ مگابایت باشد؛ تصویر نهایی خودکار به کمتر از ۵۰۰ کیلوبایت فشرده می‌شود."
+          : "The source image must be under 10 MB; the final image is automatically compressed below 500 KB.";
+      setFieldErrors({ thumbnailFile: message });
+      setFormError(message);
+      return;
+    }
     setPendingThumbnailFile(file);
   };
 

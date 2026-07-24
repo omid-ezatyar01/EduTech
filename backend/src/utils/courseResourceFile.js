@@ -28,6 +28,19 @@ export const moveUploadedCourseResourcePdf = async (teacherId, courseId, file) =
   return `/uploads/course-resources/${filename}`;
 };
 
+export const uploadedFileHasPdfSignature = async (file) => {
+  const filePath = String(file?.path || "").trim();
+  if (!filePath) return false;
+  const handle = await fs.open(filePath, "r");
+  try {
+    const signature = Buffer.alloc(5);
+    const { bytesRead } = await handle.read(signature, 0, signature.length, 0);
+    return bytesRead === signature.length && signature.toString("ascii") === "%PDF-";
+  } finally {
+    await handle.close();
+  }
+};
+
 export const removeCourseResourcePdfIfLocal = async (filePath) => {
   if (!filePath || !String(filePath).startsWith("/uploads/course-resources/")) return;
   const oldFilePath = path.resolve(__dirname, `../../${String(filePath).replace(/^\//, "")}`);

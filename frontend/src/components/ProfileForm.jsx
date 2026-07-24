@@ -13,7 +13,8 @@ import { COUNTRY_PROVINCE_DATA } from "../data/countryProvinceData";
 import { resolveAvatarUrl } from "../utils/avatar";
 import ProfileImageCropModal from "./ProfileImageCropModal";
 
-const AVATAR_MAX_SIZE_BYTES = 500 * 1024;
+const AVATAR_RAW_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+const AVATAR_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const PHONE_REGEX = /^\+?[0-9]{8,15}$/;
 
 const withCacheBust = (url) => {
@@ -64,8 +65,11 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
   const isFa = language === "fa";
   const t = {
     avatarSizeError: isFa
-      ? "حجم عکس باید حداکثر 500KB باشد."
-      : "Image size must be 500KB or less.",
+      ? "حجم تصویر اصلی باید کمتر از ۱۰ مگابایت باشد."
+      : "The source image must be under 10 MB.",
+    avatarTypeError: isFa
+      ? "فقط تصویر PNG، JPG یا WEBP مجاز است."
+      : "Only PNG, JPG, or WEBP images are allowed.",
     invalidPhone: isFa
       ? "شماره موبایل معتبر نیست. فرمت درست: +93701234567"
       : "Invalid mobile number. Correct format: +93701234567",
@@ -78,8 +82,8 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
     personalInfo: isFa ? "اطلاعات شخصی" : "Personal Information",
     changeProfilePhoto: isFa ? "تغییر عکس پروفایل" : "Change Profile Photo",
     photoHintPrefix: isFa ? "حداکثر" : "Max",
-    photoHintSize: "500 KB",
-    photoHintFormats: "JPG, PNG",
+    photoHintSize: isFa ? "خروجی خودکار کمتر از ۳۵۰ KB" : "automatically compressed below 350 KB",
+    photoHintFormats: "JPG, PNG, WEBP",
     selectPhoto: isFa ? "انتخاب عکس جدید" : "Select New Photo",
     studentId: isFa ? "آیدی محصل" : "Student ID",
     firstName: isFa ? "نام" : "First Name",
@@ -119,14 +123,19 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
   });
 
   useEffect(() => {
-    if (!avatarFile) {
+    if (avatarFile) return undefined;
+    const frameId = window.requestAnimationFrame(() => {
       setAvatar(resolveAvatarUrl(user.avatar || ""));
-    }
+    });
+    return () => window.cancelAnimationFrame(frameId);
   }, [user.avatar, avatarFile]);
 
   useEffect(() => {
-    setCountryValue(resolveInitialCountry(user.country, isFa));
-    setProvinceValue(resolveInitialProvince(user.country, user.city, isFa));
+    const frameId = window.requestAnimationFrame(() => {
+      setCountryValue(resolveInitialCountry(user.country, isFa));
+      setProvinceValue(resolveInitialProvince(user.country, user.city, isFa));
+    });
+    return () => window.cancelAnimationFrame(frameId);
   }, [user.country, user.city, isFa]);
 
   const selectedCountry = useMemo(() => findCountryByValue(countryValue), [countryValue]);
@@ -146,7 +155,16 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
     const nextFile = e.target.files?.[0];
     if (!nextFile) return;
 
-    if (nextFile.size > AVATAR_MAX_SIZE_BYTES) {
+    if (!AVATAR_MIME_TYPES.has(nextFile.type)) {
+      setFormFeedback({
+        type: "error",
+        text: t.avatarTypeError,
+      });
+      e.target.value = "";
+      return;
+    }
+
+    if (nextFile.size > AVATAR_RAW_MAX_SIZE_BYTES) {
       setFormFeedback({
         type: "error",
         text: t.avatarSizeError,
@@ -270,7 +288,7 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
           <input
             type="file"
             className={`absolute inset-0 opacity-0 ${isEditing ? "cursor-pointer" : "pointer-events-none"}`}
-            accept="image/png, image/jpeg"
+            accept="image/png,image/jpeg,image/webp"
             onChange={handleAvatarChange}
             disabled={!isEditing}
           />
@@ -313,7 +331,7 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
             <input
               type="file"
               className={`absolute inset-0 opacity-0 ${isEditing ? "cursor-pointer" : "pointer-events-none"}`}
-              accept="image/png, image/jpeg"
+              accept="image/png,image/jpeg,image/webp"
               onChange={handleAvatarChange}
               disabled={!isEditing}
             />

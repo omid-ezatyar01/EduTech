@@ -10,8 +10,10 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import { compressImageFileToLimit } from "../utils/imageCrop";
 
 const MAX_PAYMENT_PROOF_BYTES = 300 * 1024;
+const MAX_PAYMENT_PROOF_RAW_BYTES = 10 * 1024 * 1024;
 const ALLOWED_PAYMENT_PROOF_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const copyToClipboard = async (value = "") => {
@@ -74,6 +76,7 @@ export default function BankPaymentDetailsModal({
   const [senderAccount, setSenderAccount] = useState("");
   const [note, setNote] = useState("");
   const [paymentProof, setPaymentProof] = useState(null);
+  const [isOptimizingProof, setIsOptimizingProof] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState("");
 
@@ -99,7 +102,7 @@ export default function BankPaymentDetailsModal({
     note: isFa ? "راهنما" : "Note",
     senderAccount: isFa ? "شماره حساب / کارت فرستنده" : "Sender account / card number",
     uploadLabel: isFa ? "عکس رسید پرداخت" : "Payment proof image",
-    uploadHint: isFa ? "فقط عکس رسید با فرمت JPG، PNG یا WEBP و کمتر از ۳۰۰ کیلوبایت را انتخاب کنید." : "Choose a JPG, PNG, or WEBP proof image smaller than 300 KB.",
+    uploadHint: isFa ? "عکس JPG، PNG یا WEBP انتخاب کنید؛ حجم آن خودکار به کمتر از ۳۰۰ کیلوبایت کاهش می‌یابد." : "Choose a JPG, PNG, or WEBP image; it will be compressed below 300 KB automatically.",
     studentNote: isFa ? "یادداشت شما" : "Your note",
     transferGuideTitle: isFa ? "راهنمای پرداخت" : "Payment guide",
     transferGuide: isFa
@@ -188,8 +191,9 @@ export default function BankPaymentDetailsModal({
     }
   };
 
-  const handlePaymentProofChange = (event) => {
+  const handlePaymentProofChange = async (event) => {
     const nextFile = event.target.files?.[0] || null;
+    event.target.value = "";
     if (!nextFile) {
       setPaymentProof(null);
       return;
@@ -200,21 +204,37 @@ export default function BankPaymentDetailsModal({
       setSubmitError(
         isFa ? "فقط فایل عکس JPG، PNG یا WEBP قابل قبول است." : "Only JPG, PNG, or WEBP proof images are allowed.",
       );
-      event.target.value = "";
       return;
     }
 
-    if (Number(nextFile.size || 0) > MAX_PAYMENT_PROOF_BYTES) {
+    if (Number(nextFile.size || 0) > MAX_PAYMENT_PROOF_RAW_BYTES) {
       setPaymentProof(null);
       setSubmitError(
-        isFa ? "حجم عکس رسید باید کمتر از ۳۰۰ کیلوبایت باشد." : "Proof image size must be smaller than 300 KB.",
+        isFa ? "حجم تصویر اصلی باید کمتر از ۱۰ مگابایت باشد." : "The source image must be under 10 MB.",
       );
-      event.target.value = "";
       return;
     }
 
-    setSubmitError("");
-    setPaymentProof(nextFile);
+    try {
+      setIsOptimizingProof(true);
+      setSubmitError("");
+      const optimizedFile = await compressImageFileToLimit({
+        file: nextFile,
+        maxBytes: MAX_PAYMENT_PROOF_BYTES,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        initialQuality: 0.82,
+        baseName: "payment-proof",
+      });
+      setPaymentProof(optimizedFile);
+    } catch {
+      setPaymentProof(null);
+      setSubmitError(
+        isFa ? "فشرده‌سازی عکس رسید انجام نشد. تصویر دیگری انتخاب کنید." : "The proof image could not be compressed. Choose another image.",
+      );
+    } finally {
+      setIsOptimizingProof(false);
+    }
   };
 
   const content = (
@@ -410,7 +430,7 @@ export default function BankPaymentDetailsModal({
                         type="text"
                         value={senderAccount}
                         onChange={(event) => setSenderAccount(event.target.value)}
-                        disabled={!canSubmitProof || isSubmittingProof}
+                        disabled={!canSubmitProof || isSubmittingProof || isOptimizingProof}
                         className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                         dir="ltr"
                       />
@@ -439,7 +459,7 @@ export default function BankPaymentDetailsModal({
                               type="file"
                               accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                               onChange={handlePaymentProofChange}
-                              disabled={!canSubmitProof || isSubmittingProof}
+                              disabled={!canSubmitProof || isSubmittingProof || isOptimizingProof}
                               className="absolute inset-0 cursor-pointer opacity-0"
                             />
                             <span className={`inline-flex h-11 items-center justify-center rounded-xl border px-4 text-xs font-black ${
@@ -469,7 +489,7 @@ export default function BankPaymentDetailsModal({
                         rows={3}
                         value={note}
                         onChange={(event) => setNote(event.target.value)}
-                        disabled={!canSubmitProof || isSubmittingProof}
+                        disabled={!canSubmitProof || isSubmittingProof || isOptimizingProof}
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                       />
                     </label>
@@ -477,14 +497,14 @@ export default function BankPaymentDetailsModal({
                     <div className="pt-2">
                       <button
                         type="submit"
-                        disabled={!canSubmitProof || isSubmittingProof}
+                        disabled={!canSubmitProof || isSubmittingProof || isOptimizingProof}
                         className="inline-flex h-13 min-h-[52px] w-full items-center justify-center rounded-[16px] border border-slate-900 bg-slate-900 px-4 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
                       >
                         {!canSubmitProof
                           ? submissionStatus === "approved"
                             ? (isFa ? "قبلاً تایید شده" : "Already approved")
                             : (isFa ? "در انتظار بررسی مدرس" : "Waiting for teacher review")
-                          : isSubmittingProof
+                          : isSubmittingProof || isOptimizingProof
                             ? t.submitting
                             : t.submit}
                       </button>

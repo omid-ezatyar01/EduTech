@@ -18,6 +18,10 @@ const courseThumbnailUpload = multer({
   fileFilter,
   limits: {
     fileSize: COURSE_THUMBNAIL_MAX_SIZE,
+    files: 1,
+    fields: 80,
+    fieldSize: 256 * 1024,
+    parts: 82,
   },
 });
 

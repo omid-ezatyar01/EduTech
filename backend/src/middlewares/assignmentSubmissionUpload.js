@@ -32,8 +32,11 @@ const assignmentSubmissionUpload = multer({
   fileFilter,
   limits: {
     fileSize: ASSIGNMENT_SUBMISSION_MAX_SIZE,
+    files: 1,
+    fields: 4,
+    fieldSize: 32 * 1024,
+    parts: 6,
   },
 });
 
 export default assignmentSubmissionUpload;
-

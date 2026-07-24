@@ -1,11 +1,13 @@
 import { Check, Image, Loader2, Minus, Move, Plus, Scan, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
+  compressImageFileToLimit,
   cropFittedImageRegionFile,
   fitImageFile,
   loadImageDimensions,
 } from "../../utils/imageCrop";
 
+const COURSE_IMAGE_MAX_BYTES = 500 * 1024;
 const MIN_CROP_SIZE = 0.05;
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
@@ -231,7 +233,15 @@ export default function CourseImageCropModal({
               targetWidth: 1200,
               targetHeight: 675,
             });
-      onApply?.(preparedFile);
+      const optimizedFile = await compressImageFileToLimit({
+        file: preparedFile,
+        maxBytes: COURSE_IMAGE_MAX_BYTES,
+        maxWidth: 1200,
+        maxHeight: 675,
+        initialQuality: 0.82,
+        baseName: "course-image",
+      });
+      onApply?.(optimizedFile);
     } catch {
       setError(t.failed);
     } finally {

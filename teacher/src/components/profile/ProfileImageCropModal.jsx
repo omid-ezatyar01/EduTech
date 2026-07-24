@@ -2,6 +2,7 @@ import { Check, Loader2, Minus, Move, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   clampCropPosition,
+  compressImageFileToLimit,
   cropImageFile,
   getCoverCropBounds,
   loadImageDimensions,
@@ -175,7 +176,15 @@ export default function ProfileImageCropModal({
         targetHeight: 800,
         baseName: "profile-avatar",
       });
-      onApply?.(croppedFile);
+      const optimizedFile = await compressImageFileToLimit({
+        file: croppedFile,
+        maxBytes: 350 * 1024,
+        maxWidth: 800,
+        maxHeight: 800,
+        initialQuality: 0.8,
+        baseName: "profile-avatar",
+      });
+      onApply?.(optimizedFile);
     } catch {
       setError(t.failed);
     } finally {

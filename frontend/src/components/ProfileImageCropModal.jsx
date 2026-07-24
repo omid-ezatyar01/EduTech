@@ -2,6 +2,7 @@ import { Check, Loader2, Minus, Move, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   clampCropPosition,
+  compressImageFileToLimit,
   cropImageFile,
   getCoverCropBounds,
   loadImageDimensions,
@@ -48,10 +49,15 @@ export default function ProfileImageCropModal({
   useEffect(() => {
     if (!open || !(file instanceof File)) return undefined;
     let active = true;
-    setLoadingMeta(true);
-    setError("");
-    setZoom(1);
-    setPosition({ x: 0, y: 0 });
+    const objectUrl = URL.createObjectURL(file);
+    const resetFrame = window.requestAnimationFrame(() => {
+      if (!active) return;
+      setLoadingMeta(true);
+      setError("");
+      setZoom(1);
+      setPosition({ x: 0, y: 0 });
+      setPreviewUrl(objectUrl);
+    });
 
     loadImageDimensions(file)
       .then((meta) => {
@@ -66,10 +72,9 @@ export default function ProfileImageCropModal({
         if (active) setLoadingMeta(false);
       });
 
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl(objectUrl);
     return () => {
       active = false;
+      window.cancelAnimationFrame(resetFrame);
       URL.revokeObjectURL(objectUrl);
     };
   }, [file, open, t.failed]);
@@ -99,9 +104,10 @@ export default function ProfileImageCropModal({
     [frameSize.height, frameSize.width, imageMeta.height, imageMeta.width, zoom],
   );
 
-  useEffect(() => {
-    setPosition((prev) => clampCropPosition(prev, bounds));
-  }, [bounds.maxOffsetX, bounds.maxOffsetY]);
+  const clampedPosition = useMemo(
+    () => clampCropPosition(position, bounds),
+    [bounds, position],
+  );
 
   const handlePointerDown = (event) => {
     if (!previewUrl || loadingMeta || saving) return;
@@ -109,8 +115,8 @@ export default function ProfileImageCropModal({
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      initialX: position.x,
-      initialY: position.y,
+      initialX: clampedPosition.x,
+      initialY: clampedPosition.y,
     };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
@@ -160,13 +166,21 @@ export default function ProfileImageCropModal({
         imageHeight: imageMeta.height,
         frameWidth: frameSize.width || 320,
         frameHeight: frameSize.height || 320,
-        position,
+        position: clampedPosition,
         zoom,
         targetWidth: 800,
         targetHeight: 800,
         baseName: "profile-avatar",
       });
-      onApply?.(croppedFile);
+      const optimizedFile = await compressImageFileToLimit({
+        file: croppedFile,
+        maxBytes: 350 * 1024,
+        maxWidth: 800,
+        maxHeight: 800,
+        initialQuality: 0.8,
+        baseName: "profile-avatar",
+      });
+      onApply?.(optimizedFile);
     } catch {
       setError(t.failed);
     } finally {
@@ -216,7 +230,7 @@ export default function ProfileImageCropModal({
                       style={{
                         width: `${bounds.renderedWidth}px`,
                         height: `${bounds.renderedHeight}px`,
-                        transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`,
+                        transform: `translate(calc(-50% + ${clampedPosition.x}px), calc(-50% + ${clampedPosition.y}px))`,
                         userSelect: "none",
                       }}
                     />

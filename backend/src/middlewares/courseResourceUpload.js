@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-export const COURSE_RESOURCE_MAX_SIZE = 100 * 1024 * 1024;
+export const COURSE_RESOURCE_MAX_SIZE = 5 * 1024 * 1024;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +46,10 @@ const courseResourceUpload = multer({
   fileFilter,
   limits: {
     fileSize: COURSE_RESOURCE_MAX_SIZE,
+    files: 1,
+    fields: 8,
+    fieldSize: 16 * 1024,
+    parts: 10,
   },
 });
 

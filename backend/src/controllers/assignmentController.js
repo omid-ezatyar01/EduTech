@@ -6,6 +6,7 @@ import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import {
+  assignmentSubmissionFileHasValidSignature,
   removeAssignmentSubmissionFileIfLocal,
   saveAssignmentSubmissionFileFromBuffer,
 } from "../utils/assignmentSubmissionFile.js";
@@ -598,6 +599,9 @@ export const submitStudentAssignment = asyncHandler(async (req, res) => {
   const textAnswer = String(payload.textAnswer || "").trim();
   const providedAttachmentUrl = String(payload.attachmentUrl || "").trim();
   const hasUploadedFile = Boolean(req.file?.buffer);
+  if (hasUploadedFile && !assignmentSubmissionFileHasValidSignature(req.file)) {
+    throw new ApiError(400, "The uploaded assignment file content does not match its file type");
+  }
   if (!textAnswer && !providedAttachmentUrl && !hasUploadedFile) {
     throw new ApiError(400, "Provide textAnswer, attachmentUrl, or submission file");
   }
