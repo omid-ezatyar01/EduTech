@@ -42,5 +42,9 @@
   "license": "ISC",
   "allowScripts": {
     "core-js@3.49.0": true
+  },
+  "overrides": {
+    "react-router": "6.28.0",
+    "react-router-dom": "6.28.0"
   }
 }
