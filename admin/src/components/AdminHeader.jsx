@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Menu,
   Search,
+  Trash2,
   UserCheck,
   X,
 } from "lucide-react";
@@ -14,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 import { getApiBase } from "../../services/http.js";
 import {
+  deleteAdminNotification,
   fetchAdminNotifications,
   markAdminNotificationRead,
   markAllAdminNotificationsRead,
@@ -52,6 +54,7 @@ export default function AdminHeader({ admin, onMenuClick }) {
   const [isLanguageOpen, setIsLanguageOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [deletingNotificationId, setDeletingNotificationId] = useState("");
   const displayName = admin?.name || t("header.adminName");
   const adminMeta = admin?.email || t("header.adminRole");
   const adminAvatar = resolveAvatarUrl(admin?.avatar || "");
@@ -158,6 +161,28 @@ export default function AdminHeader({ admin, onMenuClick }) {
     }
   };
 
+  const handleRemoveNotification = async (notification) => {
+    if (!notification?._id || deletingNotificationId) return;
+    setDeletingNotificationId(notification._id);
+    try {
+      await deleteAdminNotification(notification._id);
+      const nextNotifications = notifications.filter(
+        (row) => row._id !== notification._id,
+      );
+      const nextUnreadCount = notification.isRead
+        ? unreadCount
+        : Math.max(0, unreadCount - 1);
+      setNotifications(nextNotifications);
+      setUnreadCount(nextUnreadCount);
+      writeAdminPageCache(ADMIN_NOTIFICATIONS_CACHE_KEY, {
+        notifications: nextNotifications,
+        unreadCount: nextUnreadCount,
+      });
+    } finally {
+      setDeletingNotificationId("");
+    }
+  };
+
   const formatNotificationTime = (value) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
@@ -254,50 +279,64 @@ export default function AdminHeader({ admin, onMenuClick }) {
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain sm:max-h-[470px]">
                 {notifications.length ? (
                   notifications.map((notification) => (
-                    <button
+                    <div
                       key={notification._id}
-                      type="button"
-                      onClick={() => handleNotificationClick(notification)}
-                      className={`flex w-full items-start gap-3 border-b border-slate-100 px-3 py-3 text-start transition last:border-b-0 hover:bg-slate-50 sm:px-4 ${
+                      className={`flex w-full items-start border-b border-slate-100 text-start transition last:border-b-0 hover:bg-slate-50 ${
                         notification.isRead ? "bg-white" : "bg-blue-50/70"
                       }`}
                     >
-                      <span
-                        className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${
-                          notification.type === "teacher_application_review"
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-amber-100 text-amber-700"
-                        }`}
+                      <button
+                        type="button"
+                        onClick={() => handleNotificationClick(notification)}
+                        className="flex min-w-0 flex-1 items-start gap-3 px-3 py-3 text-start sm:px-4"
                       >
-                        {notification.type === "teacher_application_review" ? (
-                          <UserCheck size={18} />
-                        ) : (
-                          <BookOpenCheck size={18} />
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block break-words text-sm font-black text-slate-900">
-                          {language === "fa"
-                            ? notification.type === "teacher_application_review"
-                              ? "درخواست استاد برای بررسی"
-                              : "کورس جدید برای بررسی"
-                            : notification.title}
+                        <span
+                          className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${
+                            notification.type === "teacher_application_review"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {notification.type === "teacher_application_review" ? (
+                            <UserCheck size={18} />
+                          ) : (
+                            <BookOpenCheck size={18} />
+                          )}
                         </span>
-                        <span className="mt-1 block break-words text-xs font-semibold leading-5 text-slate-600">
-                          {language === "fa"
-                            ? notification.type === "teacher_application_review"
-                              ? `${notification.teacherName || "یک استاد"} فورم درخواست استادی را برای بررسی فرستاد.`
-                              : `${notification.teacherName || "یک استاد"} کورس «${notification.courseTitle || ""}» را برای بررسی فرستاد.`
-                            : notification.message}
+                        <span className="min-w-0 flex-1">
+                          <span className="block break-words text-sm font-black text-slate-900">
+                            {language === "fa"
+                              ? notification.type === "teacher_application_review"
+                                ? "درخواست استاد برای بررسی"
+                                : "کورس جدید برای بررسی"
+                              : notification.title}
+                          </span>
+                          <span className="mt-1 block break-words text-xs font-semibold leading-5 text-slate-600">
+                            {language === "fa"
+                              ? notification.type === "teacher_application_review"
+                                ? `${notification.teacherName || "یک استاد"} فورم درخواست استادی را برای بررسی فرستاد.`
+                                : `${notification.teacherName || "یک استاد"} کورس «${notification.courseTitle || ""}» را برای بررسی فرستاد.`
+                              : notification.message}
+                          </span>
+                          <span className="mt-1.5 block text-[10px] font-bold text-slate-400">
+                            {formatNotificationTime(notification.createdAt)}
+                          </span>
                         </span>
-                        <span className="mt-1.5 block text-[10px] font-bold text-slate-400">
-                          {formatNotificationTime(notification.createdAt)}
-                        </span>
-                      </span>
-                      {!notification.isRead ? (
-                        <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
-                      ) : null}
-                    </button>
+                        {!notification.isRead ? (
+                          <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                        ) : null}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveNotification(notification)}
+                        disabled={deletingNotificationId === notification._id}
+                        className="m-2 grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-wait disabled:opacity-50 sm:m-3"
+                        aria-label={language === "fa" ? "حذف اعلان" : "Remove notification"}
+                        title={language === "fa" ? "حذف اعلان" : "Remove notification"}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   ))
                 ) : (
                   <div className="px-5 py-10 text-center">

@@ -28,6 +28,7 @@ import {
   sendAdminTeacherMessage,
 } from "../controllers/adminTeacherMessageController.js";
 import {
+  deleteAdminNotification,
   getAdminNotifications,
   markAdminNotificationRead,
   markAllAdminNotificationsRead,
@@ -74,6 +75,11 @@ router.patch(
   "/notifications/:id/read",
   validateRequest(adminEntityIdParamSchema, "params"),
   markAdminNotificationRead,
+);
+router.delete(
+  "/notifications/:id",
+  validateRequest(adminEntityIdParamSchema, "params"),
+  deleteAdminNotification,
 );
 router.get("/settings", getAdminPlatformSettings);
 router.patch("/settings", validateRequest(adminPlatformSettingsSchema), updateAdminPlatformSettings);

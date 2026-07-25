@@ -20,3 +20,6 @@ export const markTeacherNotificationRead = async (notificationId) =>
 
 export const markAllTeacherNotificationsRead = async () =>
   request("/teacher/notifications/read-all", { method: "PATCH" });
+
+export const deleteTeacherNotification = async (notificationId) =>
+  request(`/teacher/notifications/${notificationId}`, { method: "DELETE" });

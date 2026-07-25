@@ -34,3 +34,14 @@ export const markAllAdminNotificationsRead = async () => {
   );
   return parseJsonResponse(response);
 };
+
+export const deleteAdminNotification = async (notificationId) => {
+  const response = await fetch(
+    `${getApiBase()}/admin/notifications/${encodeURIComponent(notificationId)}`,
+    {
+      method: "DELETE",
+      headers: buildAuthHeaders(),
+    },
+  );
+  return parseJsonResponse(response);
+};

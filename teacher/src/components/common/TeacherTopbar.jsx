@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Menu,
   Search,
+  Trash2,
   UserPlus,
   UsersRound,
   X,
@@ -12,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
+  deleteTeacherNotification,
   fetchTeacherNotifications,
   markAllTeacherNotificationsRead,
   markTeacherNotificationRead,
@@ -41,6 +43,7 @@ export default function TeacherTopbar({
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(true);
+  const [deletingNotificationId, setDeletingNotificationId] = useState("");
   const langRef = useRef(null);
   const notificationRef = useRef(null);
 
@@ -105,6 +108,20 @@ export default function TeacherTopbar({
     setNotifications((rows) => rows.map((row) => ({ ...row, isRead: true })));
     setUnreadCount(0);
     await markAllTeacherNotificationsRead().catch(() => {});
+  };
+
+  const removeNotification = async (notification) => {
+    if (!notification?._id || deletingNotificationId) return;
+    setDeletingNotificationId(notification._id);
+    try {
+      await deleteTeacherNotification(notification._id);
+      setNotifications((rows) => rows.filter((row) => row._id !== notification._id));
+      if (!notification.isRead) {
+        setUnreadCount((count) => Math.max(0, count - 1));
+      }
+    } finally {
+      setDeletingNotificationId("");
+    }
   };
 
   const languages = [
@@ -240,40 +257,54 @@ export default function TeacherTopbar({
                         : `کورس «${notification.course?.title || "شما"}» به حداقل تعداد شاگردان رسیده و آماده شروع است.`
                       : notification.body;
                     return (
-                      <button
+                      <div
                         key={notification._id}
-                        type="button"
-                        onClick={() => openNotification(notification)}
-                        className={`flex w-full items-start gap-3 border-b border-slate-100 p-3 text-start transition last:border-b-0 hover:bg-slate-50 sm:p-4 ${
+                        className={`flex w-full items-start border-b border-slate-100 transition last:border-b-0 hover:bg-slate-50 ${
                           notification.isRead ? "bg-white" : "bg-blue-50/70"
                         }`}
                       >
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-100 text-blue-700">
-                          <Icon size={18} />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2">
-                            <strong className="line-clamp-2 break-words text-sm text-slate-950">
-                              {notification.type === "student_enrolled"
-                                ? language === "fa"
-                                  ? "ثبت‌نام شاگرد جدید"
-                                  : notification.title
-                                : language === "fa"
-                                  ? "حداقل شاگردان تکمیل شد"
-                                  : notification.title}
-                            </strong>
-                            {!notification.isRead ? (
-                              <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />
-                            ) : null}
+                        <button
+                          type="button"
+                          onClick={() => openNotification(notification)}
+                          className="flex min-w-0 flex-1 items-start gap-3 p-3 text-start sm:p-4"
+                        >
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-100 text-blue-700">
+                            <Icon size={18} />
                           </span>
-                          <span className="mt-1 block line-clamp-2 text-xs font-semibold leading-5 text-slate-600">
-                            {localizedBody}
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2">
+                              <strong className="line-clamp-2 break-words text-sm text-slate-950">
+                                {notification.type === "student_enrolled"
+                                  ? language === "fa"
+                                    ? "ثبت‌نام شاگرد جدید"
+                                    : notification.title
+                                  : language === "fa"
+                                    ? "حداقل شاگردان تکمیل شد"
+                                    : notification.title}
+                              </strong>
+                              {!notification.isRead ? (
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                              ) : null}
+                            </span>
+                            <span className="mt-1 block line-clamp-2 text-xs font-semibold leading-5 text-slate-600">
+                              {localizedBody}
+                            </span>
+                            <span className="mt-1.5 block text-[11px] font-bold text-slate-400">
+                              {relativeTime(notification.createdAt, language)}
+                            </span>
                           </span>
-                          <span className="mt-1.5 block text-[11px] font-bold text-slate-400">
-                            {relativeTime(notification.createdAt, language)}
-                          </span>
-                        </span>
-                      </button>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeNotification(notification)}
+                          disabled={deletingNotificationId === notification._id}
+                          className="m-2 grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-wait disabled:opacity-50 sm:m-3"
+                          aria-label={language === "fa" ? "حذف اعلان" : "Remove notification"}
+                          title={language === "fa" ? "حذف اعلان" : "Remove notification"}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     );
                   })
                 ) : (

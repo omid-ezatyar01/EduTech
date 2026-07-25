@@ -8,6 +8,7 @@ import {
   getTeacherStudents,
 } from "../controllers/teacherPortalController.js";
 import {
+  deleteTeacherNotification,
   getTeacherNotifications,
   markAllTeacherNotificationsRead,
   markTeacherNotificationRead,
@@ -53,6 +54,14 @@ router.patch(
   requireApprovedTeacher(),
   validateRequest(idParamSchema, "params"),
   markTeacherNotificationRead,
+);
+router.delete(
+  "/teacher/notifications/:id",
+  protect,
+  authorizeRoles("teacher"),
+  requireApprovedTeacher(),
+  validateRequest(idParamSchema, "params"),
+  deleteTeacherNotification,
 );
 
 export default router;

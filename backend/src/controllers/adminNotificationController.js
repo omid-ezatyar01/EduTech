@@ -25,15 +25,19 @@ const mapNotification = (notification, adminId) => {
 export const getAdminNotifications = asyncHandler(async (req, res) => {
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
   const adminId = req.user._id;
+  const visibleFilter = { hiddenBy: { $ne: adminId } };
 
   const [notifications, unreadCount] = await Promise.all([
-    AdminNotification.find()
+    AdminNotification.find(visibleFilter)
       .sort({ createdAt: -1 })
       .limit(limit)
       .populate("course", "title status")
       .populate("submittedBy", "name email")
       .lean(),
-    AdminNotification.countDocuments({ readBy: { $ne: adminId } }),
+    AdminNotification.countDocuments({
+      ...visibleFilter,
+      readBy: { $ne: adminId },
+    }),
   ]);
 
   return res.json(
@@ -68,7 +72,10 @@ export const markAdminNotificationRead = asyncHandler(async (req, res) => {
 
 export const markAllAdminNotificationsRead = asyncHandler(async (req, res) => {
   await AdminNotification.updateMany(
-    { readBy: { $ne: req.user._id } },
+    {
+      readBy: { $ne: req.user._id },
+      hiddenBy: { $ne: req.user._id },
+    },
     { $addToSet: { readBy: req.user._id } },
   );
 
@@ -76,6 +83,30 @@ export const markAllAdminNotificationsRead = asyncHandler(async (req, res) => {
     new ApiResponse({
       message: "All notifications marked as read",
       data: { unreadCount: 0 },
+    }),
+  );
+});
+
+export const deleteAdminNotification = asyncHandler(async (req, res) => {
+  const notification = await AdminNotification.findByIdAndUpdate(
+    req.params.id,
+    {
+      $addToSet: {
+        hiddenBy: req.user._id,
+        readBy: req.user._id,
+      },
+    },
+    { returnDocument: "after" },
+  );
+
+  if (!notification) {
+    throw new ApiError(404, "Notification not found");
+  }
+
+  return res.json(
+    new ApiResponse({
+      message: "Notification removed",
+      data: { id: notification._id },
     }),
   );
 });

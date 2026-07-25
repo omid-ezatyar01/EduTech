@@ -48,6 +48,12 @@ const adminNotificationSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    hiddenBy: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   { timestamps: true },
 );

@@ -55,3 +55,19 @@ export const markAllTeacherNotificationsRead = asyncHandler(async (req, res) => 
     }),
   );
 });
+
+export const deleteTeacherNotification = asyncHandler(async (req, res) => {
+  const notification = await TeacherNotification.findOneAndDelete({
+    _id: req.params.id,
+    recipient: req.user._id,
+  });
+
+  if (!notification) throw new ApiError(404, "Notification not found");
+
+  return res.json(
+    new ApiResponse({
+      message: "Notification deleted",
+      data: { id: notification._id },
+    }),
+  );
+});
