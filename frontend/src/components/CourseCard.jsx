@@ -30,6 +30,10 @@ import {
   useRegionalPricing,
 } from "../context/RegionalPricingContext.jsx";
 import {
+  calculateHesabPayAfnAmount,
+  calculateRegionalUsdAmount,
+} from "../utils/checkoutPriceDisplay.js";
+import {
   canEnrollFromPublicState,
   getPublicActionLabel,
   getPublicStateKey,
@@ -177,12 +181,35 @@ export default function CourseCard({
 
   const priceLabel = coursePricing.finalLabel;
   const oldPriceLabel = hasDiscount ? coursePricing.originalLabel : "";
+  const usdBaseLabel =
+    coursePricing.pricingType === "regional" &&
+    coursePricing.currency !== "USD" &&
+    Number(coursePricing.finalPriceUsd) > 0
+      ? `${language === "fa" ? "مبنای پرداخت:" : "Checkout base:"} $${new Intl.NumberFormat("en-US", {
+          minimumFractionDigits: Number.isInteger(Number(coursePricing.finalPriceUsd)) ? 0 : 2,
+          maximumFractionDigits: 2,
+        }).format(Number(coursePricing.finalPriceUsd))} USD`
+      : "";
+  const exchangeRateLabel =
+    coursePricing.pricingType === "regional" &&
+    coursePricing.currency !== "USD" &&
+    Number(coursePricing.usdExchangeRate) > 0
+      ? `${coursePricing.usesInternationalPrice
+          ? language === "fa" ? "نرخ فعلی:" : "Current rate:"
+          : language === "fa" ? "نرخ کورس:" : "Course rate:"} 1 USD = ${new Intl.NumberFormat(
+          language === "fa" ? "fa-AF" : "en-US",
+          { maximumFractionDigits: coursePricing.currency === "TOMAN" ? 0 : 2 },
+        ).format(Number(coursePricing.usdExchangeRate))} ${coursePricing.currency}`
+      : "";
   const legacyCryptoAmountLabel = useCryptoUsdtQuoteLabel(rawPrice, language);
   const cryptoAmountLabel =
     coursePricing.pricingType === "regional"
-      ? language === "fa"
-        ? "مبلغ دالری هنگام پرداخت محاسبه می‌شود."
-        : "The USD amount is calculated securely at checkout."
+      ? `${language === "fa" ? "پرداخت رمزارزی:" : "Crypto payment:"} ${new Intl.NumberFormat("en-US", {
+          maximumFractionDigits: 2,
+        }).format(calculateRegionalUsdAmount({
+          coursePricing,
+          rates: { AFN: rates?.AFN, IRR: rates?.IRR },
+        }))} USDT`
       : legacyCryptoAmountLabel;
   const rating = Number(course?.rating || 0);
   const ratingCount = Math.max(0, Number(course?.ratingCount || 0));
@@ -224,8 +251,16 @@ export default function CourseCard({
       try {
         if (!mounted) return;
         if (coursePricing.pricingType === "regional") {
+          const hesabAmount = calculateHesabPayAfnAmount({
+            coursePricing,
+            rates: { AFN: rates?.AFN, IRR: rates?.IRR },
+            fallbackUsdPrice: rawPrice,
+          });
           setHesabPayAmountLabel(
-            `${language === "fa" ? "قیمت منطقه‌ای:" : "Regional price:"} ${coursePricing.finalLabel}`,
+            `${language === "fa" ? "مبلغ در درگاه حساب‌پی:" : "Amount at HesabPay:"} ${new Intl.NumberFormat(
+              language === "fa" ? "fa-AF" : "en-US",
+              { maximumFractionDigits: 0 },
+            ).format(hesabAmount)} ${language === "fa" ? "افغانی" : "AFN"}`,
           );
         } else {
           const afnRate = Number(rates?.AFN || 0);
@@ -261,6 +296,7 @@ export default function CourseCard({
     language,
     rawPrice,
     rates?.AFN,
+    rates?.IRR,
   ]);
 
   const startHesabPayPurchase = async () => {
@@ -539,6 +575,16 @@ export default function CourseCard({
               {hasDiscount ? (
                 <p className="text-sm font-bold text-slate-400 line-through" dir="ltr">
                   {oldPriceLabel}
+                </p>
+              ) : null}
+              {usdBaseLabel ? (
+                <p className="mt-1 text-[11px] font-bold text-slate-500" dir="ltr">
+                  {usdBaseLabel}
+                </p>
+              ) : null}
+              {exchangeRateLabel ? (
+                <p className="mt-0.5 text-[10px] font-semibold text-slate-400" dir="ltr">
+                  {exchangeRateLabel}
                 </p>
               ) : null}
             </div>

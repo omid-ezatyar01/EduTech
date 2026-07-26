@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  convertRegionalPriceToUsdCents,
   getPricingRegionForCountry,
   normalizeRegionalPrices,
   resolveCourseRegionalPrice,
+  resolveRegionalDisplaySnapshot,
+  resolveStudentPricingRegion,
   validateRegionalPrices,
 } from "../src/utils/courseRegionalPricing.js";
 import {
@@ -46,6 +49,10 @@ test("regional pricing resolves custom, fallback, discounted, and free prices", 
       currency: "AFN",
       regularPrice: 1000,
       discountedPrice: 800,
+      regularPriceUsd: null,
+      discountedPriceUsd: null,
+      finalPriceUsd: null,
+      usdExchangeRate: null,
       finalPrice: 800,
       isFree: false,
       usesInternationalPrice: false,
@@ -123,6 +130,82 @@ test("country values map to the expected pricing region", () => {
   assert.equal(getPricingRegionForCountry("AF"), "afghanistan");
   assert.equal(getPricingRegionForCountry("Iran"), "iran");
   assert.equal(getPricingRegionForCountry("Germany"), "international");
+});
+
+test("saved student country overrides a conflicting submitted checkout region", () => {
+  assert.equal(
+    resolveStudentPricingRegion({
+      profileCountry: "Afghanistan",
+      detectedRegion: "iran",
+    }),
+    "afghanistan",
+  );
+  assert.equal(
+    resolveStudentPricingRegion({
+      profileCountry: "ایران",
+      detectedRegion: "afghanistan",
+    }),
+    "iran",
+  );
+  assert.equal(
+    resolveStudentPricingRegion({
+      profileCountry: "Germany",
+      detectedRegion: "iran",
+    }),
+    "international",
+  );
+});
+
+test("automatic detected region is used only when profile country is empty", () => {
+  assert.equal(
+    resolveStudentPricingRegion({
+      profileCountry: "",
+      detectedRegion: "IR",
+    }),
+    "iran",
+  );
+});
+
+test("checkout keeps the teacher-saved USD base when exchange rates later change", async () => {
+  const course = {
+    pricingType: "regional",
+    prices: {
+      ...validPrices,
+      iran: {
+        currency: "TOMAN",
+        regularPrice: 700000,
+        discountedPrice: 560000,
+        regularPriceUsd: 14,
+        discountedPriceUsd: 11.2,
+        usdExchangeRate: 50000,
+        isFree: false,
+        useInternationalPrice: false,
+      },
+    },
+  };
+
+  const resolved = resolveCourseRegionalPrice(course, "iran");
+  assert.equal(resolved.finalPrice, 560000);
+  assert.equal(resolved.finalPriceUsd, 11.2);
+  assert.equal(await convertRegionalPriceToUsdCents(resolved), 1120);
+});
+
+test("payment snapshot preserves the exact local amount and effective rate", async () => {
+  const snapshot = await resolveRegionalDisplaySnapshot({
+    resolvedPrice: {
+      currency: "TOMAN",
+      finalPrice: 700000,
+      finalPriceUsd: 14,
+      usdExchangeRate: 50000,
+    },
+    requestedRegion: "iran",
+    baseAmountUsdCents: 1400,
+  });
+
+  assert.equal(snapshot.amount, 700000);
+  assert.equal(snapshot.currency, "TOMAN");
+  assert.equal(snapshot.exchangeRate, 50000);
+  assert.equal(snapshot.exchangeRateSource, "teacher_regional_price_snapshot");
 });
 
 test("teacher update schema accepts regional prices and preserves single-price updates", () => {

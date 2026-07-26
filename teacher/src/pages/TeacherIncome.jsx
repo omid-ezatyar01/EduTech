@@ -126,11 +126,15 @@ const formatSourcePrice = (item = {}, language = "en") => {
   if (item.sourcePriceAmount === null || item.sourcePriceAmount === undefined) {
     return "";
   }
-  return formatDisplayCurrencyAmount(
+  const priceLabel = formatDisplayCurrencyAmount(
     item.sourcePriceAmount,
     item.sourcePriceCurrency || "USD",
     language,
   );
+  const currency = String(item.sourcePriceCurrency || "USD").toUpperCase();
+  const rate = Number(item.sourceExchangeRate || 0);
+  if (!(rate > 0) || currency === "USD") return priceLabel;
+  return `${priceLabel} • 1 USD = ${formatDisplayCurrencyAmount(rate, currency, language)}`;
 };
 
 const statusMap = {

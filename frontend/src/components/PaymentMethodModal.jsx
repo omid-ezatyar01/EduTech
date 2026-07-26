@@ -18,7 +18,8 @@ export default function PaymentMethodModal({
   isBankLoading = false,
 }) {
   const isFa = language === "fa";
-  const { pricingRegion, setPricingRegion } = useRegionalPricing();
+  const { pricingRegion, countryName, status } = useRegionalPricing();
+  const isPricingLoading = status === "loading";
   if (!isOpen) return null;
   const normalizedCountryCode = String(bankOptionCountryCode || "").trim().toUpperCase();
   const showBankOption =
@@ -96,24 +97,25 @@ export default function PaymentMethodModal({
             <div className="flex items-start gap-3">
               <MapPin size={18} className="mt-0.5 shrink-0 text-primary-600" />
               <div className="min-w-0 flex-1">
-                <label className="block text-xs font-black text-slate-800">
-                  {isFa ? "منطقه قیمت‌گذاری شما" : "Your pricing region"}
-                </label>
-                <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
-                  {isFa
-                    ? "اگر تشخیص خودکار درست نیست، پیش از پرداخت منطقه را تغییر دهید."
-                    : "If automatic detection is incorrect, change the region before checkout."}
+                <p className="block text-xs font-black text-slate-800">
+                  {isFa ? "منطقه قیمت‌گذاری تشخیص‌داده‌شده" : "Detected pricing region"}
                 </p>
-                <select
-                  value={pricingRegion}
-                  onChange={(event) => setPricingRegion(event.target.value)}
-                  disabled={isLoading || isBankLoading}
-                  className="mt-2 h-10 w-full rounded-xl border border-blue-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-primary-500"
-                >
-                  <option value="afghanistan">{isFa ? "افغانستان (AFN)" : "Afghanistan (AFN)"}</option>
-                  <option value="iran">{isFa ? "ایران (تومان)" : "Iran (Toman)"}</option>
-                  <option value="international">{isFa ? "بین‌المللی (USD)" : "International (USD)"}</option>
-                </select>
+                <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
+                  {status === "loading"
+                    ? isFa
+                      ? "در حال بررسی کشور و آماده‌سازی قیمت..."
+                      : "Checking your country and preparing the correct price..."
+                    : isFa
+                      ? "قیمت نمایش‌داده‌شده و مبلغ پرداخت از همین منطقه محاسبه می‌شوند."
+                      : "The displayed price and checkout amount use this same region."}
+                </p>
+                <div className="mt-2 inline-flex rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-black text-slate-800">
+                  {pricingRegion === "afghanistan"
+                    ? isFa ? "افغانستان • افغانی" : "Afghanistan • AFN"
+                    : pricingRegion === "iran"
+                      ? isFa ? "ایران • تومان" : "Iran • Toman"
+                      : isFa ? `بین‌المللی • دالر${countryName ? ` (${countryName})` : ""}` : `International • USD${countryName ? ` (${countryName})` : ""}`}
+                </div>
               </div>
             </div>
           </section>
@@ -121,7 +123,7 @@ export default function PaymentMethodModal({
           <button
             type="button"
             onClick={onSelectHesabPay}
-            disabled={isLoading}
+            disabled={isLoading || isPricingLoading}
             className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-start transition hover:border-primary-300 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <div className="flex items-center gap-4">
@@ -136,14 +138,14 @@ export default function PaymentMethodModal({
               </div>
             </div>
             <span className="text-sm font-black text-primary-700">
-              {isLoading ? t.loading : isFa ? "انتخاب" : "Select"}
+              {isLoading || isPricingLoading ? t.loading : isFa ? "انتخاب" : "Select"}
             </span>
           </button>
 
           <button
             type="button"
             onClick={onSelectNowPayments}
-            disabled={isLoading}
+            disabled={isLoading || isPricingLoading}
             className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-start transition hover:border-teal-300 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <div className="flex items-center gap-4">
@@ -158,7 +160,7 @@ export default function PaymentMethodModal({
               </div>
             </div>
             <span className="text-sm font-black text-teal-700">
-              {isLoading ? t.loading : isFa ? "انتخاب" : "Select"}
+              {isLoading || isPricingLoading ? t.loading : isFa ? "انتخاب" : "Select"}
             </span>
           </button>
 
@@ -167,7 +169,7 @@ export default function PaymentMethodModal({
               <button
                 type="button"
                 onClick={onSelectBank}
-                disabled={isLoading || isBankLoading}
+                disabled={isLoading || isBankLoading || isPricingLoading}
                 className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-start transition hover:border-amber-300 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <div className="flex items-center gap-4">

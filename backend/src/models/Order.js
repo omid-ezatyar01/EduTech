@@ -36,6 +36,9 @@ const orderSchema = new mongoose.Schema(
       enum: ["USD", "AFN", "TOMAN"],
       default: null,
     },
+    sourceExchangeRate: { type: Number, min: 0, default: null },
+    sourceExchangeRateSource: { type: String, trim: true, default: null },
+    sourceRateRetrievedAt: { type: Date, default: null },
     platformCommissionRate: {
       type: Number,
       min: 0,

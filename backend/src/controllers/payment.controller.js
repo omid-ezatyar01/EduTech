@@ -49,9 +49,10 @@ import {
 } from "../utils/paymentProofFile.js";
 import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
 import {
-  getPricingRegionForCountry,
   normalizePricingRegion,
   resolveCourseCheckoutPricing,
+  resolveRegionalDisplaySnapshot,
+  resolveStudentPricingRegion,
 } from "../utils/courseRegionalPricing.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
@@ -252,6 +253,9 @@ const findOrCreatePendingOrder = async ({
   pricingRegion = "international",
   sourcePriceAmount = null,
   sourcePriceCurrency = null,
+  sourceExchangeRate = null,
+  sourceExchangeRateSource = null,
+  sourceRateRetrievedAt = null,
   platformCommissionRate = null,
 }, session = null) => {
   const existing = await Order.findOne({ userId, courseId, status: "PENDING" }).session(session);
@@ -261,12 +265,16 @@ const findOrCreatePendingOrder = async ({
       existing.pricingRegion !== pricingRegion ||
       Number(existing.sourcePriceAmount ?? -1) !== Number(sourcePriceAmount ?? -1) ||
       String(existing.sourcePriceCurrency || "") !== String(sourcePriceCurrency || "") ||
+      Number(existing.sourceExchangeRate ?? -1) !== Number(sourceExchangeRate ?? -1) ||
       Number(existing.platformCommissionRate ?? -1) !== Number(platformCommissionRate ?? -1)
     ) {
       existing.baseAmountUsdCents = baseAmountUsdCents;
       existing.pricingRegion = pricingRegion;
       existing.sourcePriceAmount = sourcePriceAmount;
       existing.sourcePriceCurrency = sourcePriceCurrency;
+      existing.sourceExchangeRate = sourceExchangeRate;
+      existing.sourceExchangeRateSource = sourceExchangeRateSource;
+      existing.sourceRateRetrievedAt = sourceRateRetrievedAt;
       existing.platformCommissionRate = platformCommissionRate;
       await existing.save({ session });
     }
@@ -280,6 +288,9 @@ const findOrCreatePendingOrder = async ({
     pricingRegion,
     sourcePriceAmount,
     sourcePriceCurrency,
+    sourceExchangeRate,
+    sourceExchangeRateSource,
+    sourceRateRetrievedAt,
     platformCommissionRate,
     status: "PENDING",
   }], session ? { session } : undefined).then((rows) => rows[0]);
@@ -326,6 +337,9 @@ const createPaymentAttemptRecord = async ({ order, user, course, paymentReferenc
       pricingRegion: order.pricingRegion || "international",
       sourcePriceAmount: order.sourcePriceAmount ?? null,
       sourcePriceCurrency: order.sourcePriceCurrency || null,
+      sourceExchangeRate: order.sourceExchangeRate ?? null,
+      sourceExchangeRateSource: order.sourceExchangeRateSource || null,
+      sourceRateRetrievedAt: order.sourceRateRetrievedAt || null,
       platformCommissionRate: order.platformCommissionRate ?? null,
       amount: Number(amount || 0),
       gatewayAmount: Number(amount || 0),
@@ -443,10 +457,10 @@ export const createCheckout = async (req, res) => {
   try {
     const { courseId, paymentMethod } = req.body || {};
     const method = String(paymentMethod || "").trim().toUpperCase();
-    const pricingRegion = normalizePricingRegion(
-      req.body?.pricingRegion,
-      getPricingRegionForCountry(req.user?.country),
-    );
+    const pricingRegion = resolveStudentPricingRegion({
+      profileCountry: req.user?.country,
+      detectedRegion: req.body?.pricingRegion,
+    });
 
     if (!courseId || !isValidObjectId(courseId)) {
       return apiError(res, 400, "Invalid courseId");
@@ -475,14 +489,22 @@ export const createCheckout = async (req, res) => {
     }
 
     const platformCommissionRate = await getTeacherDeductionPercentage();
+    const regionalDisplaySnapshot = await resolveRegionalDisplaySnapshot({
+      resolvedPrice: regionalPrice,
+      requestedRegion: pricingRegion,
+      baseAmountUsdCents,
+    });
     const order = await findOrCreatePendingOrder(
       {
         userId: req.user._id,
         courseId: course._id,
         baseAmountUsdCents,
         pricingRegion,
-        sourcePriceAmount: regionalPrice?.finalPrice ?? null,
-        sourcePriceCurrency: regionalPrice?.currency || null,
+        sourcePriceAmount: regionalDisplaySnapshot.amount,
+        sourcePriceCurrency: regionalDisplaySnapshot.currency,
+        sourceExchangeRate: regionalDisplaySnapshot.exchangeRate,
+        sourceExchangeRateSource: regionalDisplaySnapshot.exchangeRateSource,
+        sourceRateRetrievedAt: regionalDisplaySnapshot.rateRetrievedAt,
         platformCommissionRate,
       },
     );
@@ -510,12 +532,11 @@ export const createCheckout = async (req, res) => {
       );
       if (
         paymentAttempt &&
-        regionalPrice?.currency === "AFN" &&
         Number(paymentAttempt.amount || 0) !== Number(quote.amount || 0)
       ) {
         paymentAttempt.status = "EXPIRED";
         paymentAttempt.expiresAt = new Date();
-        paymentAttempt.note = "HesabPay attempt expired after the regional AFN price changed";
+        paymentAttempt.note = "HesabPay attempt expired after the price or exchange rate changed";
         await paymentAttempt.save();
         paymentAttempt = null;
       }
@@ -1512,10 +1533,10 @@ export const getCourseBankPaymentDetails = async (req, res) => {
       .lean();
 
     const submissionState = normalizeBankTransferSubmissionState(latestBankTransferPayment);
-    const pricingRegion = normalizePricingRegion(
-      req.query?.pricingRegion,
-      getPricingRegionForCountry(req.user?.country),
-    );
+    const pricingRegion = resolveStudentPricingRegion({
+      profileCountry: req.user?.country,
+      detectedRegion: req.query?.pricingRegion,
+    });
     let regionalPrice = null;
     let baseAmountUsdCents;
     if (String(course.pricingType || "single") === "regional") {
@@ -1551,6 +1572,14 @@ export const getCourseBankPaymentDetails = async (req, res) => {
               exchangeRateSource: "regional_course_price",
             }
           : await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
+    const regionalDisplaySnapshot = await resolveRegionalDisplaySnapshot({
+      resolvedPrice: regionalPrice || {
+        currency: "USD",
+        finalPrice: baseAmountUsdCents / 100,
+      },
+      requestedRegion: pricingRegion,
+      baseAmountUsdCents,
+    });
 
     return apiSuccess(res, {
       course: {
@@ -1569,6 +1598,7 @@ export const getCourseBankPaymentDetails = async (req, res) => {
         paymentPlan: course.paymentPlan || "monthly",
         pricingRegion,
       },
+      regionalDisplayPrice: regionalDisplaySnapshot,
       submissionState,
     });
   } catch (error) {
@@ -1592,10 +1622,10 @@ export const submitBankTransferPayment = async (req, res) => {
       return apiError(res, 404, "Course not found");
     }
 
-    const pricingRegion = normalizePricingRegion(
-      countryCode,
-      getPricingRegionForCountry(req.user?.country),
-    );
+    const pricingRegion = resolveStudentPricingRegion({
+      profileCountry: req.user?.country,
+      detectedRegion: countryCode,
+    });
     let regionalPrice = null;
     let baseAmountUsdCents;
     if (String(course.pricingType || "single") === "regional") {
@@ -1672,6 +1702,14 @@ export const submitBankTransferPayment = async (req, res) => {
               exchangeRateSource: "regional_course_price",
             }
           : await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
+    const regionalDisplaySnapshot = await resolveRegionalDisplaySnapshot({
+      resolvedPrice: regionalPrice || {
+        currency: "USD",
+        finalPrice: baseAmountUsdCents / 100,
+      },
+      requestedRegion: pricingRegion,
+      baseAmountUsdCents,
+    });
     const paymentReference = makePaymentReference();
     const proofPath = await savePaymentProofFromBuffer(req.user._id, req.file.buffer);
     savedProofPath = proofPath;
@@ -1698,8 +1736,11 @@ export const submitBankTransferPayment = async (req, res) => {
       enrollmentId: enrollment._id,
       baseAmountUsdCents,
       pricingRegion,
-      sourcePriceAmount: regionalPrice?.finalPrice ?? null,
-      sourcePriceCurrency: regionalPrice?.currency || null,
+      sourcePriceAmount: regionalDisplaySnapshot.amount,
+      sourcePriceCurrency: regionalDisplaySnapshot.currency,
+      sourceExchangeRate: regionalDisplaySnapshot.exchangeRate,
+      sourceExchangeRateSource: regionalDisplaySnapshot.exchangeRateSource,
+      sourceRateRetrievedAt: regionalDisplaySnapshot.rateRetrievedAt,
       platformCommissionRate: await getTeacherDeductionPercentage(),
       amount: Number(quote.amount || 0),
       gatewayAmount: Number(quote.amount || 0),

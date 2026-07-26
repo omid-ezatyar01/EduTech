@@ -521,9 +521,9 @@ export const calculateTeacherIncomeLedger = async ({
     courseId: { $in: courseIds },
     $or: [{ status: "paid" }, { paymentStatus: "paid" }],
   })
-    .select("courseId orderId amount baseAmountUsdCents pricingRegion sourcePriceAmount sourcePriceCurrency platformCommissionRate currency gatewayAmount gatewayCurrency paymentMethod exchangeRate exchangeRateSource paidAt createdAt studentId customerEmail paymentReference transactionId transactionSignature isExternalCollection")
+    .select("courseId orderId amount baseAmountUsdCents pricingRegion sourcePriceAmount sourcePriceCurrency sourceExchangeRate sourceExchangeRateSource sourceRateRetrievedAt platformCommissionRate currency gatewayAmount gatewayCurrency paymentMethod exchangeRate exchangeRateSource paidAt createdAt studentId customerEmail paymentReference transactionId transactionSignature isExternalCollection")
     .populate("studentId", "_id name nameFa firstName firstNameFa email")
-    .populate("orderId", "pricingRegion sourcePriceAmount sourcePriceCurrency platformCommissionRate")
+    .populate("orderId", "pricingRegion sourcePriceAmount sourcePriceCurrency sourceExchangeRate sourceExchangeRateSource sourceRateRetrievedAt platformCommissionRate")
     .lean();
 
   const rowMap = new Map();
@@ -629,6 +629,16 @@ export const calculateTeacherIncomeLedger = async ({
         payment?.sourcePriceCurrency ||
         payment?.orderId?.sourcePriceCurrency ||
         regionMeta.currency,
+      sourceExchangeRate:
+        payment?.sourceExchangeRate ?? payment?.orderId?.sourceExchangeRate ?? null,
+      sourceExchangeRateSource:
+        payment?.sourceExchangeRateSource ||
+        payment?.orderId?.sourceExchangeRateSource ||
+        null,
+      sourceRateRetrievedAt:
+        payment?.sourceRateRetrievedAt ||
+        payment?.orderId?.sourceRateRetrievedAt ||
+        null,
       commissionRate: paymentCommissionRate,
       platformCommission: roundMoney(commissionAmount),
       pricingSnapshotLabel: pricingSnapshot.snapshotLabel,

@@ -15,11 +15,12 @@ const DEFAULT_RATES = {
 };
 const RATES_CACHE_KEY = "edutech_regional_rates_v1";
 const COUNTRY_CACHE_KEY = "edutech_regional_country_v1";
+const COUNTRY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const normalizePricingRegion = (value = "") => {
   const normalized = String(value || "").trim().toLowerCase();
-  if (["af", "afghanistan"].includes(normalized)) return "afghanistan";
-  if (["ir", "iran"].includes(normalized)) return "iran";
+  if (["af", "afg", "afghanistan", "افغانستان"].includes(normalized)) return "afghanistan";
+  if (["ir", "irn", "iran", "ایران"].includes(normalized)) return "iran";
   return "international";
 };
 
@@ -114,6 +115,38 @@ async function detectCountryFromProviders() {
   };
 }
 
+function detectCountryFromBrowserSignals() {
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    const locales = Array.from(
+      new Set([navigator.language, ...(navigator.languages || [])].filter(Boolean)),
+    ).map((value) => String(value).toLowerCase());
+
+    if (timezone === "Asia/Kabul" || locales.some((value) => value === "fa-af" || value === "ps-af")) {
+      return {
+        countryCode: "AF",
+        countryName: "Afghanistan",
+        provider: "browser",
+      };
+    }
+    if (timezone === "Asia/Tehran" || locales.some((value) => value === "fa-ir")) {
+      return {
+        countryCode: "IR",
+        countryName: "Iran",
+        provider: "browser",
+      };
+    }
+  } catch {
+    // Browser signals are only a fallback when profile and network detection are unavailable.
+  }
+
+  return {
+    countryCode: "INTL",
+    countryName: "International",
+    provider: "browser-fallback",
+  };
+}
+
 function readCachedJson(key) {
   try {
     const raw = localStorage.getItem(key);
@@ -160,11 +193,18 @@ function readCachedRates() {
 function readCachedCountry() {
   const cached = readCachedJson(COUNTRY_CACHE_KEY);
   if (!cached) return null;
+  const savedAt = Number(cached.savedAt || 0);
+  if (
+    cached.manual ||
+    !Number.isFinite(savedAt) ||
+    Date.now() - savedAt >= COUNTRY_CACHE_TTL_MS
+  ) {
+    return null;
+  }
   return {
     countryCode: cached.countryCode || "",
     countryName: cached.countryName || "",
     provider: cached.provider || "",
-    manual: Boolean(cached.manual),
   };
 }
 
@@ -178,7 +218,6 @@ function readStoredProfileCountry() {
       countryCode: countryCodeForPricingRegion(region),
       countryName: country,
       provider: "profile",
-      manual: false,
     };
   } catch {
     return null;
@@ -188,11 +227,12 @@ function readStoredProfileCountry() {
 export function RegionalPricingProvider({ children }) {
   const cachedCountry = useMemo(() => readCachedCountry(), []);
   const profileCountry = useMemo(() => readStoredProfileCountry(), []);
+  const browserCountry = useMemo(() => detectCountryFromBrowserSignals(), []);
   const cachedRates = useMemo(() => readCachedRates(), []);
-  const [countryCode, setCountryCode] = useState(cachedCountry?.countryCode || "");
-  const [countryName, setCountryName] = useState(cachedCountry?.countryName || "");
-  const [countryProvider, setCountryProvider] = useState(cachedCountry?.provider || "");
-  const [isManualRegion, setIsManualRegion] = useState(Boolean(cachedCountry?.manual));
+  const initialCountry = profileCountry || cachedCountry || browserCountry;
+  const [countryCode, setCountryCode] = useState(initialCountry.countryCode || "INTL");
+  const [countryName, setCountryName] = useState(initialCountry.countryName || "International");
+  const [countryProvider, setCountryProvider] = useState(initialCountry.provider || "browser-fallback");
   const [rates, setRates] = useState(() => ({
     ...DEFAULT_RATES,
     ...(cachedRates || {}),
@@ -210,11 +250,10 @@ export function RegionalPricingProvider({ children }) {
       const tasks = [];
 
       tasks.push(
-        cachedCountry?.manual
-          ? Promise.resolve(cachedCountry)
-          : profileCountry
-            ? Promise.resolve(profileCountry)
-            : detectCountryFromProviders(),
+        profileCountry
+          ? Promise.resolve(profileCountry)
+          : detectCountryFromProviders().then((result) =>
+            result.countryCode ? result : cachedCountry || browserCountry),
       );
 
       tasks.push(
@@ -235,14 +274,14 @@ export function RegionalPricingProvider({ children }) {
       if (!mounted) return;
 
       if (countryResult.status === "fulfilled") {
-        setCountryCode(countryResult.value.countryCode || "");
-        setCountryName(countryResult.value.countryName || "");
-        setCountryProvider(countryResult.value.provider || "");
+        const resolvedCountry = readStoredProfileCountry() || countryResult.value;
+        setCountryCode(resolvedCountry.countryCode || "INTL");
+        setCountryName(resolvedCountry.countryName || "International");
+        setCountryProvider(resolvedCountry.provider || "browser-fallback");
         writeCachedJson(COUNTRY_CACHE_KEY, {
-          countryCode: countryResult.value.countryCode || "",
-          countryName: countryResult.value.countryName || "",
-          provider: countryResult.value.provider || "",
-          manual: Boolean(countryResult.value.manual),
+          countryCode: resolvedCountry.countryCode || "INTL",
+          countryName: resolvedCountry.countryName || "International",
+          provider: resolvedCountry.provider || "browser-fallback",
           savedAt: Date.now(),
         });
       }
@@ -276,33 +315,64 @@ export function RegionalPricingProvider({ children }) {
     return () => {
       mounted = false;
     };
-  }, [cachedCountry, cachedRates, profileCountry]);
+  }, [browserCountry, cachedCountry, cachedRates, profileCountry]);
+
+  useEffect(() => {
+    let active = true;
+    const refreshAt = getNextKabulNoonMs(Date.now()) + 1000;
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await getUsdExchangeRates();
+        if (!active) return;
+        const nextRates = {
+          AFN: Number(result?.rates?.AFN || 0) || null,
+          IRR: Number(result?.rates?.IRR || 0) || null,
+          USDT: Number(result?.rates?.USDT || 0) || null,
+        };
+        setRates(nextRates);
+        writeCachedJson(RATES_CACHE_KEY, {
+          rates: nextRates,
+          savedAt: Date.now(),
+        });
+      } catch {
+        // Keep the last known rates; checkout still verifies the amount server-side.
+      }
+    }, Math.max(1000, refreshAt - Date.now()));
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [rates]);
+
+  useEffect(() => {
+    let active = true;
+    const syncProfileCountry = async () => {
+      const profile = readStoredProfileCountry();
+      const detected = profile || await detectCountryFromProviders();
+      if (!active) return;
+      const nextCountry = detected.countryCode ? detected : browserCountry;
+      setCountryCode(nextCountry.countryCode || "INTL");
+      setCountryName(nextCountry.countryName || "International");
+      setCountryProvider(nextCountry.provider || "browser-fallback");
+      writeCachedJson(COUNTRY_CACHE_KEY, {
+        ...nextCountry,
+        savedAt: Date.now(),
+      });
+    };
+
+    window.addEventListener("auth_change", syncProfileCountry);
+    window.addEventListener("edutech_data_changed", syncProfileCountry);
+    return () => {
+      active = false;
+      window.removeEventListener("auth_change", syncProfileCountry);
+      window.removeEventListener("edutech_data_changed", syncProfileCountry);
+    };
+  }, [browserCountry]);
 
   const value = useMemo(() => {
     const displayCurrency = resolveDisplayCurrency(countryCode);
     const pricingRegion = normalizePricingRegion(countryCode);
-
-    const setPricingRegion = (nextRegion) => {
-      const normalizedRegion = normalizePricingRegion(nextRegion);
-      const nextCountryCode = countryCodeForPricingRegion(normalizedRegion);
-      const nextCountryName =
-        normalizedRegion === "afghanistan"
-          ? "Afghanistan"
-          : normalizedRegion === "iran"
-            ? "Iran"
-            : "International";
-      setCountryCode(nextCountryCode);
-      setCountryName(nextCountryName);
-      setCountryProvider("manual");
-      setIsManualRegion(true);
-      writeCachedJson(COUNTRY_CACHE_KEY, {
-        countryCode: nextCountryCode,
-        countryName: nextCountryName,
-        provider: "manual",
-        manual: true,
-        savedAt: Date.now(),
-      });
-    };
 
     const formatRegionalPrice = (amountUsd, language = "fa") => {
       const numericAmount = Number(amountUsd || 0);
@@ -340,15 +410,13 @@ export function RegionalPricingProvider({ children }) {
       countryName,
       countryProvider,
       pricingRegion,
-      isManualRegion,
-      setPricingRegion,
       displayCurrency,
       rates,
       status,
       formatRegionalPrice,
       formatCryptoUsdtLabel,
     };
-  }, [countryCode, countryName, countryProvider, isManualRegion, rates, status]);
+  }, [countryCode, countryName, countryProvider, rates, status]);
 
   return (
     <RegionalPricingContext.Provider value={value}>
@@ -383,7 +451,9 @@ export function useCourseRegionalPrice(course = {}, language = "fa") {
         pricingRegion,
         currency: formatRegionalPrice(finalPrice, language).currency,
         finalPrice,
+        finalPriceUsd: finalPrice,
         originalPrice,
+        originalPriceUsd: originalPrice,
         finalLabel: formatRegionalPrice(finalPrice, language).label,
         originalLabel: originalPrice
           ? formatRegionalPrice(originalPrice, language).label
@@ -402,7 +472,16 @@ export function useCourseRegionalPrice(course = {}, language = "fa") {
       usesInternationalPrice
         ? course.prices?.international || {}
         : requested;
+    const dynamicFallback =
+      usesInternationalPrice && pricingRegion !== "international";
+    const fallbackRegular = dynamicFallback
+      ? formatRegionalPrice(resolved.regularPrice, language)
+      : null;
+    const fallbackDiscount = dynamicFallback && resolved.discountedPrice != null
+      ? formatRegionalPrice(resolved.discountedPrice, language)
+      : null;
     const sourceCurrency = String(
+      fallbackRegular?.currency ||
       resolved.currency ||
       (pricingRegion === "afghanistan"
         ? "AFN"
@@ -413,16 +492,31 @@ export function useCourseRegionalPrice(course = {}, language = "fa") {
     const currency = getDisplayCurrency(sourceCurrency);
     const regularPrice = Math.max(
       0,
-      getDisplayCurrencyAmount(resolved.regularPrice, sourceCurrency),
+      dynamicFallback
+        ? Number(fallbackRegular?.amount || 0)
+        : getDisplayCurrencyAmount(resolved.regularPrice, sourceCurrency),
     );
-    const discountedCandidate = getDisplayCurrencyAmount(
-      resolved.discountedPrice,
-      sourceCurrency,
-    );
+    const discountedCandidate = dynamicFallback
+      ? Number(fallbackDiscount?.amount || 0)
+      : getDisplayCurrencyAmount(resolved.discountedPrice, sourceCurrency);
     const hasDiscount =
       discountedCandidate > 0 && discountedCandidate < regularPrice;
     const finalPrice =
       resolved.isFree ? 0 : hasDiscount ? discountedCandidate : regularPrice;
+    const regularPriceUsd = dynamicFallback
+      ? Number(resolved.regularPrice || 0)
+      : Number(resolved.regularPriceUsd);
+    const discountedPriceUsd = dynamicFallback
+      ? Number(resolved.discountedPrice || 0)
+      : Number(resolved.discountedPriceUsd);
+    const finalPriceUsd =
+      resolved.isFree
+        ? 0
+        : hasDiscount && discountedPriceUsd > 0
+          ? discountedPriceUsd
+          : regularPriceUsd > 0
+            ? regularPriceUsd
+            : null;
     const label = (amount) =>
       `${formatAmount(amount, currency, language)} ${getCurrencyLabel(currency, language)}`;
 
@@ -432,7 +526,13 @@ export function useCourseRegionalPrice(course = {}, language = "fa") {
       resolvedRegion: usesInternationalPrice ? "international" : pricingRegion,
       currency,
       finalPrice,
+      finalPriceUsd,
       originalPrice: hasDiscount ? regularPrice : 0,
+      originalPriceUsd: hasDiscount && regularPriceUsd > 0 ? regularPriceUsd : 0,
+      usdExchangeRate:
+        dynamicFallback && regularPriceUsd > 0
+          ? regularPrice / regularPriceUsd
+          : Number(resolved.usdExchangeRate) || null,
       finalLabel: resolved.isFree ? (language === "fa" ? "رایگان" : "Free") : label(finalPrice),
       originalLabel: hasDiscount ? label(regularPrice) : "",
       isFree: Boolean(resolved.isFree) || finalPrice <= 0,

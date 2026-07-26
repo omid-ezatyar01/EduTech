@@ -12,6 +12,12 @@ const INITIAL_RATE_STATE = {
 
 const formatAmount = (value, maximumFractionDigits = 2) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(value);
+const toUsdSnapshot = (value, rate) => {
+  const numericValue = Number(value);
+  const numericRate = Number(rate);
+  if (!(numericValue >= 0) || !(numericRate > 0)) return null;
+  return Math.round((numericValue / numericRate) * 100) / 100;
+};
 
 export default function CoursePricingFields({
   priceMode = "single",
@@ -63,6 +69,48 @@ export default function CoursePricingFields({
       cancelled = true;
     };
   }, [priceMode]);
+
+  useEffect(() => {
+    if (
+      priceMode !== "regional" ||
+      !(rateState.afnPerUsd > 0) ||
+      !(rateState.tomanPerUsd > 0)
+    ) {
+      return;
+    }
+
+    let changed = false;
+    const nextPrices = { ...regionalPrices };
+    for (const [region, rate] of [
+      ["afghanistan", rateState.afnPerUsd],
+      ["iran", rateState.tomanPerUsd],
+    ]) {
+      const row = regionalPrices?.[region] || {};
+      if (row.isFree || row.useInternationalPrice) continue;
+      const nextRow = { ...row };
+      if (Number(row.regularPrice) > 0 && !(Number(row.regularPriceUsd) > 0)) {
+        nextRow.regularPriceUsd = toUsdSnapshot(row.regularPrice, rate);
+        nextRow.usdExchangeRate = rate;
+        changed = true;
+      }
+      if (
+        Number(row.discountedPrice) > 0 &&
+        !(Number(row.discountedPriceUsd) > 0)
+      ) {
+        nextRow.discountedPriceUsd = toUsdSnapshot(row.discountedPrice, rate);
+        nextRow.usdExchangeRate = rate;
+        changed = true;
+      }
+      nextPrices[region] = nextRow;
+    }
+    if (changed) onRegionalPricesChange(nextPrices);
+  }, [
+    onRegionalPricesChange,
+    priceMode,
+    rateState.afnPerUsd,
+    rateState.tomanPerUsd,
+    regionalPrices,
+  ]);
 
   const updateRegion = (region, patch) => {
     onRegionalPricesChange({
@@ -193,6 +241,22 @@ function RegionCard({
   const usesFallback = !isInternational && Boolean(row.useInternationalPrice);
   const fieldsDisabled = disabled || usesFallback || Boolean(row.isFree);
   const internationalPriceLabel = isFa ? "استفاده از قیمت دالری" : "Use USD fallback";
+  const updatePrice = (field, value) => {
+    const usdField =
+      field === "regularPrice" ? "regularPriceUsd" : "discountedPriceUsd";
+    updateRegion(key, {
+      [field]: value,
+      ...(isInternational
+        ? {
+            [usdField]: value === "" ? null : Number(value),
+            usdExchangeRate: 1,
+          }
+        : {
+            [usdField]: value === "" ? null : toUsdSnapshot(value, usdRate),
+            usdExchangeRate: usdRate > 0 ? usdRate : row.usdExchangeRate,
+          }),
+    });
+  };
 
   return (
     <article
@@ -227,11 +291,11 @@ function RegionCard({
                 : "Required base and fallback for every country"
               : usesFallback
                 ? isFa
-                  ? "قیمت این منطقه از قیمت دالری گرفته می‌شود."
-                  : "This region currently follows the USD price."
+                  ? "قیمت محلی از مبنای دالری و نرخ روز محاسبه می‌شود."
+                  : "The local price follows the USD base and current exchange rate."
                 : isFa
-                  ? `قیمت اختصاصی به ${currency}`
-                  : `Custom price in ${currency}`}
+                  ? `قیمت ثابت اختصاصی به ${currency}؛ با تغییر نرخ ارز عوض نمی‌شود`
+                  : `Fixed custom price in ${currency}; it does not move with exchange rates`}
           </p>
         </div>
         <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-slate-600 shadow-sm ring-1 ring-slate-200">
@@ -282,9 +346,10 @@ function RegionCard({
             currency={currency}
             value={row.regularPrice ?? ""}
             disabled={fieldsDisabled}
-            onChange={(value) => updateRegion(key, { regularPrice: value })}
+            onChange={(value) => updatePrice("regularPrice", value)}
             error={errors[`${key}.regularPrice`]}
             usdRate={usdRate}
+            usdEquivalent={row.regularPriceUsd}
             ratesLoading={ratesLoading}
             isFa={isFa}
           />
@@ -293,9 +358,10 @@ function RegionCard({
             currency={currency}
             value={row.discountedPrice ?? ""}
             disabled={fieldsDisabled}
-            onChange={(value) => updateRegion(key, { discountedPrice: value })}
+            onChange={(value) => updatePrice("discountedPrice", value)}
             error={errors[`${key}.discountedPrice`]}
             usdRate={usdRate}
+            usdEquivalent={row.discountedPriceUsd}
             ratesLoading={ratesLoading}
             isFa={isFa}
           />
@@ -319,6 +385,12 @@ function RegionCard({
         />
         {isFa ? "رایگان برای این منطقه" : "Free for this region"}
       </label>
+      {!isInternational && !usesFallback && Number(row.usdExchangeRate) > 0 ? (
+        <p className="mt-2 text-[10px] font-bold text-slate-500">
+          {isFa ? "مبنای ذخیره‌شده:" : "Saved pricing basis:"} 1 USD ={" "}
+          {formatAmount(Number(row.usdExchangeRate), currency === "TOMAN" ? 0 : 2)} {currency}
+        </p>
+      ) : null}
     </article>
   );
 }
@@ -354,6 +426,11 @@ function FallbackPriceSummary({ prices, currency, usdRate, ratesLoading, isFa })
               ≈ {formatAmount(effectiveUsd * usdRate, 0)} {currency}
             </span>
           ) : null}
+          <span className="w-full text-[10px] font-semibold text-primary-700">
+            {isFa
+              ? "مبلغ محلی با نرخ جدید سیستم خودکار به‌روز می‌شود."
+              : "The local amount updates automatically with the system rate."}
+          </span>
         </div>
       ) : (
         <p className="mt-1 text-[11px] font-bold text-amber-700">
@@ -421,18 +498,21 @@ function PriceInput({
   disabled,
   error,
   usdRate = 0,
+  usdEquivalent: savedUsdEquivalent = null,
   ratesLoading = false,
   isFa = false,
 }) {
   const numericValue = Number(value);
   const usdEquivalent =
-    currency !== "USD" &&
-    usdRate > 0 &&
-    value !== "" &&
-    Number.isFinite(numericValue) &&
-    numericValue >= 0
-      ? numericValue / usdRate
-      : null;
+    Number(savedUsdEquivalent) >= 0 && savedUsdEquivalent !== null
+      ? Number(savedUsdEquivalent)
+      : currency !== "USD" &&
+          usdRate > 0 &&
+          value !== "" &&
+          Number.isFinite(numericValue) &&
+          numericValue >= 0
+        ? toUsdSnapshot(numericValue, usdRate)
+        : null;
 
   return (
     <label className="block text-[11px] font-bold text-slate-600">
@@ -465,7 +545,7 @@ function PriceInput({
               ? "در حال محاسبه معادل دالری..."
               : "Calculating USD equivalent…"
             : usdEquivalent !== null
-              ? `≈ $${formatAmount(usdEquivalent)} USD`
+              ? `= $${formatAmount(usdEquivalent)} USD ${isFa ? "(مبنای ذخیره‌شده)" : "(saved base)"}`
               : isFa
                 ? "مبلغ را وارد کنید تا معادل دالری نمایش داده شود."
                 : "Enter an amount to see its USD equivalent."}

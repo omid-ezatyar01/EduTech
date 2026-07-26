@@ -30,6 +30,9 @@ export const syncLegacyPaymentRecord = async ({ order, attempt, course, transact
     pricingRegion: order.pricingRegion || "international",
     sourcePriceAmount: order.sourcePriceAmount ?? null,
     sourcePriceCurrency: order.sourcePriceCurrency || null,
+    sourceExchangeRate: order.sourceExchangeRate ?? null,
+    sourceExchangeRateSource: order.sourceExchangeRateSource || null,
+    sourceRateRetrievedAt: order.sourceRateRetrievedAt || null,
     platformCommissionRate: order.platformCommissionRate ?? null,
     amount: Number(attempt.amount || 0),
     gatewayAmount: Number(attempt.amount || 0),
@@ -69,6 +72,19 @@ export const syncLegacyPaymentRecord = async ({ order, attempt, course, transact
 
   let paymentDoc;
   if (existing) {
+    payload.pricingRegion = existing.pricingRegion || payload.pricingRegion;
+    payload.sourcePriceAmount =
+      existing.sourcePriceAmount ?? payload.sourcePriceAmount;
+    payload.sourcePriceCurrency =
+      existing.sourcePriceCurrency || payload.sourcePriceCurrency;
+    payload.sourceExchangeRate =
+      existing.sourceExchangeRate ?? payload.sourceExchangeRate;
+    payload.sourceExchangeRateSource =
+      existing.sourceExchangeRateSource || payload.sourceExchangeRateSource;
+    payload.sourceRateRetrievedAt =
+      existing.sourceRateRetrievedAt || payload.sourceRateRetrievedAt;
+    payload.platformCommissionRate =
+      existing.platformCommissionRate ?? payload.platformCommissionRate;
     Object.assign(existing, payload);
     paymentDoc = await existing.save({ session });
   } else {

@@ -64,6 +64,10 @@ import {
   useCourseRegionalPrice,
   useRegionalPricing,
 } from "../context/RegionalPricingContext.jsx";
+import {
+  calculateHesabPayAfnAmount,
+  calculateRegionalUsdAmount,
+} from "../utils/checkoutPriceDisplay.js";
 import { applySeo } from "../seo/useSeo.js";
 
 function normalizeSeoText(value = "") {
@@ -401,9 +405,12 @@ export default function CourseDetailsPage({ t }) {
   const legacyCryptoAmountLabel = useCryptoUsdtQuoteLabel(Number(course?.price || 0), language);
   const cryptoAmountLabel =
     coursePricing.pricingType === "regional"
-      ? language === "fa"
-        ? "مبلغ دالری هنگام پرداخت محاسبه می‌شود."
-        : "The USD amount is calculated securely at checkout."
+      ? `${language === "fa" ? "پرداخت رمزارزی:" : "Crypto payment:"} ${new Intl.NumberFormat("en-US", {
+          maximumFractionDigits: 2,
+        }).format(calculateRegionalUsdAmount({
+          coursePricing,
+          rates: { AFN: rates?.AFN, IRR: rates?.IRR },
+        }))} USDT`
       : legacyCryptoAmountLabel;
 
   useEffect(() => {
@@ -427,8 +434,16 @@ export default function CourseDetailsPage({ t }) {
       try {
         if (!mounted) return;
         if (coursePricing.pricingType === "regional") {
+          const hesabAmount = calculateHesabPayAfnAmount({
+            coursePricing,
+            rates: { AFN: rates?.AFN, IRR: rates?.IRR },
+            fallbackUsdPrice: rawPrice,
+          });
           setHesabPayAmountLabel(
-            `${language === "fa" ? "قیمت منطقه‌ای:" : "Regional price:"} ${coursePricing.finalLabel}`,
+            `${language === "fa" ? "مبلغ در درگاه حساب‌پی:" : "Amount at HesabPay:"} ${new Intl.NumberFormat(
+              language === "fa" ? "fa-AF" : "en-US",
+              { maximumFractionDigits: 0 },
+            ).format(hesabAmount)} ${language === "fa" ? "افغانی" : "AFN"}`,
           );
         } else {
           const afnRate = Number(rates?.AFN || 0);
@@ -464,6 +479,7 @@ export default function CourseDetailsPage({ t }) {
     isCourseFree,
     language,
     rates?.AFN,
+    rates?.IRR,
   ]);
 
   useEffect(() => {
@@ -920,6 +936,26 @@ export default function CourseDetailsPage({ t }) {
       ? "رایگان"
       : "Free"
     : coursePricing.finalLabel;
+  const usdBaseLabel =
+    coursePricing.pricingType === "regional" &&
+    coursePricing.currency !== "USD" &&
+    Number(coursePricing.finalPriceUsd) > 0
+      ? `${language === "fa" ? "مبنای پرداخت:" : "Checkout base:"} $${new Intl.NumberFormat("en-US", {
+          minimumFractionDigits: Number.isInteger(Number(coursePricing.finalPriceUsd)) ? 0 : 2,
+          maximumFractionDigits: 2,
+        }).format(Number(coursePricing.finalPriceUsd))} USD`
+      : "";
+  const exchangeRateLabel =
+    coursePricing.pricingType === "regional" &&
+    coursePricing.currency !== "USD" &&
+    Number(coursePricing.usdExchangeRate) > 0
+      ? `${coursePricing.usesInternationalPrice
+          ? language === "fa" ? "نرخ فعلی:" : "Current rate:"
+          : language === "fa" ? "نرخ کورس:" : "Course rate:"} 1 USD = ${new Intl.NumberFormat(
+          language === "fa" ? "fa-AF" : "en-US",
+          { maximumFractionDigits: coursePricing.currency === "TOMAN" ? 0 : 2 },
+        ).format(Number(coursePricing.usdExchangeRate))} ${coursePricing.currency}`
+      : "";
   const paymentPlan =
     course?.paymentPlan === "whole_period" ? "whole_period" : "monthly";
   const paymentPlanLabel =
@@ -1853,6 +1889,12 @@ export default function CourseDetailsPage({ t }) {
                     {coursePricing.originalLabel}
                   </p>
                 ) : null}
+                {usdBaseLabel ? (
+                  <p className="mt-1 text-xs font-bold text-slate-500" dir="ltr">{usdBaseLabel}</p>
+                ) : null}
+                {exchangeRateLabel ? (
+                  <p className="mt-0.5 text-[11px] font-semibold text-slate-400" dir="ltr">{exchangeRateLabel}</p>
+                ) : null}
                 {!isCourseFree ? (
                   <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-center">
                     <p className="text-xs font-black text-blue-900">
@@ -1954,6 +1996,12 @@ export default function CourseDetailsPage({ t }) {
                 <p className="truncate text-[10px] font-bold text-slate-400 line-through" dir="ltr">
                   {coursePricing.originalLabel}
                 </p>
+              ) : null}
+              {usdBaseLabel ? (
+                <p className="mt-1 text-xs font-bold text-slate-500" dir="ltr">{usdBaseLabel}</p>
+              ) : null}
+              {exchangeRateLabel ? (
+                <p className="mt-0.5 text-[11px] font-semibold text-slate-400" dir="ltr">{exchangeRateLabel}</p>
               ) : null}
               {!isCourseFree ? (
                 <p className="truncate text-[10px] font-bold text-blue-700">

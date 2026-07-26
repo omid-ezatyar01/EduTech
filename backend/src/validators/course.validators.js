@@ -30,6 +30,9 @@ const regionalPriceRowSchema = (currency, { allowInternationalFallback = false }
     currency: Joi.string().valid(currency).required(),
     regularPrice: Joi.number().min(0).max(1_000_000_000).allow(null),
     discountedPrice: Joi.number().min(0).max(1_000_000_000).allow(null, ""),
+    regularPriceUsd: Joi.number().min(0).max(10000).allow(null, ""),
+    discountedPriceUsd: Joi.number().min(0).max(10000).allow(null, ""),
+    usdExchangeRate: Joi.number().min(0).max(1_000_000_000).allow(null, ""),
     isFree: Joi.boolean().default(false),
     ...(allowInternationalFallback
       ? { useInternationalPrice: Joi.boolean().default(false) }

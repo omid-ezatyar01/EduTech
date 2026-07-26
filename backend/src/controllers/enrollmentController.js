@@ -22,9 +22,8 @@ import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 import { getCoursePublicState } from "../utils/coursePublicState.js";
 import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
 import {
-  getPricingRegionForCountry,
-  normalizePricingRegion,
   resolveCourseCheckoutPricing,
+  resolveStudentPricingRegion,
 } from "../utils/courseRegionalPricing.js";
 
 const makePaymentReference = (studentId) => {
@@ -264,10 +263,10 @@ export const enrollInCourse = asyncHandler(async (req, res) => {
     courseId: course._id,
   });
 
-  const pricingRegion = normalizePricingRegion(
-    req.body?.pricingRegion,
-    getPricingRegionForCountry(req.user?.country),
-  );
+  const pricingRegion = resolveStudentPricingRegion({
+    profileCountry: req.user?.country,
+    detectedRegion: req.body?.pricingRegion,
+  });
   const effectiveAmount = await resolveCourseAmount(course, pricingRegion);
   const isEffectivelyFree = course.isFree || effectiveAmount <= 0;
 
