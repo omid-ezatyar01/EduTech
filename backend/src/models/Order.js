@@ -21,6 +21,27 @@ const orderSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    pricingRegion: {
+      type: String,
+      enum: ["afghanistan", "iran", "international"],
+      default: "international",
+    },
+    sourcePriceAmount: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    sourcePriceCurrency: {
+      type: String,
+      enum: ["USD", "AFN", "TOMAN"],
+      default: null,
+    },
+    platformCommissionRate: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: null,
+    },
     status: {
       type: String,
       enum: ["PENDING", "PAID", "CANCELLED", "REFUNDED"],

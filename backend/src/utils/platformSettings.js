@@ -1,4 +1,5 @@
 import AppSetting from "../models/AppSetting.js";
+import { resolveCourseRegionalPrice } from "./courseRegionalPricing.js";
 
 export const DEFAULT_TEACHER_DEDUCTION_PERCENTAGE = 15;
 export const DEFAULT_MIN_TEACHER_COURSE_PRICE = 5;
@@ -74,6 +75,27 @@ export const getPlatformPricingSettings = async () => {
 };
 
 export const resolveCourseDisplayPricing = (course = {}, globalDiscountPercentage = 0) => {
+  if (String(course?.pricingType || "single") === "regional") {
+    const regional = resolveCourseRegionalPrice(course, "international");
+    const basePrice = Number(regional.regularPrice || 0);
+    const finalPrice = Number(regional.finalPrice || 0);
+    const teacherDiscountPercentage =
+      basePrice > 0 && finalPrice < basePrice
+        ? normalizeTeacherCourseDiscountPercentage(((basePrice - finalPrice) / basePrice) * 100)
+        : 0;
+    return {
+      basePrice,
+      teacherDiscountPercentage,
+      teacherDiscountAmount: Math.max(0, roundCurrencyAmount(basePrice - finalPrice)),
+      teacherEffectivePrice: finalPrice,
+      finalPrice,
+      originalPriceForDisplay: finalPrice < basePrice ? basePrice : 0,
+      globalDiscountPercentage: 0,
+      globalDiscountAmount: 0,
+      totalDiscountPercentage: teacherDiscountPercentage,
+    };
+  }
+
   const basePrice = Number(course?.price || 0);
   const rawTeacherDiscountPercentage = Number(course?.teacherDiscountPercentage);
   const teacherDiscountPrice = Number(course?.discountPrice || 0);

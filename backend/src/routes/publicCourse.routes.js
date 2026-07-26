@@ -16,7 +16,10 @@ import {
   verifyCertificateById,
 } from "../controllers/enrollmentController.js";
 import { courseListQuerySchema, idParamSchema, slugParamSchema } from "../validators/course.validators.js";
-import { certificateIdParamSchema } from "../validators/enrollment.validators.js";
+import {
+  certificateIdParamSchema,
+  enrollCourseBodySchema,
+} from "../validators/enrollment.validators.js";
 
 const router = express.Router();
 
@@ -34,6 +37,7 @@ router.post(
   protect,
   authorizeRoles("student"),
   validateRequest(idParamSchema, "params"),
+  validateRequest(enrollCourseBodySchema),
   enrollInCourse,
 );
 

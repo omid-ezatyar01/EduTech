@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
   BookOpen,
@@ -27,6 +27,12 @@ import {
   readAdminPageCache,
   writeAdminPageCache,
 } from "../utils/adminPageCache.js";
+import {
+  formatDisplayCurrencyAmount,
+  getDisplayCurrency,
+  getDisplayCurrencyAmount,
+  replaceIranRialTextForDisplay,
+} from "../utils/currencyDisplay.js";
 
 const ADMIN_TEACHER_INCOME_TEXT = {
   "Teacher payout details": "جزئیات تسویه مدرس",
@@ -139,12 +145,20 @@ const formatMoney = (amount, language = "en") => {
 };
 
 const formatGatewayAmount = (amount, currency, language = "en") => {
-  const normalizedCurrency = String(currency || "").toUpperCase();
-  const fractionDigits = normalizedCurrency === "USDT" ? 6 : 2;
-  return `${new Intl.NumberFormat(language === "fa" ? "fa-AF" : "en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: fractionDigits,
-  }).format(Number(amount || 0))} ${normalizedCurrency || ""}`.trim();
+  return formatDisplayCurrencyAmount(amount, currency, language, {
+    maximumFractionDigits: String(currency || "").toUpperCase() === "USDT" ? 6 : 2,
+  });
+};
+
+const formatSourcePrice = (item = {}, language = "en") => {
+  if (item.sourcePriceAmount === null || item.sourcePriceAmount === undefined) {
+    return "";
+  }
+  return formatDisplayCurrencyAmount(
+    item.sourcePriceAmount,
+    item.sourcePriceCurrency || "USD",
+    language,
+  );
 };
 
 const formatDate = (value, language = "en") => {
@@ -170,8 +184,6 @@ const payoutStatusStyles = {
 
 const ADMIN_TEACHER_INCOME_CACHE_TTL_MS = 5 * 60 * 1000;
 const ADMIN_TEACHER_INCOME_PAGE_SIZE = 30;
-const ADMIN_TEACHER_INCOME_REQUEST_GUARD_TTL_MS = 15 * 1000;
-const recentTeacherIncomeRequestKeys = new Map();
 
 const getAdminTeacherIncomeCacheKey = ({
   page,
@@ -192,16 +204,6 @@ const getAdminTeacherIncomeCacheKey = ({
     search,
   });
 
-const shouldSkipRecentTeacherIncomeRequest = (key) => {
-  const now = Date.now();
-  const lastTime = Number(recentTeacherIncomeRequestKeys.get(key) || 0);
-  if (lastTime && now - lastTime < ADMIN_TEACHER_INCOME_REQUEST_GUARD_TTL_MS) {
-    return true;
-  }
-  recentTeacherIncomeRequestKeys.set(key, now);
-  return false;
-};
-
 const normalizeOptions = (options = {}) => ({
   availableMonths: Array.isArray(options.availableMonths) ? options.availableMonths : [],
   availableTeachers: Array.isArray(options.availableTeachers) ? options.availableTeachers : [],
@@ -209,16 +211,49 @@ const normalizeOptions = (options = {}) => ({
 });
 
 const normalizeSummary = (payload = {}) => ({
+  reportCurrency: payload.reportCurrency || "USD",
   totalRevenue: Number(payload.totalRevenue || 0),
   platformCommission: Number(payload.platformCommission || 0),
   teacherEarnings: Number(payload.teacherEarnings || 0),
+  teacherPayoutTotal: Number(payload.teacherPayoutTotal || 0),
   teacherPayoutDue: Number(payload.teacherPayoutDue || 0),
+  settledTeacherPayout: Number(payload.settledTeacherPayout || 0),
   directToTeacherAmount: Number(payload.directToTeacherAmount || 0),
   platformDeductionDue: Number(payload.platformDeductionDue || 0),
   externalCollectedRevenue: Number(payload.externalCollectedRevenue || 0),
+  paymentsCount: Number(payload.paymentsCount || 0),
+  teachersCount: Number(payload.teachersCount || 0),
+  coursesCount: Number(payload.coursesCount || 0),
+  settledPaymentsCount: Number(payload.settledPaymentsCount || 0),
+  outstandingPaymentsCount: Number(payload.outstandingPaymentsCount || 0),
   paidRowsCount: Number(payload.paidRowsCount || 0),
   unpaidRowsCount: Number(payload.unpaidRowsCount || 0),
   commissionRate: Number(payload.commissionRate || 15),
+  currentCommissionRate: Number(payload.currentCommissionRate || payload.commissionRate || 15),
+  commissionRatesUsed: Array.isArray(payload.commissionRatesUsed)
+    ? payload.commissionRatesUsed
+    : [],
+  paymentMethodBreakdown: Array.isArray(payload.paymentMethodBreakdown)
+    ? payload.paymentMethodBreakdown
+    : [],
+  regionBreakdown: Array.isArray(payload.regionBreakdown)
+    ? payload.regionBreakdown
+    : [],
+  reconciliation: {
+    expectedTeacherEarnings: Number(payload?.reconciliation?.expectedTeacherEarnings || 0),
+    actualTeacherEarnings: Number(payload?.reconciliation?.actualTeacherEarnings || 0),
+    difference: Number(payload?.reconciliation?.difference || 0),
+    isBalanced: payload?.reconciliation?.isBalanced !== false,
+  },
+  moneyFlow: {
+    directCount: Number(payload?.moneyFlow?.directCount || 0),
+    directAmount: Number(payload?.moneyFlow?.directAmount || 0),
+    deductionDue: Number(payload?.moneyFlow?.deductionDue || 0),
+    platformCount: Number(payload?.moneyFlow?.platformCount || 0),
+    platformRevenue: Number(payload?.moneyFlow?.platformRevenue || 0),
+    platformTeacherShare: Number(payload?.moneyFlow?.platformTeacherShare || 0),
+  },
+  generatedAt: payload.generatedAt || null,
 });
 
 const normalizeMeta = (meta = {}) => ({
@@ -227,307 +262,22 @@ const normalizeMeta = (meta = {}) => ({
   total: Number(meta.total || 0),
 });
 
-const ADMIN_TEACHER_INCOME_DEMO_SOURCE = {
-  commissionRate: 10,
-  settlementRows: [
-    {
-      teacherId: "demo-teacher-1",
-      teacherName: "Ahmad Rahimi",
-      teacherEmail: "ahmad@example.com",
-      courseId: "demo-course-1",
-      courseTitle: "English Conversation Mastery",
-      monthKey: "2026-07",
-      cycleStartDay: 1,
-      periodLabel: "Jul 1, 2026 - Jul 31, 2026",
-      paymentPlan: "monthly",
-      salesCount: 4,
-      totalRevenue: 240,
-      platformCommission: 24,
-      teacherEarnings: 216,
-      status: "unpaid",
-      paidAt: null,
-      paymentDetails: [
-        {
-          paymentId: "demo-pay-1",
-          studentName: "Farid Wafa",
-          studentEmail: "farid@example.com",
-          paymentMethod: "Visa / MasterCard",
-          paymentMethodCode: "hesabpay",
-          regionLabel: "Afghanistan",
-          gatewayCurrency: "AFN",
-          gatewayAmount: 4200,
-          baseRevenue: 60,
-          teacherEarnings: 54,
-          pricingSnapshotLabel: "60 USD -> 4200 AFN (1 USD = 70 AFN)",
-          paymentReference: "PAY-DEMO-001",
-          transactionId: "HSP-001",
-          paidAt: "2026-07-02T09:00:00.000Z",
-        },
-        {
-          paymentId: "demo-pay-2",
-          studentName: "Mina Azizi",
-          studentEmail: "mina@example.com",
-          paymentMethod: "USDT",
-          paymentMethodCode: "usdt_bsc_direct",
-          regionLabel: "International",
-          gatewayCurrency: "USDT",
-          gatewayAmount: 55,
-          baseRevenue: 55,
-          teacherEarnings: 49.5,
-          pricingSnapshotLabel: "55 USD -> 55 USDT",
-          paymentReference: "PAY-DEMO-002",
-          transactionId: "0x-demo-2",
-          paidAt: "2026-07-04T11:15:00.000Z",
-        },
-        {
-          paymentId: "demo-pay-3",
-          studentName: "Sahar Nouri",
-          studentEmail: "sahar@example.com",
-          paymentMethod: "Bank",
-          paymentMethodCode: "bank_transfer",
-          regionLabel: "Iran",
-          gatewayCurrency: "IRR",
-          gatewayAmount: 2520000,
-          baseRevenue: 60,
-          teacherEarnings: 54,
-          pricingSnapshotLabel: "60 USD -> 2520000 IRR (1 USD = 42000 IRR)",
-          paymentReference: "PAY-DEMO-003",
-          transactionId: "BNK-003",
-          paidAt: "2026-07-05T08:20:00.000Z",
-        },
-        {
-          paymentId: "demo-pay-4",
-          studentName: "Jawad Rahman",
-          studentEmail: "jawad@example.com",
-          paymentMethod: "Visa / MasterCard",
-          paymentMethodCode: "hesabpay",
-          regionLabel: "Afghanistan",
-          gatewayCurrency: "AFN",
-          gatewayAmount: 4550,
-          baseRevenue: 65,
-          teacherEarnings: 58.5,
-          pricingSnapshotLabel: "65 USD -> 4550 AFN (1 USD = 70 AFN)",
-          paymentReference: "PAY-DEMO-004",
-          transactionId: "HSP-004",
-          paidAt: "2026-07-08T13:10:00.000Z",
-        },
-      ],
-    },
-    {
-      teacherId: "demo-teacher-1",
-      teacherName: "Ahmad Rahimi",
-      teacherEmail: "ahmad@example.com",
-      courseId: "demo-course-2",
-      courseTitle: "Business Email Writing",
-      monthKey: "2026-06",
-      cycleStartDay: 15,
-      periodLabel: "Jun 15, 2026 - Jul 14, 2026",
-      paymentPlan: "whole_period",
-      salesCount: 2,
-      totalRevenue: 165,
-      platformCommission: 16.5,
-      teacherEarnings: 148.5,
-      status: "paid",
-      paidAt: "2026-07-01T00:00:00.000Z",
-      paymentDetails: [
-        {
-          paymentId: "demo-pay-5",
-          studentName: "Laila Noorzai",
-          studentEmail: "laila@example.com",
-          paymentMethod: "Visa / MasterCard",
-          paymentMethodCode: "hesabpay",
-          regionLabel: "Afghanistan",
-          gatewayCurrency: "AFN",
-          gatewayAmount: 7350,
-          baseRevenue: 105,
-          teacherEarnings: 94.5,
-          pricingSnapshotLabel: "105 USD -> 7350 AFN (1 USD = 70 AFN)",
-          paymentReference: "PAY-DEMO-005",
-          transactionId: "HSP-005",
-          paidAt: "2026-06-27T09:20:00.000Z",
-        },
-        {
-          paymentId: "demo-pay-6",
-          studentName: "Reza Karimi",
-          studentEmail: "reza@example.com",
-          paymentMethod: "Crypto Gateway",
-          paymentMethodCode: "nowpayments_crypto",
-          regionLabel: "Iran",
-          gatewayCurrency: "IRR",
-          gatewayAmount: 2520000,
-          baseRevenue: 60,
-          teacherEarnings: 54,
-          pricingSnapshotLabel: "60 USD -> 2520000 IRR (1 USD = 42000 IRR)",
-          paymentReference: "PAY-DEMO-006",
-          transactionId: "NP-006",
-          paidAt: "2026-06-28T08:30:00.000Z",
-        },
-      ],
-    },
-    {
-      teacherId: "demo-teacher-2",
-      teacherName: "Maryam Azizi",
-      teacherEmail: "maryam@example.com",
-      courseId: "demo-course-3",
-      courseTitle: "IELTS Writing Bootcamp",
-      monthKey: "2026-07",
-      cycleStartDay: 1,
-      periodLabel: "Jul 1, 2026 - Jul 31, 2026",
-      paymentPlan: "monthly",
-      salesCount: 3,
-      totalRevenue: 180,
-      platformCommission: 18,
-      teacherEarnings: 162,
-      status: "paid",
-      paidAt: "2026-07-10T00:00:00.000Z",
-      paymentDetails: [
-        {
-          paymentId: "demo-pay-7",
-          studentName: "Nadia Wafa",
-          studentEmail: "nadia@example.com",
-          paymentMethod: "USDT",
-          paymentMethodCode: "usdt_bsc_direct",
-          regionLabel: "International",
-          gatewayCurrency: "USDT",
-          gatewayAmount: 60,
-          baseRevenue: 60,
-          teacherEarnings: 54,
-          pricingSnapshotLabel: "60 USD -> 60 USDT",
-          paymentReference: "PAY-DEMO-007",
-          transactionId: "0x-demo-7",
-          paidAt: "2026-07-07T15:00:00.000Z",
-        },
-        {
-          paymentId: "demo-pay-8",
-          studentName: "Ehsan Hakimi",
-          studentEmail: "ehsan@example.com",
-          paymentMethod: "Bank",
-          paymentMethodCode: "bank_transfer",
-          regionLabel: "Iran",
-          gatewayCurrency: "IRR",
-          gatewayAmount: 2520000,
-          baseRevenue: 60,
-          teacherEarnings: 54,
-          pricingSnapshotLabel: "60 USD -> 2520000 IRR (1 USD = 42000 IRR)",
-          paymentReference: "PAY-DEMO-008",
-          transactionId: "BNK-008",
-          paidAt: "2026-07-09T10:35:00.000Z",
-        },
-        {
-          paymentId: "demo-pay-9",
-          studentName: "Shabnam Rahimi",
-          studentEmail: "shabnam@example.com",
-          paymentMethod: "Visa / MasterCard",
-          paymentMethodCode: "hesabpay",
-          regionLabel: "Afghanistan",
-          gatewayCurrency: "AFN",
-          gatewayAmount: 4200,
-          baseRevenue: 60,
-          teacherEarnings: 54,
-          pricingSnapshotLabel: "60 USD -> 4200 AFN (1 USD = 70 AFN)",
-          paymentReference: "PAY-DEMO-009",
-          transactionId: "HSP-009",
-          paidAt: "2026-07-11T12:25:00.000Z",
-        },
-      ],
-    },
-  ],
-};
-
-const buildDemoTeacherIncomeState = ({
-  page = 1,
-  month = "",
-  teacherId = "",
-  courseId = "",
-  paymentPlan = "",
-  payoutStatus = "",
-  search = "",
-} = {}) => {
-  const allRows = Array.isArray(ADMIN_TEACHER_INCOME_DEMO_SOURCE.settlementRows)
-    ? ADMIN_TEACHER_INCOME_DEMO_SOURCE.settlementRows
-    : [];
-  const normalizedSearch = String(search || "").trim().toLowerCase();
-
-  const filteredRows = allRows.filter((row) => {
-    if (month && String(row.monthKey) !== String(month)) return false;
-    if (teacherId && String(row.teacherId) !== String(teacherId)) return false;
-    if (courseId && String(row.courseId) !== String(courseId)) return false;
-    if (paymentPlan && String(row.paymentPlan) !== String(paymentPlan)) return false;
-    if (payoutStatus && String(row.status) !== String(payoutStatus)) return false;
-    if (
-      normalizedSearch &&
-      ![
-        row.teacherName,
-        row.teacherEmail,
-        row.courseTitle,
-        row.monthKey,
-        row.periodLabel,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalizedSearch))
-    ) {
-      return false;
-    }
-    return true;
-  });
-
-  const pageSize = ADMIN_TEACHER_INCOME_PAGE_SIZE;
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const safePage = Math.min(Math.max(1, Number(page || 1)), totalPages);
-  const startIndex = (safePage - 1) * pageSize;
-  const pagedRows = filteredRows.slice(startIndex, startIndex + pageSize);
-
-  return {
-    rows: pagedRows,
-    summary: {
-      totalRevenue: filteredRows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0),
-      platformCommission: filteredRows.reduce((sum, row) => sum + Number(row.platformCommission || 0), 0),
-      teacherEarnings: filteredRows.reduce((sum, row) => sum + Number(row.teacherEarnings || 0), 0),
-      paidRowsCount: filteredRows.filter((row) => row.status === "paid").length,
-      unpaidRowsCount: filteredRows.filter((row) => row.status === "unpaid").length,
-      commissionRate: ADMIN_TEACHER_INCOME_DEMO_SOURCE.commissionRate,
-    },
-    options: {
-      availableMonths: Array.from(
-        new Map(
-          allRows.map((row) => [row.monthKey, { monthKey: row.monthKey, label: row.periodLabel }]),
-        ).values(),
-      ),
-      availableTeachers: Array.from(
-        new Map(
-          allRows.map((row) => [row.teacherId, { id: row.teacherId, name: row.teacherName }]),
-        ).values(),
-      ),
-      availableCourses: Array.from(
-        new Map(
-          allRows.map((row) => [row.courseId, { id: row.courseId, title: row.courseTitle }]),
-        ).values(),
-      ),
-    },
-    meta: {
-      page: safePage,
-      totalPages,
-      total: filteredRows.length,
-    },
-  };
-};
-
 const getSnapshotLabel = (item = {}) => {
-  if (item?.pricingSnapshotLabel) return item.pricingSnapshotLabel;
-
   const baseRevenue = Number(item?.baseRevenue || item?.totalRevenue || 0);
   const gatewayAmount = Number(item?.gatewayAmount || 0);
   const gatewayCurrency = String(item?.gatewayCurrency || "").toUpperCase();
 
   if (baseRevenue > 0 && gatewayAmount > 0 && gatewayCurrency) {
+    const displayAmount = getDisplayCurrencyAmount(gatewayAmount, gatewayCurrency);
+    const displayCurrency = getDisplayCurrency(gatewayCurrency);
     if (gatewayCurrency === "USD" || gatewayCurrency === "USDT") {
-      return `${baseRevenue} USD -> ${gatewayAmount} ${gatewayCurrency}`;
+      return `${baseRevenue} USD -> ${displayAmount} ${displayCurrency}`;
     }
-    const computedRate = Math.round((gatewayAmount / baseRevenue) * 1000000) / 1000000;
-    return `${baseRevenue} USD -> ${gatewayAmount} ${gatewayCurrency} (1 USD = ${computedRate} ${gatewayCurrency})`;
+    const computedRate = Math.round((displayAmount / baseRevenue) * 1000000) / 1000000;
+    return `${baseRevenue} USD -> ${displayAmount} ${displayCurrency} (1 USD = ${computedRate} ${displayCurrency})`;
   }
 
-  return "-";
+  return replaceIranRialTextForDisplay(item?.pricingSnapshotLabel) || "-";
 };
 
 function SummaryCard({ icon: Icon, title, value, note, tone = "blue" }) {
@@ -561,6 +311,63 @@ function InsightCard({ icon: Icon, title, value }) {
           <p className="text-xs font-black uppercase tracking-wide text-slate-400">{title}</p>
           <p className="mt-1 break-words text-sm font-black leading-6 text-slate-900">{value}</p>
         </div>
+      </div>
+    </article>
+  );
+}
+
+function BreakdownCard({ title, subtitle, rows, labelKey, language }) {
+  const highestRevenue = Math.max(
+    1,
+    ...(Array.isArray(rows) ? rows : []).map((row) => Number(row.totalRevenue || 0)),
+  );
+
+  return (
+    <article className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div>
+        <h3 className="text-sm font-black text-slate-950">{title}</h3>
+        <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{subtitle}</p>
+      </div>
+      <div className="mt-4 space-y-4">
+        {rows.length ? (
+          rows.map((row) => {
+            const revenue = Number(row.totalRevenue || 0);
+            const width = Math.max(4, Math.round((revenue / highestRevenue) * 100));
+            const rowKey = row.methodKey || row.regionKey || row[labelKey];
+            return (
+              <div key={rowKey}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-slate-900">
+                      {row[labelKey] || (language === "fa" ? "نامشخص" : "Unknown")}
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                      {Number(row.paymentsCount || 0).toLocaleString()}{" "}
+                      {language === "fa" ? "پرداخت" : "payments"}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-end">
+                    <p className="text-sm font-black text-slate-900">
+                      {formatMoney(revenue, language)}
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold text-emerald-700">
+                      {language === "fa" ? "سهم مدرس" : "Teacher"}:{" "}
+                      {formatMoney(row.teacherEarnings, language)}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-blue-600"
+                    style={{ width: `${width}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <EmptyState label={language === "fa" ? "داده‌ای موجود نیست" : "No data available"} />
+        )}
       </div>
     </article>
   );
@@ -797,9 +604,16 @@ function PaymentDetailsModal({ row, onClose, tr, language }) {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
-                        {item.regionLabel || "-"}
-                      </span>
+                      <div>
+                        <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
+                          {item.regionLabel || "-"}
+                        </span>
+                        {formatSourcePrice(item, "en") ? (
+                          <p className="mt-1 text-[10px] font-bold text-slate-500" dir="ltr">
+                            {formatSourcePrice(item, "en")}
+                          </p>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-semibold text-slate-700">{formatGatewayAmount(item.gatewayAmount, item.gatewayCurrency, language)}</td>
                     <td className="px-4 py-3 font-black text-slate-900">{formatMoney(item.baseRevenue, language)}</td>
@@ -945,11 +759,10 @@ export default function AdminTeacherIncomePage() {
   const [page, setPage] = useState(1);
   const [savingKey, setSavingKey] = useState("");
   const [selectedRow, setSelectedRow] = useState(null);
-  const [usingDemoData, setUsingDemoData] = useState(false);
+  const [refreshSeed, setRefreshSeed] = useState(0);
 
   const token = useMemo(() => getToken(), []);
   const incomeRequest = useLatestRequest();
-  const lastIncomeRequestKeyRef = useRef("");
 
   useEffect(() => {
     if (!token) return;
@@ -982,23 +795,6 @@ export default function AdminTeacherIncomePage() {
         setError("");
       }
 
-      const requestKey = JSON.stringify({
-        page,
-        month: filters.month,
-        teacherId: filters.teacherId,
-        courseId: filters.courseId,
-        paymentPlan: filters.paymentPlan,
-        payoutStatus: filters.payoutStatus,
-        search: filters.search,
-      });
-      if (lastIncomeRequestKeyRef.current === requestKey) {
-        return;
-      }
-      if (shouldSkipRecentTeacherIncomeRequest(requestKey)) {
-        return;
-      }
-      lastIncomeRequestKeyRef.current = requestKey;
-
       await incomeRequest.runLatest(
         async () => {
           const params = new URLSearchParams({
@@ -1023,38 +819,18 @@ export default function AdminTeacherIncomePage() {
         },
         {
           onSuccess: (data) => {
-            const hasRealPayload = Array.isArray(data?.settlementRows);
-            const shouldUseDemoFallback =
-              !hasRealPayload ||
-              (
-                Number(data?.meta?.total || 0) === 0 &&
-                !filters.month &&
-                !filters.teacherId &&
-                !filters.courseId &&
-                !filters.paymentPlan &&
-                !filters.payoutStatus &&
-                !filters.search.trim()
-              );
-            const demoState = buildDemoTeacherIncomeState({
-              page,
-              month: filters.month,
-              teacherId: filters.teacherId,
-              courseId: filters.courseId,
-              paymentPlan: filters.paymentPlan,
-              payoutStatus: filters.payoutStatus,
-              search: filters.search,
-            });
-
-            const nextRows = shouldUseDemoFallback ? demoState.rows : data.settlementRows;
-            const nextSummary = shouldUseDemoFallback ? demoState.summary : normalizeSummary(data);
-            const nextOptions = shouldUseDemoFallback ? demoState.options : normalizeOptions(data);
-            const nextMeta = shouldUseDemoFallback ? demoState.meta : normalizeMeta(data?.meta);
+            const nextRows = Array.isArray(data?.settlementRows)
+              ? data.settlementRows
+              : [];
+            const nextSummary = normalizeSummary(data);
+            const nextOptions = normalizeOptions(data);
+            const nextMeta = normalizeMeta(data?.meta);
 
             setRows(nextRows);
             setSummary(nextSummary);
             setOptions(nextOptions);
             setMeta(nextMeta);
-            setUsingDemoData(shouldUseDemoFallback);
+            setError("");
 
             writeAdminPageCache(cacheKey, {
               rows: nextRows,
@@ -1064,20 +840,9 @@ export default function AdminTeacherIncomePage() {
             });
           },
           onError: (err) => {
-            const demoState = buildDemoTeacherIncomeState({
-              page,
-              month: filters.month,
-              teacherId: filters.teacherId,
-              courseId: filters.courseId,
-              paymentPlan: filters.paymentPlan,
-              payoutStatus: filters.payoutStatus,
-              search: filters.search,
-            });
-            setRows(demoState.rows);
-            setSummary(demoState.summary);
-            setOptions(demoState.options);
-            setMeta(demoState.meta);
-            setUsingDemoData(true);
+            setRows([]);
+            setSummary(normalizeSummary());
+            setMeta(normalizeMeta());
             setError(err.message || "Failed to load teacher income");
           },
           onFinally: () => {
@@ -1097,40 +862,11 @@ export default function AdminTeacherIncomePage() {
     filters.teacherId,
     incomeRequest,
     page,
+    refreshSeed,
     token,
   ]);
 
   const visibleRows = rows;
-
-  const paidSummary = useMemo(() => {
-    return visibleRows
-      .filter((row) => row.status === "paid")
-      .reduce(
-        (acc, row) => {
-          acc.revenue += Number(row.totalRevenue || 0);
-          acc.platform += Number(row.platformCommission || 0);
-          acc.teacher += Number(row.teacherEarnings || 0);
-          acc.sales += Number(row.salesCount || 0);
-          return acc;
-        },
-        { revenue: 0, platform: 0, teacher: 0, sales: 0 },
-      );
-  }, [visibleRows]);
-
-  const unpaidSummary = useMemo(() => {
-    return visibleRows
-      .filter((row) => row.status === "unpaid")
-      .reduce(
-        (acc, row) => {
-          acc.revenue += Number(row.totalRevenue || 0);
-          acc.platform += Number(row.platformCommission || 0);
-          acc.teacher += Number(row.teacherEarnings || 0);
-          acc.sales += Number(row.salesCount || 0);
-          return acc;
-        },
-        { revenue: 0, platform: 0, teacher: 0, sales: 0 },
-      );
-  }, [visibleRows]);
 
   const activeFilterCount = useMemo(
     () =>
@@ -1140,71 +876,14 @@ export default function AdminTeacherIncomePage() {
     [filters.courseId, filters.month, filters.paymentPlan, filters.payoutStatus, filters.search, filters.teacherId],
   );
 
-  const teacherCount = useMemo(
-    () => new Set(visibleRows.map((row) => String(row.teacherId || ""))).size,
-    [visibleRows],
+  const topPaymentMethod = pageTr(
+    summary.paymentMethodBreakdown[0]?.methodLabel || "No data",
+  );
+  const topMarket = pageTr(
+    summary.regionBreakdown[0]?.regionLabel || "No data",
   );
 
-  const courseCount = useMemo(
-    () => new Set(visibleRows.map((row) => String(row.courseId || ""))).size,
-    [visibleRows],
-  );
-
-  const topPaymentMethod = useMemo(() => {
-    const counts = new Map();
-    visibleRows.forEach((row) => {
-      const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
-      details.forEach((item) => {
-        const key = String(item.paymentMethod || item.paymentMethodCode || "-");
-        counts.set(key, (counts.get(key) || 0) + 1);
-      });
-    });
-
-    const [best] = Array.from(counts.entries()).sort((left, right) => right[1] - left[1]);
-    return pageTr(best?.[0] || "No data");
-  }, [pageTr, visibleRows]);
-
-  const topMarket = useMemo(() => {
-    const counts = new Map();
-    visibleRows.forEach((row) => {
-      const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
-      details.forEach((item) => {
-        const key = String(item.regionLabel || "-");
-        counts.set(key, (counts.get(key) || 0) + 1);
-      });
-    });
-
-    const [best] = Array.from(counts.entries()).sort((left, right) => right[1] - left[1]);
-    return pageTr(best?.[0] || "No data");
-  }, [pageTr, visibleRows]);
-
-  const paymentSourceSummary = useMemo(() => {
-    return visibleRows.reduce(
-      (acc, row) => {
-        const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
-        details.forEach((item) => {
-          if (item?.isExternalCollection) {
-            acc.directCount += 1;
-            acc.directAmount += Number(item.directToTeacherAmount || item.teacherEarnings || 0);
-            acc.deductionDue += Number(item.platformDeductionDue || 0);
-          } else {
-            acc.platformCount += 1;
-            acc.platformRevenue += Number(item.baseRevenue || row.totalRevenue || 0);
-            acc.platformTeacherShare += Number(item.teacherEarnings || 0);
-          }
-        });
-        return acc;
-      },
-      {
-        directCount: 0,
-        directAmount: 0,
-        deductionDue: 0,
-        platformCount: 0,
-        platformRevenue: 0,
-        platformTeacherShare: 0,
-      },
-    );
-  }, [visibleRows]);
+  const paymentSourceSummary = summary.moneyFlow;
 
   const handleStatusChange = async (row, nextStatus) => {
     if (!token) return;
@@ -1230,6 +909,7 @@ export default function AdminTeacherIncomePage() {
       }
 
       clearAdminPageCache("admin:teacher-income");
+      setRefreshSeed((current) => current + 1);
 
       setRows((prev) =>
         prev.map((item) =>
@@ -1314,14 +994,14 @@ export default function AdminTeacherIncomePage() {
             <SummaryCard
               icon={CheckCircle2}
               title={pageTr("Settled teacher payouts")}
-              value={formatMoney(paidSummary.teacher, language)}
+              value={formatMoney(summary.settledTeacherPayout, language)}
               note={pageTr("Teacher amount already marked as paid")}
               tone="emerald"
             />
             <SummaryCard
               icon={Clock3}
               title={pageTr("Awaiting payout")}
-              value={formatMoney(unpaidSummary.teacher, language)}
+              value={formatMoney(summary.teacherPayoutDue, language)}
               note={pageTr("Teacher amount still pending settlement")}
               tone="amber"
             />
@@ -1344,6 +1024,35 @@ export default function AdminTeacherIncomePage() {
         </div>
       </div>
 
+      <div
+        className={`rounded-2xl border px-4 py-3 ${
+          summary.reconciliation?.isBalanced
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+            : "border-rose-200 bg-rose-50 text-rose-800"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-black">
+            {summary.reconciliation?.isBalanced
+              ? language === "fa"
+                ? "گزارش مالی با گزارش مدرس متوازن است"
+                : "Financial report reconciled with the teacher view"
+              : language === "fa"
+                ? "اختلاف مالی نیاز به بررسی دارد"
+                : "Financial difference requires review"}
+          </p>
+          <span className="text-xs font-bold" dir="ltr">
+            {language === "fa" ? "اختلاف:" : "Difference:"}{" "}
+            {formatMoney(summary.reconciliation?.difference, language)}
+          </span>
+        </div>
+        <p className="mt-1 text-xs font-semibold leading-5">
+          {language === "fa"
+            ? "سهم مدرس = مجموع تسویه‌های پلتفرمی + دریافت مستقیم − سهم پلتفرم از پرداخت مستقیم"
+            : "Teacher share = platform payout total + direct collections − direct-payment platform deduction."}
+        </p>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard icon={DollarSign} title={pageTr("Base revenue")} value={formatMoney(summary.totalRevenue, language)} note={pageTr("All payout rows in current dataset")} tone="blue" />
         <SummaryCard icon={Wallet} title={pageTr("Teacher share")} value={formatMoney(summary.teacherEarnings, language)} note={pageTr("Total teacher amount across all rows")} tone="emerald" />
@@ -1354,34 +1063,59 @@ export default function AdminTeacherIncomePage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        <InsightCard icon={BookOpen} title={pageTr("Courses in report")} value={String(courseCount || 0)} />
-        <InsightCard icon={BadgeCheck} title={pageTr("Teachers in report")} value={String(teacherCount || 0)} />
+        <InsightCard icon={BookOpen} title={pageTr("Courses in report")} value={String(summary.coursesCount || 0)} />
+        <InsightCard icon={BadgeCheck} title={pageTr("Teachers in report")} value={String(summary.teachersCount || 0)} />
         <InsightCard icon={CreditCard} title={pageTr("Top payment method")} value={topPaymentMethod} />
         <InsightCard icon={Globe2} title={pageTr("Top market")} value={topMarket} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <BreakdownCard
+          title={language === "fa" ? "درآمد بر اساس روش پرداخت" : "Revenue by payment method"}
+          subtitle={
+            language === "fa"
+              ? "مجموع فروش و سهم مدرس برای هر کانال پرداخت."
+              : "Sales and teacher share across every payment channel."
+          }
+          rows={summary.paymentMethodBreakdown}
+          labelKey="methodLabel"
+          language={language}
+        />
+        <BreakdownCard
+          title={language === "fa" ? "درآمد بر اساس منطقه قیمت‌گذاری" : "Revenue by pricing region"}
+          subtitle={
+            language === "fa"
+              ? "منطقه از قیمت ذخیره‌شده هنگام پرداخت گرفته می‌شود، نه ارز درگاه."
+              : "Region comes from the saved checkout price, not the gateway currency."
+          }
+          rows={summary.regionBreakdown}
+          labelKey="regionLabel"
+          language={language}
+        />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-4">
         <PayoutHealthCard
           title={pageTr("Settled teacher share")}
-          value={formatMoney(paidSummary.teacher, language)}
+          value={formatMoney(summary.settledTeacherPayout, language)}
           note={pageTr("Amount already released to teachers")}
           tone="emerald"
         />
         <PayoutHealthCard
           title={pageTr("Pending teacher share")}
-          value={formatMoney(unpaidSummary.teacher, language)}
+          value={formatMoney(summary.teacherPayoutDue, language)}
           note={pageTr("Amount still waiting for payout")}
           tone="amber"
         />
         <PayoutHealthCard
           title={pageTr("Settled sales")}
-          value={String(paidSummary.sales || 0)}
+          value={String(summary.settledPaymentsCount || 0)}
           note={pageTr("Successful enrollments inside paid payout cycles")}
           tone="blue"
         />
         <PayoutHealthCard
           title={pageTr("Pending sales")}
-          value={String(unpaidSummary.sales || 0)}
+          value={String(summary.outstandingPaymentsCount || 0)}
           note={pageTr("Successful enrollments inside unpaid payout cycles")}
           tone="violet"
         />
@@ -1537,14 +1271,6 @@ export default function AdminTeacherIncomePage() {
           <div className="px-5 pt-4">
             <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700">
               {error}
-            </p>
-          </div>
-        ) : null}
-
-        {usingDemoData ? (
-          <div className="px-5 pt-4">
-            <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-bold text-blue-700">
-              {pageTr("Showing demo payout data so you can preview the system layout.")}
             </p>
           </div>
         ) : null}

@@ -1,5 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { getUsdExchangeRates } from "../../services/paymentGateway.js";
+import {
+  getDisplayCurrency,
+  getDisplayCurrencyAmount,
+  getDisplayCurrencyLabel,
+} from "../utils/currencyDisplay.js";
 
 const RegionalPricingContext = createContext(null);
 
@@ -11,15 +16,28 @@ const DEFAULT_RATES = {
 const RATES_CACHE_KEY = "edutech_regional_rates_v1";
 const COUNTRY_CACHE_KEY = "edutech_regional_country_v1";
 
+const normalizePricingRegion = (value = "") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["af", "afghanistan"].includes(normalized)) return "afghanistan";
+  if (["ir", "iran"].includes(normalized)) return "iran";
+  return "international";
+};
+
+const countryCodeForPricingRegion = (region) => {
+  if (region === "afghanistan") return "AF";
+  if (region === "iran") return "IR";
+  return "INTL";
+};
+
 const resolveDisplayCurrency = (countryCode = "") => {
   const normalized = String(countryCode || "").trim().toUpperCase();
   if (normalized === "AF") return "AFN";
-  if (normalized === "IR") return "IRR";
+  if (normalized === "IR") return "TOMAN";
   return "USD";
 };
 
 const getFractionDigits = (currency) => {
-  if (currency === "AFN" || currency === "IRR") return 0;
+  if (currency === "AFN" || currency === "IRR" || currency === "TOMAN") return 0;
   if (currency === "USDT") return 6;
   return 2;
 };
@@ -27,19 +45,11 @@ const getFractionDigits = (currency) => {
 const getCurrencyLabel = (currency, language = "fa") => {
   const normalized = String(currency || "USD").toUpperCase();
 
-  if (normalized === "AFN") {
-    return language === "fa" ? "افغانی" : "AFN";
-  }
-
-  if (normalized === "IRR") {
-    return language === "fa" ? "ریال" : "IRR";
-  }
-
   if (normalized === "USDT") {
     return "USDT";
   }
 
-  return language === "fa" ? "دالر" : "USD";
+  return getDisplayCurrencyLabel(normalized, language);
 };
 
 const formatAmount = (amount, currency, language = "fa") => {
@@ -154,15 +164,35 @@ function readCachedCountry() {
     countryCode: cached.countryCode || "",
     countryName: cached.countryName || "",
     provider: cached.provider || "",
+    manual: Boolean(cached.manual),
   };
+}
+
+function readStoredProfileCountry() {
+  try {
+    const user = JSON.parse(localStorage.getItem("edutech_user") || "null");
+    const country = String(user?.country || "").trim();
+    if (!country) return null;
+    const region = normalizePricingRegion(country);
+    return {
+      countryCode: countryCodeForPricingRegion(region),
+      countryName: country,
+      provider: "profile",
+      manual: false,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function RegionalPricingProvider({ children }) {
   const cachedCountry = useMemo(() => readCachedCountry(), []);
+  const profileCountry = useMemo(() => readStoredProfileCountry(), []);
   const cachedRates = useMemo(() => readCachedRates(), []);
   const [countryCode, setCountryCode] = useState(cachedCountry?.countryCode || "");
   const [countryName, setCountryName] = useState(cachedCountry?.countryName || "");
   const [countryProvider, setCountryProvider] = useState(cachedCountry?.provider || "");
+  const [isManualRegion, setIsManualRegion] = useState(Boolean(cachedCountry?.manual));
   const [rates, setRates] = useState(() => ({
     ...DEFAULT_RATES,
     ...(cachedRates || {}),
@@ -180,7 +210,11 @@ export function RegionalPricingProvider({ children }) {
       const tasks = [];
 
       tasks.push(
-        detectCountryFromProviders(),
+        cachedCountry?.manual
+          ? Promise.resolve(cachedCountry)
+          : profileCountry
+            ? Promise.resolve(profileCountry)
+            : detectCountryFromProviders(),
       );
 
       tasks.push(
@@ -208,6 +242,7 @@ export function RegionalPricingProvider({ children }) {
           countryCode: countryResult.value.countryCode || "",
           countryName: countryResult.value.countryName || "",
           provider: countryResult.value.provider || "",
+          manual: Boolean(countryResult.value.manual),
           savedAt: Date.now(),
         });
       }
@@ -241,10 +276,33 @@ export function RegionalPricingProvider({ children }) {
     return () => {
       mounted = false;
     };
-  }, [cachedCountry, cachedRates]);
+  }, [cachedCountry, cachedRates, profileCountry]);
 
   const value = useMemo(() => {
     const displayCurrency = resolveDisplayCurrency(countryCode);
+    const pricingRegion = normalizePricingRegion(countryCode);
+
+    const setPricingRegion = (nextRegion) => {
+      const normalizedRegion = normalizePricingRegion(nextRegion);
+      const nextCountryCode = countryCodeForPricingRegion(normalizedRegion);
+      const nextCountryName =
+        normalizedRegion === "afghanistan"
+          ? "Afghanistan"
+          : normalizedRegion === "iran"
+            ? "Iran"
+            : "International";
+      setCountryCode(nextCountryCode);
+      setCountryName(nextCountryName);
+      setCountryProvider("manual");
+      setIsManualRegion(true);
+      writeCachedJson(COUNTRY_CACHE_KEY, {
+        countryCode: nextCountryCode,
+        countryName: nextCountryName,
+        provider: "manual",
+        manual: true,
+        savedAt: Date.now(),
+      });
+    };
 
     const formatRegionalPrice = (amountUsd, language = "fa") => {
       const numericAmount = Number(amountUsd || 0);
@@ -257,7 +315,10 @@ export function RegionalPricingProvider({ children }) {
         };
       }
 
-      const rate = Number(rates[displayCurrency] || 0);
+      const rate =
+        displayCurrency === "TOMAN"
+          ? Number(rates.IRR || 0) / 10
+          : Number(rates[displayCurrency] || 0);
       const convertedAmount = rate > 0 ? numericAmount * rate : numericAmount;
 
       return {
@@ -278,13 +339,16 @@ export function RegionalPricingProvider({ children }) {
       countryCode,
       countryName,
       countryProvider,
+      pricingRegion,
+      isManualRegion,
+      setPricingRegion,
       displayCurrency,
       rates,
       status,
       formatRegionalPrice,
       formatCryptoUsdtLabel,
     };
-  }, [countryCode, countryName, countryProvider, rates, status]);
+  }, [countryCode, countryName, countryProvider, isManualRegion, rates, status]);
 
   return (
     <RegionalPricingContext.Provider value={value}>
@@ -299,6 +363,82 @@ export function useRegionalPricing() {
     throw new Error("useRegionalPricing must be used within RegionalPricingProvider.");
   }
   return context;
+}
+
+export function useCourseRegionalPrice(course = {}, language = "fa") {
+  const context = useRegionalPricing();
+  const {
+    pricingRegion,
+    formatRegionalPrice,
+  } = context;
+
+  return useMemo(() => {
+    if (String(course?.pricingType || "single") !== "regional" || !course?.prices) {
+      const finalPrice = Number(course?.price || 0);
+      const originalCandidate = Number(course?.discountPrice || 0);
+      const originalPrice =
+        originalCandidate > finalPrice ? originalCandidate : 0;
+      return {
+        pricingType: "single",
+        pricingRegion,
+        currency: formatRegionalPrice(finalPrice, language).currency,
+        finalPrice,
+        originalPrice,
+        finalLabel: formatRegionalPrice(finalPrice, language).label,
+        originalLabel: originalPrice
+          ? formatRegionalPrice(originalPrice, language).label
+          : "",
+        isFree: Boolean(course?.isFree) || finalPrice <= 0,
+        usesInternationalPrice: false,
+      };
+    }
+
+    const requested = course.prices?.[pricingRegion] || {};
+    const usesInternationalPrice =
+      pricingRegion !== "international" &&
+      (Boolean(requested.useInternationalPrice) ||
+        (!requested.isFree && !(Number(requested.regularPrice) > 0)));
+    const resolved =
+      usesInternationalPrice
+        ? course.prices?.international || {}
+        : requested;
+    const sourceCurrency = String(
+      resolved.currency ||
+      (pricingRegion === "afghanistan"
+        ? "AFN"
+        : pricingRegion === "iran"
+          ? "TOMAN"
+          : "USD"),
+    ).toUpperCase();
+    const currency = getDisplayCurrency(sourceCurrency);
+    const regularPrice = Math.max(
+      0,
+      getDisplayCurrencyAmount(resolved.regularPrice, sourceCurrency),
+    );
+    const discountedCandidate = getDisplayCurrencyAmount(
+      resolved.discountedPrice,
+      sourceCurrency,
+    );
+    const hasDiscount =
+      discountedCandidate > 0 && discountedCandidate < regularPrice;
+    const finalPrice =
+      resolved.isFree ? 0 : hasDiscount ? discountedCandidate : regularPrice;
+    const label = (amount) =>
+      `${formatAmount(amount, currency, language)} ${getCurrencyLabel(currency, language)}`;
+
+    return {
+      pricingType: "regional",
+      pricingRegion,
+      resolvedRegion: usesInternationalPrice ? "international" : pricingRegion,
+      currency,
+      finalPrice,
+      originalPrice: hasDiscount ? regularPrice : 0,
+      finalLabel: resolved.isFree ? (language === "fa" ? "رایگان" : "Free") : label(finalPrice),
+      originalLabel: hasDiscount ? label(regularPrice) : "",
+      isFree: Boolean(resolved.isFree) || finalPrice <= 0,
+      usesInternationalPrice,
+    };
+  }, [course, formatRegionalPrice, language, pricingRegion]);
 }
 
 export function useRegionalCoursePrice(amountUsd, language = "fa") {

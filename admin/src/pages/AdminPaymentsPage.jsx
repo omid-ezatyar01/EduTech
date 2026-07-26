@@ -18,6 +18,7 @@ import {
   readAdminPageCache,
   writeAdminPageCache,
 } from "../utils/adminPageCache.js";
+import { formatDisplayCurrencyAmount } from "../utils/currencyDisplay.js";
 
 const ADMIN_PAYMENTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const PAGE_SIZE = 20;
@@ -454,7 +455,11 @@ export default function AdminPaymentsPage() {
                         <p className="line-clamp-2 font-bold text-slate-800">{payment.courseId?.title || "-"}</p>
                       </td>
                       <td className="px-5 py-4 font-extrabold text-slate-800" dir="ltr">
-                        {formatAmount(payment.amount, language)}
+                        {formatDisplayCurrencyAmount(
+                          payment.gatewayAmount || payment.amount,
+                          payment.gatewayCurrency || payment.currency || "USD",
+                          language,
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-black ${badgeClass}`}>

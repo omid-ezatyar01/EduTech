@@ -6,6 +6,13 @@ import CourseImageCropModal from "./CourseImageCropModal";
 import CourseTypePicker from "./CourseTypePicker";
 import CourseCategoryFields from "./CourseCategoryFields";
 import CourseTimeZonePicker from "./CourseTimeZonePicker";
+import CoursePricingFields from "./CoursePricingFields";
+import {
+  buildRegionalPricesPayload,
+  createEmptyRegionalPrices,
+  regionalPricesFromCourse,
+  validateRegionalPricingForm,
+} from "../../utils/coursePricingForm";
 import { isAllowedCourseStartDate } from "../../utils/courseStartDate";
 import { getParentCategories } from "../../utils/categoryTree";
 import {
@@ -407,6 +414,11 @@ const getInitialForm = (course, categories = [], defaultTimeZone = "") => {
     courseType: course?.courseType === "special" ? "special" : "general",
     language: course?.language || "English",
     pricingType: isFree ? "free" : "paid",
+    priceMode: course?.pricingType === "regional" ? "regional" : "single",
+    regionalPrices:
+      course?.pricingType === "regional"
+        ? regionalPricesFromCourse(course)
+        : createEmptyRegionalPrices(),
     paymentPlan:
       course?.paymentPlan === "whole_period" ? "whole_period" : "monthly",
     price: isFree ? "0" : String(course?.price ?? ""),
@@ -523,6 +535,13 @@ export default function EditCourseModal({
     globalDiscountPercentage: globalCourseDiscountPercentage,
     teacherDeductionPercentage,
   });
+  const regionalPricingErrors =
+    form.pricingType !== "free" && form.priceMode === "regional"
+      ? validateRegionalPricingForm(form.regionalPrices, {
+          minInternationalPrice: minTeacherCoursePrice,
+          language,
+        })
+      : {};
   const isCoursePriceValid =
     pricingPreview.normalizedBasePrice >= minTeacherCoursePrice;
   const teachingDayCount = new Set(form.selectedDays || []).size;
@@ -691,6 +710,7 @@ export default function EditCourseModal({
 
     if (
       !isFree &&
+      form.priceMode !== "regional" &&
       (price < minTeacherCoursePrice ||
         price > PRICE_MAX_USD ||
         !isWholeDollarAmount(price))
@@ -702,6 +722,24 @@ export default function EditCourseModal({
       );
       return;
     }
+
+    const normalizedRegionalPrices =
+      form.priceMode === "regional"
+        ? buildRegionalPricesPayload(form.regionalPrices)
+        : null;
+    if (!isFree && form.priceMode === "regional" && Object.keys(regionalPricingErrors).length) {
+      setFormError(Object.values(regionalPricingErrors)[0]);
+      return;
+    }
+    const internationalPrice = normalizedRegionalPrices?.international;
+    const internationalRegularPrice = Number(internationalPrice?.regularPrice || 0);
+    const internationalDiscountedPrice = Number(internationalPrice?.discountedPrice || 0);
+    const internationalDiscountPercentage =
+      internationalRegularPrice > 0 &&
+      internationalDiscountedPrice > 0 &&
+      internationalDiscountedPrice < internationalRegularPrice
+        ? ((internationalRegularPrice - internationalDiscountedPrice) / internationalRegularPrice) * 100
+        : 0;
 
     if (
       !isFree &&
@@ -919,11 +957,23 @@ export default function EditCourseModal({
       durationWeeks,
       totalSessions,
       isFree,
+      pricingType: isFree ? "single" : form.priceMode,
+      prices:
+        form.priceMode === "regional" && !isFree
+          ? normalizedRegionalPrices
+          : undefined,
       paymentPlan: form.paymentPlan,
-      price: isFree ? 0 : price,
+      price:
+        isFree
+          ? 0
+          : form.priceMode === "regional"
+            ? internationalRegularPrice
+            : price,
       teacherDiscountPercentage: isFree
         ? 0
-        : normalizedTeacherDiscountPercentage,
+        : form.priceMode === "regional"
+          ? internationalDiscountPercentage
+          : normalizedTeacherDiscountPercentage,
       maxStudents,
       minimumStudentsToStart,
       currency: "USD",
@@ -1520,6 +1570,22 @@ export default function EditCourseModal({
               </p>
             </div>
 
+            {form.pricingType !== "free" ? (
+              <CoursePricingFields
+                priceMode={form.priceMode}
+                regionalPrices={form.regionalPrices}
+                onPriceModeChange={(priceMode) =>
+                  setForm((current) => ({ ...current, priceMode }))
+                }
+                onRegionalPricesChange={(regionalPrices) =>
+                  setForm((current) => ({ ...current, regionalPrices }))
+                }
+                errors={regionalPricingErrors}
+                language={language}
+                disabled={isCoursePricingLocked}
+              />
+            ) : null}
+
             <section className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <label className="flex items-center justify-between gap-3">
                 <span>
@@ -1633,7 +1699,7 @@ export default function EditCourseModal({
               </p>
             </div>
 
-            <div className="sm:col-span-2">
+            {form.priceMode !== "regional" ? <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-bold text-slate-600">
                 {language === "fa" ? "قیمت (دالر)" : "Price (USD)"}
               </label>
@@ -1694,9 +1760,9 @@ export default function EditCourseModal({
                   </>
                 )}
               </div>
-            </div>
+            </div> : null}
 
-            <div className="sm:col-span-2">
+            {form.priceMode !== "regional" ? <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-bold text-slate-600">
                 {language === "fa"
                   ? "درصد تخفیف مدرس (%)"
@@ -1735,7 +1801,7 @@ export default function EditCourseModal({
                     ? "بین ۰ تا ۱۰۰. مثال: اگر ۱۰ وارد کنید، ۱۰٪ از قیمت کورس کم می‌شود."
                     : "Between 0 and 100. Example: 10 means a 10% teacher discount."}
               </p>
-            </div>
+            </div> : null}
 
             <div>
               <label className="mb-1 block text-xs font-bold text-slate-600">

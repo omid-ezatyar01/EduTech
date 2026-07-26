@@ -23,7 +23,6 @@ import {
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   createCheckout,
-  createHesabPaySession,
   getCourseBankPaymentDetails,
   submitBankTransferPayment,
 } from "../../services/paymentGateway.js";
@@ -62,7 +61,7 @@ import {
 } from "../utils/coursePublicState.js";
 import {
   useCryptoUsdtQuoteLabel,
-  useRegionalCoursePrice,
+  useCourseRegionalPrice,
   useRegionalPricing,
 } from "../context/RegionalPricingContext.jsx";
 import { applySeo } from "../seo/useSeo.js";
@@ -367,7 +366,7 @@ export default function CourseDetailsPage({ t }) {
   const navigate = useNavigate();
   const dir = t.meta.dir;
   const language = t.meta.lang === "fa" ? "fa" : "en";
-  const { countryCode, rates } = useRegionalPricing();
+  const { countryCode, rates, pricingRegion } = useRegionalPricing();
   const detail = t.courseDetail;
   const ArrowIcon = dir === "rtl" ? ArrowLeft : ArrowRight;
   const locationSearch = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -397,8 +396,15 @@ export default function CourseDetailsPage({ t }) {
   const [activePreviewIndex, setActivePreviewIndex] = useState(null);
   const [ratingModalOpen, setRatingModalOpen] = useState(false);
   const [ratingAccess, setRatingAccess] = useState({ pending: [], submitted: [], loading: false });
-  const quotedPriceLabel = useRegionalCoursePrice(Number(course?.price || 0), language);
-  const cryptoAmountLabel = useCryptoUsdtQuoteLabel(Number(course?.price || 0), language);
+  const coursePricing = useCourseRegionalPrice(course, language);
+  const isCourseFree = coursePricing.isFree;
+  const legacyCryptoAmountLabel = useCryptoUsdtQuoteLabel(Number(course?.price || 0), language);
+  const cryptoAmountLabel =
+    coursePricing.pricingType === "regional"
+      ? language === "fa"
+        ? "مبلغ دالری هنگام پرداخت محاسبه می‌شود."
+        : "The USD amount is calculated securely at checkout."
+      : legacyCryptoAmountLabel;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -416,19 +422,24 @@ export default function CourseDetailsPage({ t }) {
 
     const loadPaymentPreviewLabels = async () => {
       const rawPrice = Number(course?.price || 0);
-      if (!isPaymentMethodModalOpen || !rawPrice || course?.isFree) return;
+      if (!isPaymentMethodModalOpen || isCourseFree) return;
 
       try {
         if (!mounted) return;
-        const afnRate = Number(rates?.AFN || 0);
-        const hesabAmount = afnRate > 0 ? rawPrice * afnRate : 0;
-
-        setHesabPayAmountLabel(
-          `${language === "fa" ? "پرداخت کارتی:" : "Card payment:"} ${new Intl.NumberFormat(
-            language === "fa" ? "fa-AF" : "en-US",
-            { maximumFractionDigits: 0 },
-          ).format(Number(hesabAmount || 0))} ${language === "fa" ? "افغانی" : "AFN"}`,
-        );
+        if (coursePricing.pricingType === "regional") {
+          setHesabPayAmountLabel(
+            `${language === "fa" ? "قیمت منطقه‌ای:" : "Regional price:"} ${coursePricing.finalLabel}`,
+          );
+        } else {
+          const afnRate = Number(rates?.AFN || 0);
+          const hesabAmount = afnRate > 0 ? rawPrice * afnRate : 0;
+          setHesabPayAmountLabel(
+            `${language === "fa" ? "پرداخت کارتی:" : "Card payment:"} ${new Intl.NumberFormat(
+              language === "fa" ? "fa-AF" : "en-US",
+              { maximumFractionDigits: 0 },
+            ).format(Number(hesabAmount || 0))} ${language === "fa" ? "افغانی" : "AFN"}`,
+          );
+        }
 
         setCryptoPreviewLabel(cryptoAmountLabel);
       } catch {
@@ -446,10 +457,11 @@ export default function CourseDetailsPage({ t }) {
   }, [
     course?._id,
     course?.id,
-    course?.isFree,
+    coursePricing,
     course?.price,
     cryptoAmountLabel,
     isPaymentMethodModalOpen,
+    isCourseFree,
     language,
     rates?.AFN,
   ]);
@@ -692,14 +704,18 @@ export default function CourseDetailsPage({ t }) {
     try {
       setIsStartingPayment(true);
       setIsPaymentMethodModalOpen(false);
-      if (course?.isFree) {
-        await enrollCourse(courseId);
+      if (isCourseFree) {
+        await enrollCourse(courseId, pricingRegion);
         window.dispatchEvent(new Event("edutech_data_changed"));
         navigate("/student/courses");
         return;
       }
 
-      const session = await createHesabPaySession(courseId);
+      const session = await createCheckout({
+        courseId,
+        paymentMethod: "HESABPAY_HOSTED",
+        pricingRegion,
+      });
       if (session?.paymentUrl) {
         window.location.href = session.paymentUrl;
         return;
@@ -739,6 +755,7 @@ export default function CourseDetailsPage({ t }) {
       const session = await createCheckout({
         courseId,
         paymentMethod: "USDT_BSC_DIRECT",
+        pricingRegion,
       });
       if (session?.paymentAttemptId) {
         navigate(`/payment/crypto?attemptId=${encodeURIComponent(session.paymentAttemptId)}`);
@@ -770,7 +787,7 @@ export default function CourseDetailsPage({ t }) {
     if (!course || isStartingPayment || course?.classEndedAt) return;
 
     if (localStorage.getItem("edutech_auth") === "true") {
-      if (course?.isFree) {
+      if (isCourseFree) {
         startHesabPayPurchase();
         return;
       }
@@ -790,7 +807,7 @@ export default function CourseDetailsPage({ t }) {
 
     try {
       setIsBankDetailsLoading(true);
-      const details = await getCourseBankPaymentDetails(courseId);
+      const details = await getCourseBankPaymentDetails(courseId, pricingRegion);
       setBankPaymentDetails(details);
       setIsPaymentMethodModalOpen(false);
       setIsBankDetailsModalOpen(true);
@@ -898,11 +915,11 @@ export default function CourseDetailsPage({ t }) {
     );
   }, [course, nowMs]);
 
-  const priceText = course?.isFree
+  const priceText = isCourseFree
     ? language === "fa"
       ? "رایگان"
       : "Free"
-    : quotedPriceLabel;
+    : coursePricing.finalLabel;
   const paymentPlan =
     course?.paymentPlan === "whole_period" ? "whole_period" : "monthly";
   const paymentPlanLabel =
@@ -979,8 +996,8 @@ export default function CourseDetailsPage({ t }) {
   const isSpecialCourse = course?.courseType === "special";
   const courseEnded = Boolean(course?.classEndedAt);
   const certificateIncluded =
-    !course?.isFree &&
-    Number(course?.price || 0) > 0 &&
+    !isCourseFree &&
+    coursePricing.finalPrice > 0 &&
     course?.certificate?.enabled !== false;
   const certificateMinimumAttendance = Math.max(
     0,
@@ -1045,7 +1062,7 @@ export default function CourseDetailsPage({ t }) {
     {
       icon: CreditCard,
       label: language === "fa" ? "روش پرداخت" : "Payment plan",
-      value: course?.isFree
+      value: isCourseFree
         ? language === "fa"
           ? "رایگان"
           : "Free"
@@ -1831,7 +1848,12 @@ export default function CourseDetailsPage({ t }) {
                 <p className="mt-1 text-center text-3xl font-black text-slate-950" dir="ltr">
                   {priceText}
                 </p>
-                {!course?.isFree ? (
+                {coursePricing.originalLabel ? (
+                  <p className="mt-1 text-center text-sm font-bold text-slate-400 line-through" dir="ltr">
+                    {coursePricing.originalLabel}
+                  </p>
+                ) : null}
+                {!isCourseFree ? (
                   <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-center">
                     <p className="text-xs font-black text-blue-900">
                       {paymentPlanLabel}
@@ -1928,7 +1950,12 @@ export default function CourseDetailsPage({ t }) {
               <p className="truncate text-lg font-black text-slate-950" dir="ltr">
                 {priceText}
               </p>
-              {!course?.isFree ? (
+              {coursePricing.originalLabel ? (
+                <p className="truncate text-[10px] font-bold text-slate-400 line-through" dir="ltr">
+                  {coursePricing.originalLabel}
+                </p>
+              ) : null}
+              {!isCourseFree ? (
                 <p className="truncate text-[10px] font-bold text-blue-700">
                   {paymentPlanLabel}
                 </p>

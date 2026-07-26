@@ -33,6 +33,12 @@ import {
   readTeacherPageCache,
   writeTeacherPageCache,
 } from "../utils/teacherPageCache";
+import {
+  formatDisplayCurrencyAmount,
+  getDisplayCurrency,
+  getDisplayCurrencyAmount,
+  replaceIranRialTextForDisplay,
+} from "../utils/currencyDisplay";
 
 const formatMoney = (value, language = "fa") => {
   const amount = Number(value || 0);
@@ -94,21 +100,37 @@ const resolveProofUrl = (value = "") => {
 };
 
 const getPaymentSnapshotLabel = (item = {}) => {
-  if (item?.pricingSnapshotLabel) return item.pricingSnapshotLabel;
-
   const baseRevenue = Number(item?.baseRevenue || item?.totalRevenue || 0);
   const gatewayAmount = Number(item?.gatewayAmount || 0);
   const gatewayCurrency = String(item?.gatewayCurrency || "").toUpperCase();
 
   if (baseRevenue > 0 && gatewayAmount > 0 && gatewayCurrency) {
-    const computedRate = Math.round((gatewayAmount / baseRevenue) * 1000000) / 1000000;
+    const displayAmount = getDisplayCurrencyAmount(gatewayAmount, gatewayCurrency);
+    const displayCurrency = getDisplayCurrency(gatewayCurrency);
+    const computedRate = Math.round((displayAmount / baseRevenue) * 1000000) / 1000000;
     if (gatewayCurrency === "AFN" || gatewayCurrency === "IRR") {
-      return `${baseRevenue} USD -> ${gatewayAmount} ${gatewayCurrency} (1 USD = ${computedRate} ${gatewayCurrency})`;
+      return `${baseRevenue} USD -> ${displayAmount} ${displayCurrency} (1 USD = ${computedRate} ${displayCurrency})`;
     }
-    return `${baseRevenue} USD -> ${gatewayAmount} ${gatewayCurrency}`;
+    return `${baseRevenue} USD -> ${displayAmount} ${displayCurrency}`;
   }
 
-  return "-";
+  return replaceIranRialTextForDisplay(item?.pricingSnapshotLabel) || "-";
+};
+
+const formatGatewayAmount = (amount, currency, language = "en") =>
+  formatDisplayCurrencyAmount(amount, currency, language, {
+    maximumFractionDigits: String(currency || "").toUpperCase() === "USDT" ? 6 : 2,
+  });
+
+const formatSourcePrice = (item = {}, language = "en") => {
+  if (item.sourcePriceAmount === null || item.sourcePriceAmount === undefined) {
+    return "";
+  }
+  return formatDisplayCurrencyAmount(
+    item.sourcePriceAmount,
+    item.sourcePriceCurrency || "USD",
+    language,
+  );
 };
 
 const statusMap = {
@@ -129,13 +151,35 @@ const DEFAULT_SUMMARY = {
   totalRevenue: 0,
   platformCommission: 0,
   teacherEarnings: 0,
+  teacherPayoutTotal: 0,
   teacherPayoutDue: 0,
+  settledTeacherPayout: 0,
   directToTeacherAmount: 0,
   platformDeductionDue: 0,
   externalCollectedRevenue: 0,
   paymentsCount: 0,
+  settledPaymentsCount: 0,
+  outstandingPaymentsCount: 0,
   paidRowsCount: 0,
   unpaidRowsCount: 0,
+  reportCurrency: "USD",
+  currentCommissionRate: 15,
+  commissionRatesUsed: [],
+  reconciliation: {
+    expectedTeacherEarnings: 0,
+    actualTeacherEarnings: 0,
+    difference: 0,
+    isBalanced: true,
+  },
+  moneyFlow: {
+    directCount: 0,
+    directAmount: 0,
+    deductionDue: 0,
+    platformCount: 0,
+    platformRevenue: 0,
+    platformTeacherShare: 0,
+  },
+  generatedAt: null,
   paymentMethodBreakdown: [],
   regionBreakdown: [],
   recentPayments: [],
@@ -153,103 +197,6 @@ const getTeacherIncomeCacheKey = (filters = {}) =>
     paymentPlan: String(filters?.paymentPlan || ""),
     payoutStatus: String(filters?.payoutStatus || ""),
   });
-
-const applyTeacherIncomeFilters = (data, filters = {}) => {
-  const month = String(filters.month || "");
-  const courseId = String(filters.courseId || "");
-  const paymentPlan = String(filters.paymentPlan || "");
-  const payoutStatus = String(filters.payoutStatus || "");
-
-  let settlementRows = Array.isArray(data?.settlementRows) ? data.settlementRows : [];
-
-  if (month) settlementRows = settlementRows.filter((row) => String(row.monthKey) === month);
-  if (courseId) settlementRows = settlementRows.filter((row) => String(row.courseId) === courseId);
-  if (paymentPlan) settlementRows = settlementRows.filter((row) => String(row.paymentPlan) === paymentPlan);
-  if (payoutStatus) settlementRows = settlementRows.filter((row) => String(row.status) === payoutStatus);
-
-  const paymentIds = new Set(
-    settlementRows.flatMap((row) => (Array.isArray(row.paymentDetails) ? row.paymentDetails.map((item) => item.paymentId) : [])),
-  );
-
-  const recentPayments = (Array.isArray(data?.recentPayments) ? data.recentPayments : [])
-    .filter((item) => paymentIds.size === 0 || paymentIds.has(item.paymentId));
-
-  const summarizeBy = (items, keyName, labelName, extraKeys = []) => {
-    const map = new Map();
-    items.forEach((item) => {
-      const key = String(item[keyName] || item[labelName] || "");
-      const existing = map.get(key) || {
-        [keyName]: item[keyName],
-        [labelName]: item[labelName],
-        paymentsCount: 0,
-        totalRevenue: 0,
-        teacherEarnings: 0,
-        directToTeacherAmount: 0,
-        platformDeductionDue: 0,
-      };
-      extraKeys.forEach((extraKey) => {
-        if (!(extraKey in existing)) existing[extraKey] = item[extraKey];
-      });
-      existing.paymentsCount += 1;
-      existing.totalRevenue += Number(item.baseRevenue || item.totalRevenue || 0);
-      existing.teacherEarnings += Number(item.teacherEarnings || 0);
-       existing.directToTeacherAmount += Number(item.directToTeacherAmount || 0);
-       existing.platformDeductionDue += Number(item.platformDeductionDue || 0);
-      map.set(key, existing);
-    });
-    return Array.from(map.values()).map((row) => ({
-      ...row,
-      totalRevenue: Math.round(row.totalRevenue * 100) / 100,
-      teacherEarnings: Math.round(row.teacherEarnings * 100) / 100,
-      directToTeacherAmount: Math.round(row.directToTeacherAmount * 100) / 100,
-      platformDeductionDue: Math.round(row.platformDeductionDue * 100) / 100,
-    }));
-  };
-
-  return {
-    ...data,
-    totalRevenue: settlementRows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0),
-    platformCommission: settlementRows.reduce((sum, row) => sum + Number(row.platformCommission || 0), 0),
-    teacherEarnings: settlementRows.reduce((sum, row) => sum + Number(row.teacherEarnings || 0), 0),
-    teacherPayoutDue: settlementRows.reduce((sum, row) => sum + Number(row.teacherPayoutDue || 0), 0),
-    directToTeacherAmount: settlementRows.reduce((sum, row) => sum + Number(row.directToTeacherAmount || 0), 0),
-    platformDeductionDue: settlementRows.reduce((sum, row) => sum + Number(row.platformDeductionDue || 0), 0),
-    externalCollectedRevenue: settlementRows.reduce((sum, row) => sum + Number(row.externalCollectedRevenue || 0), 0),
-    paymentsCount: settlementRows.reduce((sum, row) => sum + Number(row.salesCount || 0), 0),
-    paidRowsCount: settlementRows.filter((row) => row.status === "paid").length,
-    unpaidRowsCount: settlementRows.filter((row) => row.status === "unpaid").length,
-    settlementRows,
-    recentPayments,
-    paymentMethodBreakdown: summarizeBy(
-      settlementRows.flatMap((row) => row.paymentDetails || []),
-      "paymentMethodCode",
-      "paymentMethod",
-    ).map((row) => ({
-      methodKey: row.paymentMethodCode,
-      methodLabel: row.paymentMethod,
-      paymentsCount: row.paymentsCount,
-      totalRevenue: row.totalRevenue,
-      teacherEarnings: row.teacherEarnings,
-      directToTeacherAmount: row.directToTeacherAmount,
-      platformDeductionDue: row.platformDeductionDue,
-    })),
-    regionBreakdown: summarizeBy(
-      settlementRows.flatMap((row) => row.paymentDetails || []),
-      "regionLabel",
-      "regionLabel",
-      ["gatewayCurrency"],
-    ).map((row) => ({
-      regionKey: row.regionLabel?.toLowerCase().replace(/\s+/g, "_"),
-      regionLabel: row.regionLabel,
-      gatewayCurrency: row.gatewayCurrency,
-      paymentsCount: row.paymentsCount,
-      totalRevenue: row.totalRevenue,
-      teacherEarnings: row.teacherEarnings,
-      directToTeacherAmount: row.directToTeacherAmount,
-      platformDeductionDue: row.platformDeductionDue,
-    })),
-  };
-};
 
 export default function TeacherIncome() {
   const { language, isRTL, setLanguage } = useTeacherLanguage();
@@ -304,7 +251,7 @@ export default function TeacherIncome() {
           payoutStatus: filters.payoutStatus,
         });
         if (!mounted) return;
-        const resolvedData = applyTeacherIncomeFilters(data || {}, filters);
+        const resolvedData = data || {};
         const nextSummary = {
           ...DEFAULT_SUMMARY,
           ...resolvedData,
@@ -419,80 +366,37 @@ export default function TeacherIncome() {
     [language, summary.regionBreakdown],
   );
 
-  const paymentSourceSummary = useMemo(() => {
-    return summary.recentPayments.reduce(
-      (acc, row) => {
-        if (row?.isExternalCollection) {
-          acc.directCount += 1;
-          acc.directAmount += Number(row.directToTeacherAmount || row.teacherEarnings || 0);
-          acc.deductionDue += Number(row.platformDeductionDue || 0);
-        } else {
-          acc.platformCount += 1;
-          acc.platformRevenue += Number(row.totalRevenue || 0);
-          acc.platformTeacherShare += Number(row.teacherEarnings || 0);
-        }
-        return acc;
-      },
-      {
-        directCount: 0,
-        directAmount: 0,
-        deductionDue: 0,
-        platformCount: 0,
-        platformRevenue: 0,
-        platformTeacherShare: 0,
-      },
-    );
-  }, [summary.recentPayments]);
-
-  const paidSettlementSummary = useMemo(() => {
-    return summary.settlementRows
-      .filter((row) => row.status === "paid")
-      .reduce(
-        (acc, row) => {
-          acc.totalRevenue += Number(row.totalRevenue || 0);
-          acc.platformCommission += Number(row.platformCommission || 0);
-          acc.teacherEarnings += Number(row.teacherEarnings || 0);
-          acc.paymentsCount += Number(row.salesCount || 0);
-          return acc;
-        },
-        {
-          totalRevenue: 0,
-          platformCommission: 0,
-          teacherEarnings: 0,
-          paymentsCount: 0,
-        },
-      );
-  }, [summary.settlementRows]);
+  const paymentSourceSummary = summary.moneyFlow || DEFAULT_SUMMARY.moneyFlow;
 
   const statCards = [
     {
       icon: DollarSign,
-      title: language === "fa" ? "فروش تسویه‌شده" : "Settled Revenue",
-      value: formatMoney(paidSettlementSummary.totalRevenue, language),
+      title: language === "fa" ? "مجموع فروش" : "Gross Sales",
+      value: formatMoney(summary.totalRevenue, language),
       description:
         language === "fa"
-          ? "فقط فروش‌هایی که توسط سیستم تسویه شده‌اند"
-          : "Only revenue from cycles already paid by the system",
+          ? "مجموع فروش واقعی در فیلتر فعلی"
+          : "All successful sales in the current report",
       tone: "blue",
     },
     {
       icon: Wallet,
-      title: language === "fa" ? "سهم پرداخت‌شده شما" : "Paid Out to You",
-      value: formatMoney(paidSettlementSummary.teacherEarnings, language),
+      title: language === "fa" ? "سهم خالص مدرس" : "Net Teacher Share",
+      value: formatMoney(summary.teacherEarnings, language),
       description:
         language === "fa"
-          ? "مبلغی که واقعاً برای شما تسویه شده است"
-          : "Net amount already settled to you",
+          ? "فروش منهای سهم پلتفرم"
+          : "Gross sales minus platform commission",
       tone: "emerald",
     },
     {
       icon: Percent,
-      title: language === "fa" ? "سهم سیستمِ تسویه‌شده" : "Settled Platform Share",
-      value: formatMoney(paidSettlementSummary.platformCommission, language),
+      title: language === "fa" ? "سهم پلتفرم" : "Platform Commission",
+      value: formatMoney(summary.platformCommission, language),
       description:
         language === "fa"
-          ? `فقط از ردیف‌های تسویه‌شده • ${summary.commissionRate || 15}٪`
-          : `Only from settled rows • ${summary.commissionRate || 15}%`,
+          ? `نرخ موثر گزارش: ${summary.commissionRate || 0}٪`
+          : `Effective report rate: ${summary.commissionRate || 0}%`,
       tone: "amber",
     },
     {
@@ -504,6 +408,16 @@ export default function TeacherIncome() {
           ? "فقط سهمی که باید از طرف پلتفرم به شما پرداخت شود"
           : "Only the share still payable to you by the platform",
       tone: "violet",
+    },
+    {
+      icon: BadgeCheck,
+      title: language === "fa" ? "تسویه‌شده توسط پلتفرم" : "Settled by Platform",
+      value: formatMoney(summary.settledTeacherPayout, language),
+      description:
+        language === "fa"
+          ? "سهمی که قبلاً از طرف پلتفرم پرداخت شده است"
+          : "Teacher share already released by the platform",
+      tone: "emerald",
     },
     {
       icon: CreditCard,
@@ -609,14 +523,14 @@ export default function TeacherIncome() {
 
             <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[340px] xl:max-w-[380px]">
               <HeroMetricCard
-                title={language === "fa" ? "فروش تسویه‌شده" : "Settled Revenue"}
-                value={formatMoney(paidSettlementSummary.totalRevenue, language)}
-                note={language === "fa" ? "فقط فروش‌های تسویه‌شده" : "Only settled revenue"}
+                title={language === "fa" ? "سهم خالص شما" : "Your Net Share"}
+                value={formatMoney(summary.teacherEarnings, language)}
+                note={language === "fa" ? "از تمام پرداخت‌های تاییدشده" : "From all confirmed payments"}
               />
               <HeroMetricCard
-                title={language === "fa" ? "سهم تسویه‌شده شما" : "Settled Your Share"}
-                value={formatMoney(paidSettlementSummary.teacherEarnings, language)}
-                note={language === "fa" ? `${teacherShareRate}٪ سهم مدرسِ پرداخت‌شده` : `${teacherShareRate}% settled teacher share`}
+                title={language === "fa" ? "در انتظار تسویه" : "Awaiting Payout"}
+                value={formatMoney(summary.teacherPayoutDue, language)}
+                note={language === "fa" ? "مبلغ باقی‌مانده نزد پلتفرم" : "Remaining platform-held amount"}
               />
             </div>
           </div>
@@ -735,6 +649,35 @@ export default function TeacherIncome() {
           />
         ) : (
           <>
+            <div
+              className={`rounded-2xl border px-4 py-3 ${
+                summary.reconciliation?.isBalanced
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-rose-200 bg-rose-50 text-rose-800"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-black">
+                  {summary.reconciliation?.isBalanced
+                    ? language === "fa"
+                      ? "گزارش مالی متوازن است"
+                      : "Financial report reconciled"
+                    : language === "fa"
+                      ? "اختلاف مالی نیاز به بررسی دارد"
+                      : "Financial difference requires review"}
+                </p>
+                <span className="text-xs font-bold" dir="ltr">
+                  {language === "fa" ? "اختلاف:" : "Difference:"}{" "}
+                  {formatMoney(summary.reconciliation?.difference, language)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs font-semibold leading-5">
+                {language === "fa"
+                  ? "سهم مدرس = مجموع تسویه‌های پلتفرمی + دریافت مستقیم − سهم پلتفرم از پرداخت مستقیم"
+                  : "Teacher share = platform payout total + direct collections − direct-payment platform deduction."}
+              </p>
+            </div>
+
             <SectionCard
               title={language === "fa" ? "رسیدهای بانکی در انتظار تایید" : "Pending Bank Transfer Proofs"}
               subtitle={
@@ -863,7 +806,7 @@ export default function TeacherIncome() {
               <div className="grid gap-4 p-4 lg:grid-cols-2">
                 <MoneyFlowCard
                   title={language === "fa" ? "پول‌های پلتفرمی" : "Platform-collected money"}
-                  amount={formatMoney(summary.teacherPayoutDue + paidSettlementSummary.teacherEarnings, language)}
+                  amount={formatMoney(summary.teacherPayoutTotal, language)}
                   note={
                     language === "fa"
                       ? "این پرداخت‌ها اول به سیستم رسیده‌اند و سهم شما از همان‌جا برایتان پرداخت می‌شود."
@@ -871,7 +814,7 @@ export default function TeacherIncome() {
                   }
                   accent="emerald"
                   bullets={[
-                    `${language === "fa" ? "سهم پرداخت‌شده به شما" : "Already paid to you"}: ${formatMoney(paidSettlementSummary.teacherEarnings, language)}`,
+                    `${language === "fa" ? "سهم پرداخت‌شده به شما" : "Already paid to you"}: ${formatMoney(summary.settledTeacherPayout, language)}`,
                     `${language === "fa" ? "در انتظار تسویه" : "Still awaiting payout"}: ${formatMoney(summary.teacherPayoutDue, language)}`,
                     `${language === "fa" ? "تعداد این پرداخت‌ها" : "Payments in this flow"}: ${paymentSourceSummary.platformCount}`,
                   ]}
@@ -978,15 +921,19 @@ export default function TeacherIncome() {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
-                              {row.regionLabel}
-                            </span>
+                            <div>
+                              <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
+                                {row.regionLabel}
+                              </span>
+                              {formatSourcePrice(row, "en") ? (
+                                <p className="mt-1 text-[10px] font-bold text-slate-500" dir="ltr">
+                                  {formatSourcePrice(row, "en")}
+                                </p>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="px-4 py-3 font-semibold text-slate-700" dir="ltr">
-                            {`${new Intl.NumberFormat("en-US", {
-                              minimumFractionDigits: 0,
-                              maximumFractionDigits: row.gatewayCurrency === "USDT" ? 6 : 2,
-                            }).format(Number(row.gatewayAmount || 0))} ${row.gatewayCurrency || ""}`}
+                            {formatGatewayAmount(row.gatewayAmount, row.gatewayCurrency, "en")}
                           </td>
                           <td className="px-4 py-3 font-black text-slate-900" dir="ltr">
                             {formatMoney(row.totalRevenue, language)}
@@ -1285,7 +1232,7 @@ function BreakdownCard({ icon: Icon, title, rows = [], emptyLabel, language, lab
                     </div>
                     {"gatewayCurrency" in row ? (
                       <span className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-black text-slate-600">
-                        {row.gatewayCurrency}
+                        {getDisplayCurrency(row.gatewayCurrency)}
                       </span>
                     ) : null}
                   </div>
@@ -1403,17 +1350,21 @@ function MobilePaymentCard({ row, language }) {
             <PaymentSourcePill isExternalCollection={isExternalCollection} language={language} />
           </div>
         </div>
-        <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
-          {row.regionLabel}
-        </span>
+        <div className="text-end">
+          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
+            {row.regionLabel}
+          </span>
+          {formatSourcePrice(row, "en") ? (
+            <p className="mt-1 text-[10px] font-bold text-slate-500" dir="ltr">
+              {formatSourcePrice(row, "en")}
+            </p>
+          ) : null}
+        </div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <MiniValue
           label={language === "fa" ? "مبلغ پرداختی" : "Charged Amount"}
-          value={`${new Intl.NumberFormat("en-US", {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: row.gatewayCurrency === "USDT" ? 6 : 2,
-          }).format(Number(row.gatewayAmount || 0))} ${row.gatewayCurrency || ""}`}
+          value={formatGatewayAmount(row.gatewayAmount, row.gatewayCurrency, "en")}
         />
         <MiniValue
           label={language === "fa" ? "سهم مدرس" : "Teacher Share"}
@@ -1568,17 +1519,21 @@ function PaymentDetailsModal({ row, onClose, language }) {
                         </span>
                       ) : null}
                     </div>
-                    <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
-                      {item.regionLabel}
-                    </span>
+                    <div className="text-end">
+                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
+                        {item.regionLabel}
+                      </span>
+                      {formatSourcePrice(item, "en") ? (
+                        <p className="mt-1 text-[10px] font-bold text-slate-500" dir="ltr">
+                          {formatSourcePrice(item, "en")}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <MiniValue
                       label={language === "fa" ? "مبلغ پرداختی" : "Charged Amount"}
-                      value={`${new Intl.NumberFormat("en-US", {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: item.gatewayCurrency === "USDT" ? 6 : 2,
-                      }).format(Number(item.gatewayAmount || 0))} ${item.gatewayCurrency || ""}`}
+                      value={formatGatewayAmount(item.gatewayAmount, item.gatewayCurrency, "en")}
                     />
                     <MiniValue
                       label={language === "fa" ? "سهم مدرس" : "Teacher Share"}
@@ -1646,15 +1601,19 @@ function PaymentDetailsModal({ row, onClose, language }) {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
-                        {item.regionLabel}
-                      </span>
+                      <div>
+                        <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
+                          {item.regionLabel}
+                        </span>
+                        {formatSourcePrice(item, "en") ? (
+                          <p className="mt-1 text-[10px] font-bold text-slate-500" dir="ltr">
+                            {formatSourcePrice(item, "en")}
+                          </p>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-semibold text-slate-700" dir="ltr">
-                      {`${new Intl.NumberFormat("en-US", {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: item.gatewayCurrency === "USDT" ? 6 : 2,
-                      }).format(Number(item.gatewayAmount || 0))} ${item.gatewayCurrency || ""}`}
+                      {formatGatewayAmount(item.gatewayAmount, item.gatewayCurrency, "en")}
                     </td>
                     <td className="px-4 py-3 text-xs font-semibold text-slate-600" dir="ltr">
                       {getPaymentSnapshotLabel(item)}

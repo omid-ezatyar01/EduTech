@@ -7,6 +7,7 @@ import {
   Lock,
   ShieldCheck,
 } from "lucide-react";
+import { getDisplayCurrency } from "../utils/currencyDisplay";
 import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPasswordInput from "../components/auth/TeacherPasswordInput";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
@@ -523,7 +524,7 @@ export default function TeacherSettings() {
                   </span>
                   <input
                     type="text"
-                    value={bankForm.currency || ""}
+                    value={getDisplayCurrency(bankForm.currency || "")}
                     readOnly
                     disabled
                     className="h-12 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 text-sm font-semibold text-slate-500 outline-none"

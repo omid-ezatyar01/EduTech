@@ -20,6 +20,7 @@ export const paymentStatusParamSchema = Joi.object({
 export const checkoutSchema = Joi.object({
   courseId: objectId.required(),
   paymentMethod: Joi.string().valid("HESABPAY_HOSTED", "USDT_BSC_DIRECT").required(),
+  pricingRegion: Joi.string().valid("afghanistan", "iran", "international"),
 }).required();
 
 export const submitBankTransferPaymentSchema = Joi.object({

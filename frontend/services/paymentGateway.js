@@ -58,7 +58,7 @@ export const normalizeEvmTransactionHash = (value) => {
   );
 };
 
-export const createCheckout = async ({ courseId, paymentMethod }) => {
+export const createCheckout = async ({ courseId, paymentMethod, pricingRegion = "international" }) => {
   const token = getStudentToken();
   if (!token) throw new Error("NOT_AUTHENTICATED");
 
@@ -70,7 +70,7 @@ export const createCheckout = async ({ courseId, paymentMethod }) => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ courseId, paymentMethod }),
+      body: JSON.stringify({ courseId, paymentMethod, pricingRegion }),
     });
   } catch (error) {
     if (error.name === "AbortError") {
@@ -101,12 +101,12 @@ export const createHesabPaySession = async (courseId) => {
   return createCheckout({ courseId, paymentMethod: "HESABPAY_HOSTED" });
 };
 
-export const getCourseBankPaymentDetails = async (courseId) => {
+export const getCourseBankPaymentDetails = async (courseId, pricingRegion = "international") => {
   const token = getStudentToken();
   if (!token) throw new Error("NOT_AUTHENTICATED");
 
   const response = await fetchWithTimeout(
-    `${getApiBase()}/payments/course-bank-details/${encodeURIComponent(courseId)}`,
+    `${getApiBase()}/payments/course-bank-details/${encodeURIComponent(courseId)}?pricingRegion=${encodeURIComponent(pricingRegion)}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,

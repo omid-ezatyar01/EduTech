@@ -13,6 +13,7 @@ import {
   Video,
   Wallet,
 } from "lucide-react";
+import { formatDisplayCurrencyAmount } from "../utils/currencyDisplay.js";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import StudentLayout from "./StudentLayout.jsx";
 import {
@@ -73,7 +74,7 @@ function formatCurrency(price, currency = "USD", language = "fa") {
   const amount = Number(price || 0);
   if (!Number.isFinite(amount)) return language === "fa" ? "نامشخص" : "Unknown";
   if (amount <= 0) return language === "fa" ? "رایگان" : "Free";
-  return `${new Intl.NumberFormat(language === "fa" ? "fa-AF" : "en-US").format(amount)} ${currency}`;
+  return formatDisplayCurrencyAmount(amount, currency, language);
 }
 
 function formatDuration(course = {}, language = "fa") {

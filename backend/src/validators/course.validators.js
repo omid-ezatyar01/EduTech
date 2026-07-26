@@ -25,6 +25,37 @@ const notificationChannelsSchema = Joi.object({
   telegram: Joi.boolean().default(false),
 }).default({ push: false, telegram: false });
 
+const regionalPriceRowSchema = (currency, { allowInternationalFallback = false } = {}) =>
+  Joi.object({
+    currency: Joi.string().valid(currency).required(),
+    regularPrice: Joi.number().min(0).max(1_000_000_000).allow(null),
+    discountedPrice: Joi.number().min(0).max(1_000_000_000).allow(null, ""),
+    isFree: Joi.boolean().default(false),
+    ...(allowInternationalFallback
+      ? { useInternationalPrice: Joi.boolean().default(false) }
+      : {}),
+  }).custom((value, helpers) => {
+    if (value.isFree || value.useInternationalPrice) return value;
+    if (!(Number(value.regularPrice) > 0)) {
+      return helpers.message("Regular regional price is required");
+    }
+    if (
+      value.discountedPrice !== null &&
+      value.discountedPrice !== "" &&
+      value.discountedPrice !== undefined &&
+      Number(value.discountedPrice) >= Number(value.regularPrice)
+    ) {
+      return helpers.message("Discounted regional price must be lower than regular price");
+    }
+    return value;
+  });
+
+const regionalPricesSchema = Joi.object({
+  afghanistan: regionalPriceRowSchema("AFN", { allowInternationalFallback: true }).required(),
+  iran: regionalPriceRowSchema("TOMAN", { allowInternationalFallback: true }).required(),
+  international: regionalPriceRowSchema("USD").required(),
+}).required();
+
 const getYouTubeVideoKey = (value = "") => {
   try {
     const url = new URL(String(value || "").trim());
@@ -219,6 +250,12 @@ const baseCourseSchema = {
   teacherDiscountPercentage: Joi.number().min(0).max(100).default(0),
   currency: Joi.string().valid(...COURSE_CURRENCIES).default("USD"),
   isFree: Joi.boolean().default(false),
+  pricingType: Joi.string().valid("single", "regional").default("single"),
+  prices: Joi.when("pricingType", {
+    is: "regional",
+    then: regionalPricesSchema.required(),
+    otherwise: regionalPricesSchema.optional(),
+  }),
   paymentPlan: paymentPlanSchema.default("monthly"),
   duration: Joi.string().trim().max(DURATION_LABEL_MAX_CHARS).allow(""),
   durationWeeks: Joi.number().integer().min(1).max(104).optional(),
@@ -276,7 +313,7 @@ const dateValidation = (value, helpers) => {
     }
   }
 
-  if (value.discountPrice > value.price) {
+  if (value.pricingType !== "regional" && value.discountPrice > value.price) {
     return helpers.error("any.invalid", {
       message: "discountPrice cannot be greater than price",
     });
@@ -291,7 +328,7 @@ const dateValidation = (value, helpers) => {
   const hasPrice = Object.prototype.hasOwnProperty.call(value, "price");
   const isFreeExplicit = Object.prototype.hasOwnProperty.call(value, "isFree");
   const isPaidContext = isFreeExplicit ? value.isFree === false : true;
-  if (isPaidContext && hasPrice) {
+  if (value.pricingType !== "regional" && isPaidContext && hasPrice) {
     const price = Number(value.price);
     if (
       !Number.isFinite(price) ||
@@ -344,6 +381,8 @@ export const updateCourseByAdminSchema = Joi.object({
   teacherDiscountPercentage: Joi.number().min(0).max(100),
   currency: Joi.string().valid(...COURSE_CURRENCIES),
   isFree: Joi.boolean(),
+  pricingType: Joi.string().valid("single", "regional"),
+  prices: regionalPricesSchema.optional(),
   paymentPlan: paymentPlanSchema,
   meetingType: meetingTypeSchema,
   previewVideoUrls: optionalPreviewVideoUrlsSchema,
@@ -411,6 +450,8 @@ export const updateCourseByTeacherSchema = Joi.object({
   teacherDiscountPercentage: Joi.number().min(0).max(100),
   currency: Joi.string().valid(...COURSE_CURRENCIES),
   isFree: Joi.boolean(),
+  pricingType: Joi.string().valid("single", "regional"),
+  prices: regionalPricesSchema.optional(),
   paymentPlan: paymentPlanSchema,
   duration: Joi.string().trim().max(DURATION_LABEL_MAX_CHARS).allow(""),
   durationWeeks: Joi.number().integer().min(1).max(104),

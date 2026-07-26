@@ -21,6 +21,11 @@ import {
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 import { getCoursePublicState } from "../utils/coursePublicState.js";
 import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
+import {
+  getPricingRegionForCountry,
+  normalizePricingRegion,
+  resolveCourseCheckoutPricing,
+} from "../utils/courseRegionalPricing.js";
 
 const makePaymentReference = (studentId) => {
   const userSuffix = String(studentId).slice(-6).toUpperCase();
@@ -28,8 +33,12 @@ const makePaymentReference = (studentId) => {
   return `PAY-${Date.now()}-${userSuffix}-${randomSuffix}`;
 };
 
-const resolveCourseAmount = async (course) => {
+const resolveCourseAmount = async (course, pricingRegion = "international") => {
   if (course.isFree) return 0;
+  if (String(course?.pricingType || "single") === "regional") {
+    const resolved = await resolveCourseCheckoutPricing(course, pricingRegion);
+    return Number(resolved.baseAmountUsdCents || 0) / 100;
+  }
   const pricing = await getPlatformPricingSettings();
   const calculated = resolveCourseDisplayPricing(
     course,
@@ -255,7 +264,11 @@ export const enrollInCourse = asyncHandler(async (req, res) => {
     courseId: course._id,
   });
 
-  const effectiveAmount = await resolveCourseAmount(course);
+  const pricingRegion = normalizePricingRegion(
+    req.body?.pricingRegion,
+    getPricingRegionForCountry(req.user?.country),
+  );
+  const effectiveAmount = await resolveCourseAmount(course, pricingRegion);
   const isEffectivelyFree = course.isFree || effectiveAmount <= 0;
 
   if (existingEnrollment) {

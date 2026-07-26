@@ -8,6 +8,11 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
+import {
+  getDisplayCurrency,
+  getDisplayCurrencyAmount,
+  getDisplayCurrencyLabel,
+} from "../utils/currencyDisplay.js";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { compressImageFileToLimit } from "../utils/imageCrop";
@@ -142,10 +147,12 @@ export default function BankPaymentDetailsModal({
       : "";
   const selectedFileName = paymentProof instanceof File ? paymentProof.name : "";
   const requiredAmount = Number(paymentAmount.amount || 0);
-  const requiredAmountLabel = requiredAmount > 0
+  const requiredCurrency = paymentAmount.currency || bankPaymentInfo.currency || "";
+  const displayRequiredAmount = getDisplayCurrencyAmount(requiredAmount, requiredCurrency);
+  const requiredAmountLabel = displayRequiredAmount > 0
     ? `${new Intl.NumberFormat(isFa ? "fa-AF" : "en-US", {
         maximumFractionDigits: 2,
-      }).format(requiredAmount)} ${paymentAmount.currency || bankPaymentInfo.currency || ""}`
+      }).format(displayRequiredAmount)} ${getDisplayCurrencyLabel(requiredCurrency, language)}`
     : "";
 
   const handleCopy = async (key, value) => {
@@ -285,7 +292,7 @@ export default function BankPaymentDetailsModal({
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleCopy("paymentAmount", requiredAmount)}
+                      onClick={() => handleCopy("paymentAmount", displayRequiredAmount)}
                       className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-xs font-black text-primary-700 shadow-sm"
                     >
                       <Copy size={14} />
@@ -338,7 +345,7 @@ export default function BankPaymentDetailsModal({
                 />
                 <DetailRow
                   label={t.currency}
-                  value={bankPaymentInfo.currency}
+                  value={getDisplayCurrency(bankPaymentInfo.currency)}
                   showCopy={false}
                 />
                 <DetailRow

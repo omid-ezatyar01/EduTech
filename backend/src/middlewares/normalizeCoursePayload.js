@@ -47,6 +47,7 @@ const normalizeCoursePayload = (req, _res, next) => {
     "certificate",
     "coursePolicies",
     "agreements",
+    "prices",
   ];
   const booleanFields = ["isFree"];
   const numberFields = [

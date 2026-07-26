@@ -19,6 +19,10 @@ import {
   X,
   SquarePen,
 } from "lucide-react";
+import {
+  formatDisplayCurrencyAmount,
+  getDisplayCurrency,
+} from "../utils/currencyDisplay.js";
 import { useSearchParams } from "react-router-dom";
 import {
   approveCourseCancellationRequest,
@@ -1905,7 +1909,15 @@ export default function AdminCoursesPage() {
                       ? `${course.category?.name || "-"} / ${course.subcategory.name}`
                       : course.category?.name || "-"}
                   </td>
-                  <td className="px-5 py-4 text-sm font-semibold text-slate-700">{course.isFree ? pageTr("Free") : `${course.price || 0} ${course.currency || "USD"}`}</td>
+                  <td className="px-5 py-4 text-sm font-semibold text-slate-700">
+                    {course.isFree
+                      ? pageTr("Free")
+                      : formatDisplayCurrencyAmount(
+                          course.price || 0,
+                          course.currency || "USD",
+                          language,
+                        )}
+                  </td>
                   <td className="px-5 py-4 text-sm font-semibold text-slate-700">{formatNumber(course.enrolledStudentsCount || 0, language)}</td>
                   <td className="px-5 py-4">
                     <div className="flex flex-col items-center gap-1.5">
@@ -2314,13 +2326,21 @@ export default function AdminCoursesPage() {
                         value={
                           reviewCourse.isFree
                             ? pageTr("Free")
-                            : `${reviewCourse.price || 0} ${reviewCourse.currency || "USD"}`
+                            : formatDisplayCurrencyAmount(
+                                reviewCourse.price || 0,
+                                reviewCourse.currency || "USD",
+                                language,
+                              )
                         }
                         tone="blue"
                       />
                       <StatTile
                         label={pageTr("Discount")}
-                        value={formatNumber(reviewCourse.discountPrice || 0, language)}
+                        value={formatDisplayCurrencyAmount(
+                          reviewCourse.discountPrice || 0,
+                          reviewCourse.currency || "USD",
+                          language,
+                        )}
                         tone="emerald"
                       />
                       <StatTile
@@ -2335,6 +2355,71 @@ export default function AdminCoursesPage() {
                       />
                     </div>
                   </section>
+
+                      {reviewCourse.pricingType === "regional" && reviewCourse.prices ? (
+                        <section className="border border-slate-200 bg-white p-5 shadow-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <h4 className="text-base font-black text-slate-950">
+                              {language === "fa" ? "قیمت‌گذاری منطقه‌ای" : "Regional pricing"}
+                            </h4>
+                            <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-700">
+                              {language === "fa" ? "قیمت بین‌المللی، قیمت جایگزین است" : "International is the fallback"}
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-3 md:grid-cols-3">
+                            {[
+                              ["afghanistan", language === "fa" ? "افغانستان" : "Afghanistan"],
+                              ["iran", language === "fa" ? "ایران" : "Iran"],
+                              ["international", language === "fa" ? "بین‌المللی" : "International"],
+                            ].map(([region, label]) => {
+                              const row = reviewCourse.prices?.[region] || {};
+                              const usesFallback =
+                                region !== "international" && row.useInternationalPrice;
+                              const regularPrice = Number(row.regularPrice || 0);
+                              const discountedPrice = Number(row.discountedPrice || 0);
+                              return (
+                                <article key={region} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm font-black text-slate-900">{label}</p>
+                                    <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500">
+                                      {getDisplayCurrency(
+                                        row.currency ||
+                                          (region === "afghanistan"
+                                            ? "AFN"
+                                            : region === "iran"
+                                              ? "TOMAN"
+                                              : "USD"),
+                                      )}
+                                    </span>
+                                  </div>
+                                  <p className="mt-3 text-lg font-black text-slate-950">
+                                    {usesFallback
+                                      ? language === "fa" ? "قیمت بین‌المللی" : "International price"
+                                      : row.isFree
+                                        ? pageTr("Free")
+                                        : formatDisplayCurrencyAmount(
+                                            discountedPrice > 0
+                                              ? discountedPrice
+                                              : regularPrice,
+                                            row.currency || "USD",
+                                            language,
+                                          )}
+                                  </p>
+                                  {!usesFallback && !row.isFree && discountedPrice > 0 && discountedPrice < regularPrice ? (
+                                    <p className="mt-1 text-xs font-bold text-slate-400 line-through">
+                                      {formatDisplayCurrencyAmount(
+                                        regularPrice,
+                                        row.currency || "USD",
+                                        language,
+                                      )}
+                                    </p>
+                                  ) : null}
+                                </article>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      ) : null}
 
                       <section className="border border-slate-200 bg-white p-5 shadow-sm">
                         <div className="flex items-center justify-between gap-3">

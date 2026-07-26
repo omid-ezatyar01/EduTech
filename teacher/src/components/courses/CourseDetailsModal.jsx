@@ -19,6 +19,10 @@ import {
   formatDateTimeInZone,
   getBrowserTimeZone,
 } from "../../utils/timezone";
+import {
+  formatDisplayCurrencyAmount,
+  getDisplayCurrencyLabel,
+} from "../../utils/currencyDisplay";
 
 const COURSE_IMAGE_FALLBACK = "/logo.png";
 
@@ -72,9 +76,7 @@ function formatCourseType(courseType, language) {
 }
 
 function formatCurrencyLabel(currency, language) {
-  const normalized = String(currency || "USD").toUpperCase();
-  if (language === "fa") return normalized === "USD" ? "دالر" : normalized;
-  return normalized;
+  return getDisplayCurrencyLabel(currency, language);
 }
 
 function formatMoney(amount, language, currency = "USD", fallback = null) {
@@ -82,7 +84,7 @@ function formatMoney(amount, language, currency = "USD", fallback = null) {
   if (!(numeric > 0)) {
     return fallback || (language === "fa" ? `۰ ${formatCurrencyLabel(currency, language)}` : `0 ${currency}`);
   }
-  return `${formatNumber(numeric, language)} ${formatCurrencyLabel(currency, language)}`;
+  return formatDisplayCurrencyAmount(numeric, currency, language);
 }
 
 function getScheduleSummary(schedule, language) {

@@ -27,6 +27,10 @@ export const syncLegacyPaymentRecord = async ({ order, attempt, course, transact
     paymentAttemptId: attempt._id,
     enrollmentId: null,
     baseAmountUsdCents: attempt.baseAmountUsdCents,
+    pricingRegion: order.pricingRegion || "international",
+    sourcePriceAmount: order.sourcePriceAmount ?? null,
+    sourcePriceCurrency: order.sourcePriceCurrency || null,
+    platformCommissionRate: order.platformCommissionRate ?? null,
     amount: Number(attempt.amount || 0),
     gatewayAmount: Number(attempt.amount || 0),
     currency: ["NOWPAYMENTS_CRYPTO", "USDT_BSC_DIRECT"].includes(String(attempt.method || "").toUpperCase())

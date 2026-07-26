@@ -5,6 +5,12 @@ import CourseImageCropModal from "./CourseImageCropModal";
 import CourseTypePicker from "./CourseTypePicker";
 import CourseCategoryFields from "./CourseCategoryFields";
 import CourseTimeZonePicker from "./CourseTimeZonePicker";
+import CoursePricingFields from "./CoursePricingFields";
+import {
+  buildRegionalPricesPayload,
+  createEmptyRegionalPrices,
+  validateRegionalPricingForm,
+} from "../../utils/coursePricingForm";
 import { isAllowedCourseStartDate } from "../../utils/courseStartDate";
 import { getParentCategories } from "../../utils/categoryTree";
 import {
@@ -296,6 +302,8 @@ export default function CreateCourseModal({
     level: "beginner",
     language: firstCourseLanguage,
     pricingType: "paid",
+    priceMode: "single",
+    regionalPrices: createEmptyRegionalPrices(),
     paymentPlan: "monthly",
     price: "",
     teacherDiscountPercentage: "0",
@@ -369,6 +377,13 @@ export default function CreateCourseModal({
     globalDiscountPercentage: globalCourseDiscountPercentage,
     teacherDeductionPercentage,
   });
+  const regionalPricingErrors =
+    form.pricingType !== "free" && form.priceMode === "regional"
+      ? validateRegionalPricingForm(form.regionalPrices, {
+          minInternationalPrice: minTeacherCoursePrice,
+          language,
+        })
+      : {};
   const isCoursePriceValid = pricingPreview.normalizedBasePrice >= minTeacherCoursePrice;
   const isFinalStep = mobileStep === CREATE_FORM_STEPS.length;
   const teachingDayCount = Array.isArray(form.selectedDays)
@@ -625,7 +640,7 @@ export default function CreateCourseModal({
       const teacherDiscountPercentage = Number(form.teacherDiscountPercentage || 0);
       const minimumAttendance = Number(form.certificateMinimumAttendance);
       const minimumPassingGrade = Number(form.certificateMinimumPassingGrade);
-      if (form.pricingType !== "free" && (
+      if (form.pricingType !== "free" && form.priceMode !== "regional" && (
         price < minTeacherCoursePrice ||
         price > PRICE_MAX_USD ||
         !isWholeDollarAmount(price)
@@ -636,6 +651,7 @@ export default function CreateCourseModal({
       }
       if (
         form.pricingType !== "free" &&
+        form.priceMode !== "regional" &&
         (!Number.isFinite(teacherDiscountPercentage) ||
           teacherDiscountPercentage < 0 ||
           teacherDiscountPercentage > 100)
@@ -643,6 +659,13 @@ export default function CreateCourseModal({
         return language === "fa"
           ? "درصد تخفیف مدرس باید بین ۰ تا ۱۰۰ باشد."
           : "Teacher discount percentage must be between 0 and 100.";
+      }
+      if (
+        form.pricingType !== "free" &&
+        form.priceMode === "regional" &&
+        Object.keys(regionalPricingErrors).length
+      ) {
+        return Object.values(regionalPricingErrors)[0];
       }
       if (
         form.pricingType !== "free" &&
@@ -753,7 +776,7 @@ export default function CreateCourseModal({
     if (step === 4) {
       const maxStudents = Number(form.maxStudents || 0);
       const minimumStudentsToStart = Number(form.minimumStudentsToStart || 0);
-      if (form.pricingType !== "free") {
+      if (form.pricingType !== "free" && form.priceMode !== "regional") {
         const price = Number(form.price || 0);
         if (
           price < minTeacherCoursePrice ||
@@ -795,7 +818,13 @@ export default function CreateCourseModal({
 
   const validateStep = (step) => {
     const message = getStepValidationError(step);
-    setFieldErrors(message ? { [getValidationField(step)]: message } : {});
+    setFieldErrors(
+      message
+        ? step === 4 && form.priceMode === "regional" && Object.keys(regionalPricingErrors).length
+          ? regionalPricingErrors
+          : { [getValidationField(step)]: message }
+        : {},
+    );
     return message;
   };
 
@@ -946,7 +975,7 @@ export default function CreateCourseModal({
         return;
       }
     }
-    const { pricingType, ...rest } = form;
+    const { pricingType, priceMode, regionalPrices, ...rest } = form;
     const isFree = pricingType === "free";
     const price = Number(form.price || 0);
     const teacherDiscountPercentage = Number(form.teacherDiscountPercentage || 0);
@@ -997,6 +1026,7 @@ export default function CreateCourseModal({
 
     if (
       !isFree &&
+      priceMode !== "regional" &&
       (
         price < minTeacherCoursePrice ||
         price > PRICE_MAX_USD ||
@@ -1010,6 +1040,30 @@ export default function CreateCourseModal({
       );
       return;
     }
+
+    const normalizedRegionalPrices =
+      priceMode === "regional" ? buildRegionalPricesPayload(regionalPrices) : null;
+    const submitRegionalErrors =
+      !isFree && priceMode === "regional"
+        ? validateRegionalPricingForm(regionalPrices, {
+            minInternationalPrice: minTeacherCoursePrice,
+            language,
+          })
+        : {};
+    if (Object.keys(submitRegionalErrors).length) {
+      setFieldErrors(submitRegionalErrors);
+      setFormError(Object.values(submitRegionalErrors)[0]);
+      return;
+    }
+    const internationalPrice = normalizedRegionalPrices?.international;
+    const internationalRegularPrice = Number(internationalPrice?.regularPrice || 0);
+    const internationalDiscountedPrice = Number(internationalPrice?.discountedPrice || 0);
+    const internationalDiscountPercentage =
+      internationalRegularPrice > 0 &&
+      internationalDiscountedPrice > 0 &&
+      internationalDiscountedPrice < internationalRegularPrice
+        ? ((internationalRegularPrice - internationalDiscountedPrice) / internationalRegularPrice) * 100
+        : 0;
 
     if (!isFree && (normalizedTeacherDiscountPercentage < 0 || normalizedTeacherDiscountPercentage > 100)) {
       setFormError(
@@ -1177,8 +1231,15 @@ export default function CreateCourseModal({
       category: selectedCategory,
       subcategory: selectedSubcategory || null,
       language: selectedCourseLanguage,
-      price: isFree ? 0 : price,
-      teacherDiscountPercentage: isFree ? 0 : normalizedTeacherDiscountPercentage,
+      pricingType: isFree ? "single" : priceMode,
+      prices: priceMode === "regional" && !isFree ? normalizedRegionalPrices : undefined,
+      price: isFree ? 0 : priceMode === "regional" ? internationalRegularPrice : price,
+      teacherDiscountPercentage:
+        isFree
+          ? 0
+          : priceMode === "regional"
+            ? internationalDiscountPercentage
+            : normalizedTeacherDiscountPercentage,
       maxStudents,
       minimumStudentsToStart,
       durationWeeks,
@@ -1775,6 +1836,21 @@ export default function CreateCourseModal({
             </select>
           </div>
 
+          {form.pricingType !== "free" ? (
+            <CoursePricingFields
+              priceMode={form.priceMode}
+              regionalPrices={form.regionalPrices}
+              onPriceModeChange={(priceMode) =>
+                setForm((current) => ({ ...current, priceMode }))
+              }
+              onRegionalPricesChange={(regionalPrices) =>
+                setForm((current) => ({ ...current, regionalPrices }))
+              }
+              errors={regionalPricingErrors}
+              language={language}
+            />
+          ) : null}
+
           <section className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <label className="flex items-center justify-between gap-3">
               <span>
@@ -1886,7 +1962,7 @@ export default function CreateCourseModal({
             </p>
           </div>
 
-          <div className="sm:col-span-2">
+          {form.priceMode !== "regional" ? <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "قیمت (دالر)" : "Price (USD)"}
             </label>
@@ -1949,9 +2025,9 @@ export default function CreateCourseModal({
                 </>
               )}
             </div>
-          </div>
+          </div> : null}
 
-          <div className="sm:col-span-2">
+          {form.priceMode !== "regional" ? <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "درصد تخفیف مدرس (%)" : "Teacher discount percentage (%)"}
             </label>
@@ -1980,7 +2056,7 @@ export default function CreateCourseModal({
                 : "Between 0 and 100. Example: 10 means a 10% teacher discount."}
             </p>
             {renderFieldError("teacherDiscountPercentage")}
-          </div>
+          </div> : null}
 
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-600">
@@ -2106,7 +2182,16 @@ export default function CreateCourseModal({
                     [language === "fa" ? "شروع" : "Start", form.startDate || "—"],
                     [language === "fa" ? "ظرفیت" : "Capacity", form.maxStudents],
                     [language === "fa" ? "روش پرداخت" : "Payment", form.pricingType === "free" ? (language === "fa" ? "رایگان" : "Free") : form.paymentPlan],
-                    [language === "fa" ? "قیمت" : "Price", form.pricingType === "free" ? "0 USD" : `${form.price || "—"} USD`],
+                    [
+                      language === "fa" ? "قیمت" : "Price",
+                      form.pricingType === "free"
+                        ? "0 USD"
+                        : form.priceMode === "regional"
+                          ? language === "fa"
+                            ? "قیمت منطقه‌ای (قیمت بین‌المللی به‌عنوان جایگزین)"
+                            : "Regional pricing (International fallback)"
+                          : `${form.price || "—"} USD`,
+                    ],
                   ].map(([label, value]) => (
                     <div key={label} className="rounded-xl bg-slate-50 p-3">
                       <p className="text-[11px] font-black text-slate-500">{label}</p>

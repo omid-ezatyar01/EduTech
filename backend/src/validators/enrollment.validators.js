@@ -5,6 +5,10 @@ export const enrollCourseParamSchema = Joi.object({
   id: objectId.required(),
 });
 
+export const enrollCourseBodySchema = Joi.object({
+  pricingRegion: Joi.string().valid("afghanistan", "iran", "international"),
+}).default({});
+
 export const certificateIdParamSchema = Joi.object({
   certificateId: Joi.string()
     .trim()

@@ -14,7 +14,6 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import {
   createCheckout,
-  createHesabPaySession,
   getCourseBankPaymentDetails,
   submitBankTransferPayment,
 } from "../../services/paymentGateway.js";
@@ -27,7 +26,7 @@ import BankPaymentDetailsModal from "./BankPaymentDetailsModal.jsx";
 import { shareContent } from "../utils/share";
 import {
   useCryptoUsdtQuoteLabel,
-  useRegionalCoursePrice,
+  useCourseRegionalPrice,
   useRegionalPricing,
 } from "../context/RegionalPricingContext.jsx";
 import {
@@ -96,7 +95,9 @@ export default function CourseCard({
   isEnrolled = false,
   coursePathOverride = "",
 }) {
-  const { countryCode, rates } = useRegionalPricing();
+  const { countryCode, rates, pricingRegion } = useRegionalPricing();
+  const coursePricing = useCourseRegionalPrice(course, language);
+  const isCourseFree = coursePricing.isFree;
   const uiText = {
     instructor: language === "fa" ? "مدرس" : "Instructor",
     free: language === "fa" ? "رایگان" : "Free",
@@ -122,7 +123,7 @@ export default function CourseCard({
   const [bankPaymentDetails, setBankPaymentDetails] = useState(null);
   const [hesabPayAmountLabel, setHesabPayAmountLabel] = useState("");
   const [cryptoPreviewLabel, setCryptoPreviewLabel] = useState("");
-  const buyLabel = course?.isFree
+  const buyLabel = isCourseFree
     ? language === "fa"
       ? "ثبت‌نام رایگان"
       : "Join for Free"
@@ -164,22 +165,25 @@ export default function CourseCard({
   const description = String(course?.description || uiText.noDescription).trim();
 
   const rawPrice = Number(course?.price || 0);
-  const originalPrice =
-    Number(course?.originalPrice || 0) ||
-    (Number(course?.discountPrice || 0) > 0 &&
-    Number(course?.discountPrice || 0) > rawPrice
-      ? Number(course?.discountPrice || 0)
-      : 0);
-  const hasDiscount = !course?.isFree && originalPrice > rawPrice;
+  const hasDiscount = coursePricing.originalPrice > coursePricing.finalPrice;
   const discountPercent =
-    hasDiscount && originalPrice > 0
-      ? Math.round(((originalPrice - rawPrice) / originalPrice) * 100)
+    hasDiscount && coursePricing.originalPrice > 0
+      ? Math.round(
+          ((coursePricing.originalPrice - coursePricing.finalPrice) /
+            coursePricing.originalPrice) *
+            100,
+        )
       : Number(course?.discountPercent || 0);
 
-  const priceLabel = useRegionalCoursePrice(rawPrice, language);
-  const originalPriceLabel = useRegionalCoursePrice(originalPrice, language);
-  const oldPriceLabel = hasDiscount ? originalPriceLabel : "";
-  const cryptoAmountLabel = useCryptoUsdtQuoteLabel(rawPrice, language);
+  const priceLabel = coursePricing.finalLabel;
+  const oldPriceLabel = hasDiscount ? coursePricing.originalLabel : "";
+  const legacyCryptoAmountLabel = useCryptoUsdtQuoteLabel(rawPrice, language);
+  const cryptoAmountLabel =
+    coursePricing.pricingType === "regional"
+      ? language === "fa"
+        ? "مبلغ دالری هنگام پرداخت محاسبه می‌شود."
+        : "The USD amount is calculated securely at checkout."
+      : legacyCryptoAmountLabel;
   const rating = Number(course?.rating || 0);
   const ratingCount = Math.max(0, Number(course?.ratingCount || 0));
   const studentsCount = Math.max(0, Number(course?.enrolledStudentsCount || 0));
@@ -215,19 +219,24 @@ export default function CourseCard({
     let mounted = true;
 
     const loadPaymentPreviewLabels = async () => {
-      if (!isPaymentMethodModalOpen || !rawPrice || course?.isFree) return;
+      if (!isPaymentMethodModalOpen || isCourseFree) return;
 
       try {
         if (!mounted) return;
-        const afnRate = Number(rates?.AFN || 0);
-        const hesabAmount = afnRate > 0 ? rawPrice * afnRate : 0;
-
-        setHesabPayAmountLabel(
-          `${language === "fa" ? "پرداخت کارتی:" : "Card payment:"} ${new Intl.NumberFormat(
-            language === "fa" ? "fa-AF" : "en-US",
-            { maximumFractionDigits: 0 },
-          ).format(Number(hesabAmount || 0))} ${language === "fa" ? "افغانی" : "AFN"}`,
-        );
+        if (coursePricing.pricingType === "regional") {
+          setHesabPayAmountLabel(
+            `${language === "fa" ? "قیمت منطقه‌ای:" : "Regional price:"} ${coursePricing.finalLabel}`,
+          );
+        } else {
+          const afnRate = Number(rates?.AFN || 0);
+          const hesabAmount = afnRate > 0 ? rawPrice * afnRate : 0;
+          setHesabPayAmountLabel(
+            `${language === "fa" ? "پرداخت کارتی:" : "Card payment:"} ${new Intl.NumberFormat(
+              language === "fa" ? "fa-AF" : "en-US",
+              { maximumFractionDigits: 0 },
+            ).format(Number(hesabAmount || 0))} ${language === "fa" ? "افغانی" : "AFN"}`,
+          );
+        }
 
         setCryptoPreviewLabel(cryptoAmountLabel);
       } catch {
@@ -245,9 +254,10 @@ export default function CourseCard({
   }, [
     course?._id,
     course?.id,
-    course?.isFree,
+    coursePricing,
     cryptoAmountLabel,
     isPaymentMethodModalOpen,
+    isCourseFree,
     language,
     rawPrice,
     rates?.AFN,
@@ -266,14 +276,18 @@ export default function CourseCard({
       setIsStartingPayment(true);
       setIsPaymentMethodModalOpen(false);
 
-      if (course?.isFree) {
-        await enrollCourse(courseId);
+      if (isCourseFree) {
+        await enrollCourse(courseId, pricingRegion);
         window.dispatchEvent(new Event("edutech_data_changed"));
         navigate("/student/courses");
         return;
       }
 
-      const session = await createHesabPaySession(courseId);
+      const session = await createCheckout({
+        courseId,
+        paymentMethod: "HESABPAY_HOSTED",
+        pricingRegion,
+      });
       if (session?.paymentUrl) {
         window.location.href = session.paymentUrl;
         return;
@@ -312,6 +326,7 @@ export default function CourseCard({
       const session = await createCheckout({
         courseId,
         paymentMethod: "USDT_BSC_DIRECT",
+        pricingRegion,
       });
       if (session?.paymentAttemptId) {
         navigate(`/payment/crypto?attemptId=${encodeURIComponent(session.paymentAttemptId)}`);
@@ -331,7 +346,7 @@ export default function CourseCard({
     if (isStartingPayment) return;
 
     if (localStorage.getItem("edutech_auth") === "true") {
-      if (course?.isFree) {
+      if (isCourseFree) {
         startHesabPayPurchase();
         return;
       }
@@ -351,7 +366,7 @@ export default function CourseCard({
 
     try {
       setIsBankDetailsLoading(true);
-      const details = await getCourseBankPaymentDetails(courseId);
+      const details = await getCourseBankPaymentDetails(courseId, pricingRegion);
       setBankPaymentDetails(details);
       setIsPaymentMethodModalOpen(false);
       setIsBankDetailsModalOpen(true);
@@ -438,7 +453,7 @@ export default function CourseCard({
               </span>
             ) : null}
           </div>
-          {discountPercent > 0 && !course?.isFree ? (
+          {discountPercent > 0 && !isCourseFree ? (
             <span className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-1 text-[11px] font-black text-white">
               <BadgePercent size={12} />
               {discountPercent}% {uiText.discount}
@@ -519,7 +534,7 @@ export default function CourseCard({
                 {uiText.priceTitle}
               </p>
               <p className="text-[1.15rem] font-black text-slate-950" dir="ltr">
-                {course?.isFree ? uiText.free : priceLabel}
+                {isCourseFree ? uiText.free : priceLabel}
               </p>
               {hasDiscount ? (
                 <p className="text-sm font-bold text-slate-400 line-through" dir="ltr">

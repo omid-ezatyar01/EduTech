@@ -39,6 +39,28 @@ const paymentSchema = new mongoose.Schema(
       min: 0,
       default: 0,
     },
+    pricingRegion: {
+      type: String,
+      enum: ["afghanistan", "iran", "international"],
+      default: null,
+      index: true,
+    },
+    sourcePriceAmount: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    sourcePriceCurrency: {
+      type: String,
+      enum: ["USD", "AFN", "TOMAN"],
+      default: null,
+    },
+    platformCommissionRate: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: null,
+    },
     amount: {
       type: Number,
       required: true,

@@ -25,10 +25,15 @@ import {
   getNormalizedBankPaymentDisplay,
   hasUsableBankPaymentInfo,
 } from "../utils/bankPaymentInfo.js";
-import { getPlatformPricingSettings, resolveCourseDisplayPricing } from "../utils/platformSettings.js";
+import {
+  getPlatformPricingSettings,
+  getTeacherDeductionPercentage,
+  resolveCourseDisplayPricing,
+} from "../utils/platformSettings.js";
 import { expireEnrollmentIfNeeded, isEnrollmentExpired, resolveCourseAccessWindow } from "../utils/courseAccess.js";
 import {
   calculateTeacherIncomeLedger,
+  summarizeTeacherIncomeRows,
   upsertTeacherIncomeSettlement,
 } from "../utils/teacherIncomeLedger.js";
 import { normalizeBankTransferSubmissionState } from "../utils/bankTransferSubmission.js";
@@ -43,6 +48,11 @@ import {
   savePaymentProofFromBuffer,
 } from "../utils/paymentProofFile.js";
 import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
+import {
+  getPricingRegionForCountry,
+  normalizePricingRegion,
+  resolveCourseCheckoutPricing,
+} from "../utils/courseRegionalPricing.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 const DIRECT_CRYPTO_VERIFY_COOLDOWN_AFTER_FAILED_ATTEMPTS = 5;
@@ -192,32 +202,87 @@ const clearDirectCryptoGuardState = (key) => {
   directCryptoVerifyGuard.delete(key);
 };
 
-const getCourseForCheckout = async (courseId) => {
+const getCourseForCheckout = async (courseId, pricingRegion = "international") => {
   const course = await Course.findById(courseId).select(
-    "title slug price discountPrice teacherDiscountPercentage currency isFree paymentPlan status isPublished classEndedAt classCancelledAt startDate endDate",
+    "title slug price discountPrice teacherDiscountPercentage currency isFree pricingType prices paymentPlan status isPublished classEndedAt classCancelledAt startDate endDate",
   );
   if (!course) return null;
-  const pricing = await getPlatformPricingSettings();
-  const displayPricing = resolveCourseDisplayPricing(course, pricing?.globalCourseDiscountPercentage || 0);
-  const baseAmountUsdCents = normalizeUsdToCents(displayPricing.finalPrice);
+  const resolvedRegion = normalizePricingRegion(pricingRegion);
+  let regionalPrice;
+  let baseAmountUsdCents;
+  if (String(course.pricingType || "single") === "regional") {
+    ({ regionalPrice, baseAmountUsdCents } = await resolveCourseCheckoutPricing(
+      course,
+      resolvedRegion,
+    ));
+  } else {
+    const pricing = await getPlatformPricingSettings();
+    const displayPricing = resolveCourseDisplayPricing(
+      course,
+      pricing?.globalCourseDiscountPercentage || 0,
+    );
+    baseAmountUsdCents = normalizeUsdToCents(displayPricing.finalPrice);
+    regionalPrice = {
+      pricingType: "single",
+      region: "international",
+      requestedRegion: resolvedRegion,
+      currency: "USD",
+      regularPrice: displayPricing.originalPriceForDisplay || displayPricing.finalPrice,
+      discountedPrice:
+        displayPricing.originalPriceForDisplay > displayPricing.finalPrice
+          ? displayPricing.finalPrice
+          : null,
+      finalPrice: displayPricing.finalPrice,
+      isFree: displayPricing.finalPrice <= 0,
+      usesInternationalPrice: false,
+    };
+  }
   return {
     course,
-    displayPricing,
+    regionalPrice,
+    pricingRegion: resolvedRegion,
     baseAmountUsdCents,
   };
 };
 
-const findOrCreatePendingOrder = async ({ userId, courseId, baseAmountUsdCents }, session = null) => {
+const findOrCreatePendingOrder = async ({
+  userId,
+  courseId,
+  baseAmountUsdCents,
+  pricingRegion = "international",
+  sourcePriceAmount = null,
+  sourcePriceCurrency = null,
+  platformCommissionRate = null,
+}, session = null) => {
   const existing = await Order.findOne({ userId, courseId, status: "PENDING" }).session(session);
   if (existing) {
-    if (Number(existing.baseAmountUsdCents || 0) !== Number(baseAmountUsdCents || 0)) {
+    if (
+      Number(existing.baseAmountUsdCents || 0) !== Number(baseAmountUsdCents || 0) ||
+      existing.pricingRegion !== pricingRegion ||
+      Number(existing.sourcePriceAmount ?? -1) !== Number(sourcePriceAmount ?? -1) ||
+      String(existing.sourcePriceCurrency || "") !== String(sourcePriceCurrency || "") ||
+      Number(existing.platformCommissionRate ?? -1) !== Number(platformCommissionRate ?? -1)
+    ) {
       existing.baseAmountUsdCents = baseAmountUsdCents;
+      existing.pricingRegion = pricingRegion;
+      existing.sourcePriceAmount = sourcePriceAmount;
+      existing.sourcePriceCurrency = sourcePriceCurrency;
+      existing.platformCommissionRate = platformCommissionRate;
       await existing.save({ session });
     }
     return existing;
   }
 
-  return Order.create([{ userId, courseId, baseAmountUsdCents, status: "PENDING" }], session ? { session } : undefined).then((rows) => rows[0]);
+  return Order.create([{
+    userId,
+    courseId,
+    baseAmountUsdCents,
+    pricingRegion,
+    sourcePriceAmount,
+    sourcePriceCurrency,
+    platformCommissionRate,
+    status: "PENDING",
+  }], session ? { session } : undefined).then((rows) => rows[0]);
 };
 
 const createPaymentAttemptRecord = async ({ order, user, course, paymentReference = null, method, amount, currency, network = null, provider = null, exchangeRate = null, exchangeRateSource = null, rateRetrievedAt = null, providerPaymentId = null, blockchainReference = null, transactionSignature = null, providerUrl = null, expiresAt = null, rawCreateSessionResponse = null, recipientAddress = null, tokenMint = null }, session = null) => {
@@ -258,6 +323,10 @@ const createPaymentAttemptRecord = async ({ order, user, course, paymentReferenc
       orderId: order._id,
       paymentAttemptId: attempt._id,
       baseAmountUsdCents: order.baseAmountUsdCents,
+      pricingRegion: order.pricingRegion || "international",
+      sourcePriceAmount: order.sourcePriceAmount ?? null,
+      sourcePriceCurrency: order.sourcePriceCurrency || null,
+      platformCommissionRate: order.platformCommissionRate ?? null,
       amount: Number(amount || 0),
       gatewayAmount: Number(amount || 0),
       currency,
@@ -374,6 +443,10 @@ export const createCheckout = async (req, res) => {
   try {
     const { courseId, paymentMethod } = req.body || {};
     const method = String(paymentMethod || "").trim().toUpperCase();
+    const pricingRegion = normalizePricingRegion(
+      req.body?.pricingRegion,
+      getPricingRegionForCountry(req.user?.country),
+    );
 
     if (!courseId || !isValidObjectId(courseId)) {
       return apiError(res, 400, "Invalid courseId");
@@ -382,7 +455,8 @@ export const createCheckout = async (req, res) => {
       return apiError(res, 400, "Unsupported payment method");
     }
 
-    const { course, baseAmountUsdCents } = await getCourseForCheckout(courseId);
+    const { course, baseAmountUsdCents, regionalPrice } =
+      await getCourseForCheckout(courseId, pricingRegion);
     if (!course) return apiError(res, 404, "Course not found");
     if (!isCoursePurchasable(course)) return apiError(res, 400, "Course is not available for purchase");
     if (!Number.isFinite(baseAmountUsdCents) || baseAmountUsdCents <= 0) {
@@ -400,12 +474,29 @@ export const createCheckout = async (req, res) => {
       return apiError(res, 400, "You are already enrolled in this course");
     }
 
+    const platformCommissionRate = await getTeacherDeductionPercentage();
     const order = await findOrCreatePendingOrder(
-      { userId: req.user._id, courseId: course._id, baseAmountUsdCents },
+      {
+        userId: req.user._id,
+        courseId: course._id,
+        baseAmountUsdCents,
+        pricingRegion,
+        sourcePriceAmount: regionalPrice?.finalPrice ?? null,
+        sourcePriceCurrency: regionalPrice?.currency || null,
+        platformCommissionRate,
+      },
     );
 
     if (method === "HESABPAY_HOSTED") {
-      const quote = await quoteAfnFromUsdCents(baseAmountUsdCents);
+      const quote =
+        regionalPrice?.currency === "AFN"
+          ? {
+              amount: Number(regionalPrice.finalPrice || 0),
+              exchangeRate: null,
+              exchangeRateSource: "regional_course_price",
+              rateRetrievedAt: new Date(),
+            }
+          : await quoteAfnFromUsdCents(baseAmountUsdCents);
       let paymentAttempt = await PaymentAttempt.findOne({
         orderId: order._id,
         method: "HESABPAY_HOSTED",
@@ -417,6 +508,17 @@ export const createCheckout = async (req, res) => {
         baseAmountUsdCents,
         "HesabPay attempt expired",
       );
+      if (
+        paymentAttempt &&
+        regionalPrice?.currency === "AFN" &&
+        Number(paymentAttempt.amount || 0) !== Number(quote.amount || 0)
+      ) {
+        paymentAttempt.status = "EXPIRED";
+        paymentAttempt.expiresAt = new Date();
+        paymentAttempt.note = "HesabPay attempt expired after the regional AFN price changed";
+        await paymentAttempt.save();
+        paymentAttempt = null;
+      }
       paymentAttempt = await expireAttemptIfStale(
         paymentAttempt,
         "HesabPay attempt expired after checkout timeout",
@@ -431,6 +533,8 @@ export const createCheckout = async (req, res) => {
             amount: formatUsdCents(baseAmountUsdCents),
             currency: "USD",
           },
+          regionalPrice,
+          pricingRegion,
           charge: {
             amount: paymentAttempt.amount,
             currency: "AFN",
@@ -621,6 +725,8 @@ export const createCheckout = async (req, res) => {
             amount: formatUsdCents(baseAmountUsdCents),
             currency: "USD",
           },
+          regionalPrice,
+          pricingRegion,
           charge: {
             amount: attempt.amount,
             currency: attempt.currency,
@@ -678,10 +784,12 @@ export const createCheckout = async (req, res) => {
           orderId: order._id,
           paymentAttemptId: existingAttempt._id,
           provider: "NOWPAYMENTS",
-          basePrice: {
-            amount: formatUsdCents(baseAmountUsdCents),
-            currency: "USD",
-          },
+            basePrice: {
+              amount: formatUsdCents(baseAmountUsdCents),
+              currency: "USD",
+            },
+            regionalPrice,
+            pricingRegion,
           charge: {
             amount: existingAttempt.amount,
             currency: existingAttempt.currency,
@@ -734,10 +842,12 @@ export const createCheckout = async (req, res) => {
         orderId: order._id,
         paymentAttemptId: attempt._id,
         provider: "NOWPAYMENTS",
-        basePrice: {
-          amount: formatUsdCents(baseAmountUsdCents),
-          currency: "USD",
-        },
+          basePrice: {
+            amount: formatUsdCents(baseAmountUsdCents),
+            currency: "USD",
+          },
+          regionalPrice,
+          pricingRegion,
         charge: {
           amount: attempt.amount,
           currency: attempt.currency,
@@ -1361,7 +1471,7 @@ export const getCourseBankPaymentDetails = async (req, res) => {
     }
 
     const course = await Course.findById(courseId)
-      .select("title price discountPrice teacherDiscountPercentage currency isFree paymentPlan teacher teacherId createdBy status isPublished")
+      .select("title price discountPrice teacherDiscountPercentage currency isFree pricingType prices paymentPlan teacher teacherId createdBy status isPublished")
       .lean();
 
     if (!course || !isCoursePurchasable(course)) {
@@ -1402,19 +1512,45 @@ export const getCourseBankPaymentDetails = async (req, res) => {
       .lean();
 
     const submissionState = normalizeBankTransferSubmissionState(latestBankTransferPayment);
-    const pricing = await getPlatformPricingSettings();
-    const displayPricing = resolveCourseDisplayPricing(
-      course,
-      pricing?.globalCourseDiscountPercentage || 0,
+    const pricingRegion = normalizePricingRegion(
+      req.query?.pricingRegion,
+      getPricingRegionForCountry(req.user?.country),
     );
-    const baseAmountUsdCents = normalizeUsdToCents(displayPricing.finalPrice);
+    let regionalPrice = null;
+    let baseAmountUsdCents;
+    if (String(course.pricingType || "single") === "regional") {
+      ({ regionalPrice, baseAmountUsdCents } = await resolveCourseCheckoutPricing(
+        course,
+        pricingRegion,
+      ));
+    } else {
+      const pricing = await getPlatformPricingSettings();
+      const displayPricing = resolveCourseDisplayPricing(
+        course,
+        pricing?.globalCourseDiscountPercentage || 0,
+      );
+      baseAmountUsdCents = normalizeUsdToCents(displayPricing.finalPrice);
+    }
     if (baseAmountUsdCents <= 0) {
       return apiError(res, 400, "Bank transfer is not available for free courses");
     }
     const quoteCurrency = String(bankPaymentInfo.country || "").toUpperCase() === "IR"
       ? "IRR"
       : "AFN";
-    const quote = await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
+    const quote =
+      regionalPrice?.currency === quoteCurrency
+        ? {
+            amount: regionalPrice.finalPrice,
+            exchangeRate: null,
+            exchangeRateSource: "regional_course_price",
+          }
+        : regionalPrice?.currency === "TOMAN" && quoteCurrency === "IRR"
+          ? {
+              amount: Number(regionalPrice.finalPrice || 0) * 10,
+              exchangeRate: null,
+              exchangeRateSource: "regional_course_price",
+            }
+          : await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
 
     return apiSuccess(res, {
       course: {
@@ -1431,6 +1567,7 @@ export const getCourseBankPaymentDetails = async (req, res) => {
         currency: quoteCurrency,
         baseAmountUsd: baseAmountUsdCents / 100,
         paymentPlan: course.paymentPlan || "monthly",
+        pricingRegion,
       },
       submissionState,
     });
@@ -1449,15 +1586,31 @@ export const submitBankTransferPayment = async (req, res) => {
     }
 
     const course = await Course.findById(courseId).select(
-      "title slug price discountPrice teacherDiscountPercentage currency isFree paymentPlan status isPublished classEndedAt classCancelledAt startDate endDate teacher teacherId createdBy maxStudents enrolledStudentsCount",
+      "title slug price discountPrice teacherDiscountPercentage currency isFree pricingType prices paymentPlan status isPublished classEndedAt classCancelledAt startDate endDate teacher teacherId createdBy maxStudents enrolledStudentsCount",
     );
     if (!course || !isCoursePurchasable(course)) {
       return apiError(res, 404, "Course not found");
     }
 
-    const pricing = await getPlatformPricingSettings();
-    const displayPricing = resolveCourseDisplayPricing(course, pricing?.globalCourseDiscountPercentage || 0);
-    const baseAmountUsdCents = normalizeUsdToCents(displayPricing.finalPrice);
+    const pricingRegion = normalizePricingRegion(
+      countryCode,
+      getPricingRegionForCountry(req.user?.country),
+    );
+    let regionalPrice = null;
+    let baseAmountUsdCents;
+    if (String(course.pricingType || "single") === "regional") {
+      ({ regionalPrice, baseAmountUsdCents } = await resolveCourseCheckoutPricing(
+        course,
+        pricingRegion,
+      ));
+    } else {
+      const pricing = await getPlatformPricingSettings();
+      const displayPricing = resolveCourseDisplayPricing(
+        course,
+        pricing?.globalCourseDiscountPercentage || 0,
+      );
+      baseAmountUsdCents = normalizeUsdToCents(displayPricing.finalPrice);
+    }
     if (baseAmountUsdCents <= 0) {
       return apiError(res, 400, "Bank transfer is not available for free courses");
     }
@@ -1505,7 +1658,20 @@ export const submitBankTransferPayment = async (req, res) => {
     }
 
     const quoteCurrency = countryCode === "IR" ? "IRR" : "AFN";
-    const quote = await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
+    const quote =
+      regionalPrice?.currency === quoteCurrency
+        ? {
+            amount: regionalPrice.finalPrice,
+            exchangeRate: null,
+            exchangeRateSource: "regional_course_price",
+          }
+        : regionalPrice?.currency === "TOMAN" && quoteCurrency === "IRR"
+          ? {
+              amount: Number(regionalPrice.finalPrice || 0) * 10,
+              exchangeRate: null,
+              exchangeRateSource: "regional_course_price",
+            }
+          : await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
     const paymentReference = makePaymentReference();
     const proofPath = await savePaymentProofFromBuffer(req.user._id, req.file.buffer);
     savedProofPath = proofPath;
@@ -1531,6 +1697,10 @@ export const submitBankTransferPayment = async (req, res) => {
     const payload = {
       enrollmentId: enrollment._id,
       baseAmountUsdCents,
+      pricingRegion,
+      sourcePriceAmount: regionalPrice?.finalPrice ?? null,
+      sourcePriceCurrency: regionalPrice?.currency || null,
+      platformCommissionRate: await getTeacherDeductionPercentage(),
       amount: Number(quote.amount || 0),
       gatewayAmount: Number(quote.amount || 0),
       currency: quoteCurrency,
@@ -1850,28 +2020,19 @@ export const getAdminTeacherIncomeLedger = async (req, res) => {
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(search)))
       : ledger.settlementRows;
-    const filteredTotalRevenue = filteredRows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0);
-    const filteredPlatformCommission = filteredRows.reduce((sum, row) => sum + Number(row.platformCommission || 0), 0);
-    const filteredTeacherEarnings = filteredRows.reduce((sum, row) => sum + Number(row.teacherEarnings || 0), 0);
-    const filteredTeacherPayoutDue = filteredRows.reduce((sum, row) => sum + Number(row.teacherPayoutDue || 0), 0);
-    const filteredDirectToTeacherAmount = filteredRows.reduce((sum, row) => sum + Number(row.directToTeacherAmount || 0), 0);
-    const filteredPlatformDeductionDue = filteredRows.reduce((sum, row) => sum + Number(row.platformDeductionDue || 0), 0);
-    const filteredExternalCollectedRevenue = filteredRows.reduce((sum, row) => sum + Number(row.externalCollectedRevenue || 0), 0);
+    const filteredSummary = summarizeTeacherIncomeRows({
+      rows: filteredRows,
+      defaultCommissionRate: ledger.currentCommissionRate ?? ledger.commissionRate,
+    });
 
     const startIndex = (page - 1) * limit;
     const paginatedRows = filteredRows.slice(startIndex, startIndex + limit);
 
     return apiSuccess(res, {
       ...ledger,
-      totalRevenue: filteredTotalRevenue,
-      platformCommission: filteredPlatformCommission,
-      teacherEarnings: filteredTeacherEarnings,
-      teacherPayoutDue: filteredTeacherPayoutDue,
-      directToTeacherAmount: filteredDirectToTeacherAmount,
-      platformDeductionDue: filteredPlatformDeductionDue,
-      externalCollectedRevenue: filteredExternalCollectedRevenue,
-      paidRowsCount: filteredRows.filter((row) => row.status === "paid").length,
-      unpaidRowsCount: filteredRows.filter((row) => row.status === "unpaid").length,
+      ...filteredSummary,
+      teacherShareRate:
+        Math.round((100 - Number(filteredSummary.commissionRate || 0)) * 100) / 100,
       settlementRows: paginatedRows,
       meta: {
         page,

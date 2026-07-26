@@ -256,7 +256,10 @@ export const getPublishedCourses = asyncHandler(async (req, res) => {
       teacherEffectivePrice: pricing.teacherEffectivePrice,
       finalPriceForStudents: pricing.finalPrice,
       previewVideoUrls: resolvePreviewVideoUrls(row),
-      isFree: Boolean(row?.isFree) || Number(pricing.finalPrice || 0) <= 0,
+      isFree:
+        String(row?.pricingType || "single") === "regional"
+          ? Boolean(row?.isFree)
+          : Boolean(row?.isFree) || Number(pricing.finalPrice || 0) <= 0,
       bankPaymentAvailable:
         hasTeacherBankPaymentInfo(row?.teacher) ||
         hasTeacherBankPaymentInfo(row?.teacherId) ||
@@ -370,7 +373,10 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
     teacherEffectivePrice: pricing.teacherEffectivePrice,
     finalPriceForStudents: pricing.finalPrice,
     previewVideoUrls: resolvePreviewVideoUrls(row),
-    isFree: Boolean(row?.isFree) || Number(pricing.finalPrice || 0) <= 0,
+    isFree:
+      String(row?.pricingType || "single") === "regional"
+        ? Boolean(row?.isFree)
+        : Boolean(row?.isFree) || Number(pricing.finalPrice || 0) <= 0,
     bankPaymentAvailable:
       hasTeacherBankPaymentInfo(row?.teacher) ||
       hasTeacherBankPaymentInfo(row?.teacherId) ||

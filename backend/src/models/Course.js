@@ -1,9 +1,39 @@
 import mongoose from "mongoose";
 import generateSlug from "../utils/generateSlug.js";
 import { deriveCourseSchedule } from "../utils/courseSchedule.js";
+import {
+  normalizeRegionalPrices,
+  validateRegionalPrices,
+} from "../utils/courseRegionalPricing.js";
 import socialPostsSchema from "./schemas/socialPosts.schema.js";
 
 const SUPPORTED_COURSE_CURRENCIES = ["USD", "AFN", "IRR"];
+
+const regionalPriceSchema = new mongoose.Schema(
+  {
+    currency: {
+      type: String,
+      enum: ["AFN", "TOMAN", "USD"],
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
+    regularPrice: { type: Number, min: 0, max: 1_000_000_000, default: 0 },
+    discountedPrice: { type: Number, min: 0, max: 1_000_000_000, default: null },
+    isFree: { type: Boolean, default: false },
+    useInternationalPrice: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const regionalPricesSchema = new mongoose.Schema(
+  {
+    afghanistan: { type: regionalPriceSchema },
+    iran: { type: regionalPriceSchema },
+    international: { type: regionalPriceSchema },
+  },
+  { _id: false },
+);
 
 const scheduleSchema = new mongoose.Schema(
   {
@@ -181,6 +211,23 @@ const courseSchema = new mongoose.Schema(
     isFree: {
       type: Boolean,
       default: false,
+    },
+    pricingType: {
+      type: String,
+      enum: ["single", "regional"],
+      default: "single",
+      index: true,
+    },
+    prices: {
+      type: regionalPricesSchema,
+      default: undefined,
+      validate: {
+        validator(value) {
+          if (this.pricingType !== "regional") return true;
+          return validateRegionalPrices(value).valid;
+        },
+        message: "Regional course prices are invalid",
+      },
     },
     paymentPlan: {
       type: String,
@@ -468,13 +515,37 @@ courseSchema.pre("validate", async function () {
     this.teacher = this.teacherId;
   }
 
-  if (this.isFree) {
+  if (this.pricingType === "regional") {
+    const regionalValidation = validateRegionalPrices(this.prices || {});
+    if (!regionalValidation.valid) {
+      throw new Error(Object.values(regionalValidation.errors)[0] || "Regional course prices are invalid");
+    }
+    this.prices = normalizeRegionalPrices(regionalValidation.prices);
+    const international = this.prices.international;
+    const afghanistan = this.prices.afghanistan;
+    const iran = this.prices.iran;
+    const internationalIsFree = Boolean(international.isFree);
+    this.isFree =
+      internationalIsFree &&
+      (afghanistan.useInternationalPrice || afghanistan.isFree) &&
+      (iran.useInternationalPrice || iran.isFree);
+    this.price = internationalIsFree ? 0 : Number(international.regularPrice || 0);
+    this.discountPrice =
+      internationalIsFree ? 0 : Number(international.discountedPrice || 0);
+    this.currency = "USD";
+    this.teacherDiscountPercentage =
+      this.price > 0 && this.discountPrice > 0 && this.discountPrice < this.price
+        ? Math.round((((this.price - this.discountPrice) / this.price) * 100) * 100) / 100
+        : 0;
+  }
+
+  if (this.isFree && this.pricingType !== "regional") {
     this.price = 0;
     this.discountPrice = 0;
     this.teacherDiscountPercentage = 0;
   }
 
-  if (!this.isFree) {
+  if (!this.isFree && this.pricingType !== "regional") {
     const price = Number(this.price || 0);
     if (!Number.isInteger(price) || price < 1 || price > 10000) {
       throw new Error("paid course price must be >= 1");
@@ -504,7 +575,7 @@ courseSchema.pre("validate", async function () {
     }
   }
 
-  if (this.discountPrice > this.price) {
+  if (this.pricingType !== "regional" && this.discountPrice > this.price) {
     throw new Error("discountPrice cannot be greater than price");
   }
 

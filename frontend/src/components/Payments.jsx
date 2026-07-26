@@ -18,6 +18,11 @@ import {
   isUnauthorizedError,
 } from "../../services/http.js";
 import { fetchStudentEnrollments } from "../../services/courseService.js";
+import {
+  formatDisplayCurrencyAmount,
+  getDisplayCurrency,
+  getDisplayCurrencyAmount,
+} from "../utils/currencyDisplay.js";
 
 const DATE_FILTER_ALL = "all_time";
 const DATE_FILTER_LAST_MONTH = "last_month";
@@ -72,34 +77,8 @@ const isLocallyExpiredPayment = (payment = {}, nowMs = Date.now()) => {
   return Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs;
 };
 
-const getCurrencyFractionDigits = (currency = "USD") => {
-  const normalizedCurrency = String(currency || "USD").toUpperCase();
-  if (normalizedCurrency === "IRR" || normalizedCurrency === "AFN") {
-    return 0;
-  }
-  return 2;
-};
-
-const getCurrencyLabel = (currency = "USD", language = "fa") => {
-  const normalizedCurrency = String(currency || "USD").toUpperCase();
-  if (language !== "fa") return normalizedCurrency;
-
-  if (normalizedCurrency === "USD") return "دالر";
-  if (normalizedCurrency === "USDT") return "USDT";
-  if (normalizedCurrency === "AFN") return "افغانی";
-  if (normalizedCurrency === "IRR") return "ریال";
-  return normalizedCurrency;
-};
-
 const formatPaymentAmount = (amount, currency = "USD", language = "fa") => {
-  const normalizedAmount = Number(amount || 0);
-  const fractionDigits = getCurrencyFractionDigits(currency);
-  const formatted = new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  }).format(normalizedAmount);
-
-  return `${formatted} ${getCurrencyLabel(currency, language)}`;
+  return formatDisplayCurrencyAmount(amount, currency, language);
 };
 
 const formatPaymentMethod = (payment, language = "fa") => {
@@ -154,6 +133,8 @@ const resolveUsdEquivalent = (payment = {}) => {
 const toUiPayment = (payment, t, locale, language = "fa") => {
   const chargeAmount = Number(payment?.gatewayAmount || payment?.amount || 0);
   const chargeCurrency = String(payment?.gatewayCurrency || payment?.currency || "USD").toUpperCase();
+  const displayChargeAmount = getDisplayCurrencyAmount(chargeAmount, chargeCurrency);
+  const displayChargeCurrency = getDisplayCurrency(chargeCurrency);
   const baseAmountNumber = resolveUsdEquivalent(payment);
   const rawStatus = String(payment?.status || payment?.paymentStatus || "pending").toLowerCase();
   const normalizedMethod = String(payment?.paymentMethod || "").toLowerCase();
@@ -184,9 +165,9 @@ const toUiPayment = (payment, t, locale, language = "fa") => {
     description: t.coursePurchase,
     service: payment?.courseId?.title || payment?.course?.title || t.course,
     amount: formatPaymentAmount(chargeAmount, chargeCurrency, language),
-    amountNumber: chargeAmount,
+    amountNumber: displayChargeAmount,
     baseAmountNumber,
-    currency: chargeCurrency,
+    currency: displayChargeCurrency,
     method: formatPaymentMethod(payment, language),
     paymentMethodCode: normalizedMethod,
     status: statusMeta.uiStatus,

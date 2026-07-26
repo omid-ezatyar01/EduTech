@@ -347,10 +347,11 @@ export const getCachedPublishedCourseBySlug = (slug) =>
 export const getCachedPublicCategories = () =>
   readPublicCache(publicCategoryCache, buildPublicCacheKey("public-categories"));
 
-export const enrollCourse = async (courseId) => {
+export const enrollCourse = async (courseId, pricingRegion = "international") => {
   const response = await fetch(`${getApiBase()}/courses/${courseId}/enroll`, {
     method: "POST",
     headers: buildAuthHeaders(),
+    body: JSON.stringify({ pricingRegion }),
   });
 
   const data = await parseJsonResponse(response);

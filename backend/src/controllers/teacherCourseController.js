@@ -31,6 +31,10 @@ import {
 } from "../utils/courseAutoStart.js";
 import { getCoursePublicState } from "../utils/coursePublicState.js";
 import { publishCourseStarted } from "../services/courseNotification.service.js";
+import {
+  normalizeRegionalPrices,
+  validateRegionalPrices,
+} from "../utils/courseRegionalPricing.js";
 
 const buildSort = ({ sortBy = "newest", sortOrder = "desc" }) => {
   if (sortBy === "price") return { price: sortOrder === "asc" ? 1 : -1 };
@@ -145,6 +149,39 @@ const roundCurrencyAmount = (value, decimalPlaces = 2) => {
 const normalizeCoursePriceInput = (value) =>
   roundCurrencyAmount(Math.max(0, Number(value || 0)), 1);
 
+const applyRegionalPricingPayload = (payload, fallbackCourse = null) => {
+  const pricingType = String(payload.pricingType || fallbackCourse?.pricingType || "single");
+  if (pricingType !== "regional") {
+    payload.pricingType = "single";
+    return false;
+  }
+
+  const sourcePrices = payload.prices || fallbackCourse?.prices || {};
+  const validation = validateRegionalPrices(sourcePrices);
+  if (!validation.valid) {
+    throw new ApiError(400, Object.values(validation.errors)[0] || "Regional course prices are invalid");
+  }
+
+  payload.pricingType = "regional";
+  payload.prices = normalizeRegionalPrices(validation.prices);
+  const international = payload.prices.international;
+  const afghanistan = payload.prices.afghanistan;
+  const iran = payload.prices.iran;
+  payload.isFree =
+    international.isFree &&
+    (afghanistan.isFree || afghanistan.useInternationalPrice) &&
+    (iran.isFree || iran.useInternationalPrice);
+  payload.price = international.isFree ? 0 : Number(international.regularPrice || 0);
+  payload.discountPrice =
+    international.isFree ? 0 : Number(international.discountedPrice || 0);
+  payload.teacherDiscountPercentage =
+    payload.price > 0 && payload.discountPrice > 0
+      ? roundCurrencyAmount(((payload.price - payload.discountPrice) / payload.price) * 100)
+      : 0;
+  payload.currency = "USD";
+  return true;
+};
+
 const getApprovedTeacherLanguages = (user) => {
   const seen = new Set();
   const rows = Array.isArray(user?.teacherApplication?.languages)
@@ -213,9 +250,12 @@ export const createTeacherCourse = asyncHandler(async (req, res) => {
   payload.status = "pending";
   payload.lifecycleStatus = "pending_review";
   payload.isPublished = false;
-  payload.currency = "USD";
   payload.isFree = Boolean(payload.isFree);
-  payload.price = normalizeCoursePriceInput(payload.price);
+  const usesRegionalPricing = applyRegionalPricingPayload(payload);
+  if (!usesRegionalPricing) {
+    payload.currency = "USD";
+    payload.price = normalizeCoursePriceInput(payload.price);
+  }
   payload.previewVideoUrls = normalizePreviewVideoUrls(payload.previewVideoUrls);
   payload.promoVideo = payload.previewVideoUrls[0] || "";
   if (payload.agreements) {
@@ -246,7 +286,7 @@ export const createTeacherCourse = asyncHandler(async (req, res) => {
     payload.price = 0;
     payload.discountPrice = 0;
     payload.teacherDiscountPercentage = 0;
-  } else {
+  } else if (!usesRegionalPricing) {
     payload.teacherDiscountPercentage = normalizeTeacherCourseDiscountPercentage(
       payload.teacherDiscountPercentage,
     );
@@ -264,6 +304,15 @@ export const createTeacherCourse = asyncHandler(async (req, res) => {
         `Course price must be at least ${Number(pricing.minTeacherCoursePrice || 0)} USD`,
       );
     }
+  } else if (
+    !payload.prices.international.isFree &&
+    Number(payload.prices.international.regularPrice || 0) <
+      Number(pricing.minTeacherCoursePrice || 0)
+  ) {
+    throw new ApiError(
+      400,
+      `International course price must be at least ${Number(pricing.minTeacherCoursePrice || 0)} USD`,
+    );
   }
   payload.certificate = {
     ...(payload.certificate || {}),
@@ -481,7 +530,18 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
   if (Object.prototype.hasOwnProperty.call(payload, "isFree")) {
     payload.isFree = Boolean(payload.isFree);
   }
-  if (Object.prototype.hasOwnProperty.call(payload, "price")) {
+  const nextPricingType = String(payload.pricingType || existingCourse.pricingType || "single");
+  const usesRegionalPricing = nextPricingType === "regional"
+    ? applyRegionalPricingPayload(payload, existingCourse)
+    : false;
+  if (usesRegionalPricing && payload.certificate) {
+    payload.certificate = {
+      ...payload.certificate,
+      enabled: !payload.isFree,
+      fullPaymentRequired: !payload.isFree,
+    };
+  }
+  if (!usesRegionalPricing && Object.prototype.hasOwnProperty.call(payload, "price")) {
     payload.price = normalizeCoursePriceInput(payload.price);
   }
   if (
@@ -511,6 +571,13 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
   )
     ? normalizeTeacherCourseDiscountPercentage(payload.teacherDiscountPercentage)
     : normalizeTeacherCourseDiscountPercentage(existingCourse.teacherDiscountPercentage);
+  const regionalPricingChanged =
+    String(existingCourse.pricingType || "single") !== String(payload.pricingType || existingCourse.pricingType || "single") ||
+    (
+      usesRegionalPricing &&
+      JSON.stringify(normalizeRegionalPrices(payload.prices || {})) !==
+        JSON.stringify(normalizeRegionalPrices(existingCourse.prices || {}))
+    );
 
   if (Object.prototype.hasOwnProperty.call(payload, "previewVideoUrls")) {
     payload.previewVideoUrls = normalizePreviewVideoUrls(payload.previewVideoUrls);
@@ -541,6 +608,9 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
       normalizeTeacherCourseDiscountPercentage(existingCourse.teacherDiscountPercentage)
     ) {
       pricingChanges.push("teacher discount");
+    }
+    if (regionalPricingChanged) {
+      pricingChanges.push("regional pricing");
     }
 
     if (pricingChanges.length) {
@@ -592,7 +662,7 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Course image is required");
   }
 
-  if (!Boolean(payload.isFree)) {
+  if (!usesRegionalPricing && !Boolean(payload.isFree)) {
     const priceForDiscountCalc = Object.prototype.hasOwnProperty.call(payload, "price")
       ? Number(payload.price || 0)
       : Number(existingCourse.price || 0);
@@ -619,7 +689,11 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
     ? Number(payload.price)
     : Number(existingCourse.price || 0);
 
-  if (!nextIsFree && nextPrice < Number(pricing.minTeacherCoursePrice || 0)) {
+  if (
+    !usesRegionalPricing &&
+    !nextIsFree &&
+    nextPrice < Number(pricing.minTeacherCoursePrice || 0)
+  ) {
     throw new ApiError(
       400,
       `Course price must be at least ${Number(pricing.minTeacherCoursePrice || 0)} USD`,

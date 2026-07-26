@@ -14,18 +14,12 @@ import {
   Eye,
   X,
   ExternalLink,
-  FileText,
-  Star,
-  Languages,
-  Award,
   Video,
   Link as LinkIcon,
   Clock,
   BadgeCheck,
-  Phone,
-  Mail,
-  MapPin,
-  UserRound,
+  BellRing,
+  CheckCircle2,
 } from "lucide-react";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http.js";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -108,6 +102,40 @@ const PAGE_TEXT = {
   "Activate teacher": "فعال‌سازی مدرس",
   "Delete teacher": "حذف مدرس",
   "Review application": "بررسی درخواست",
+  "Review submitted profile": "بررسی پروفایل ارسال‌شده",
+  "A decision is waiting": "یک تصمیم در انتظار است",
+  "Review the application, documents, links, and experience before making a decision.":
+    "پیش از تصمیم‌گیری، درخواست، اسناد، لینک‌ها و تجربه مدرس را بررسی کنید.",
+  "Approve teacher profile": "تایید پروفایل مدرس",
+  "Reject teacher profile": "رد پروفایل مدرس",
+  "Approve this application and give the teacher access to continue.":
+    "این درخواست را تایید کنید تا مدرس بتواند ادامه دهد.",
+  "Return this application with a clear reason the teacher can act on.":
+    "این درخواست را با یک دلیل روشن و قابل اقدام برای مدرس بازگردانید.",
+  "Review checklist": "فهرست بررسی",
+  "I reviewed the profile, experience, documents, and provided links.":
+    "پروفایل، تجربه، اسناد و لینک‌های ارائه‌شده را بررسی کرده‌ام.",
+  "Approval note": "یادداشت تایید",
+  "Optional note for this approval": "یادداشت اختیاری برای این تایید",
+  "Rejection reason": "دلیل رد",
+  "Explain what the teacher needs to fix before submitting again.":
+    "توضیح دهید مدرس پیش از ارسال دوباره چه چیزی را باید اصلاح کند.",
+  "A rejection reason is required.": "دلیل رد الزامی است.",
+  "Notifications": "اعلان‌ها",
+  "Notifications are optional. The profile can be approved without sending an announcement.":
+    "اعلان‌ها اختیاری‌اند. پروفایل می‌تواند بدون ارسال اعلان تایید شود.",
+  "Notification audience": "دریافت‌کنندگان اعلان",
+  Everyone: "همه کاربران",
+  Teachers: "مدرسان",
+  Optional: "اختیاری",
+  "Send web push": "ارسال اعلان وب",
+  "Send Telegram announcement": "ارسال اعلان تلگرام",
+  "No announcement selected": "هیچ اعلانی انتخاب نشده است",
+  "The teacher will be approved without a public announcement.":
+    "مدرس بدون اعلان عمومی تایید خواهد شد.",
+  "Confirm approval": "تایید نهایی",
+  "Confirm rejection": "تایید رد",
+  "Application already reviewed": "درخواست قبلاً بررسی شده است",
   Documents: "اسناد",
   Links: "لینک‌ها",
   Experience: "تجربه",
@@ -415,6 +443,7 @@ export default function AdminTeachersPage() {
   const [teacherApprovalModal, setTeacherApprovalModal] = useState({
     open: false,
     teacherId: "",
+    decision: "approved",
     payload: DEFAULT_APPROVAL_NOTIFICATION_PAYLOAD,
   });
   const [actionLoadingId, setActionLoadingId] = useState("");
@@ -610,7 +639,7 @@ export default function AdminTeachersPage() {
     };
 
     fetchTeachers();
-  }, [applicationStatusFilter, debouncedSearch, page, refreshKey, statusFilter, teachersRequest]);
+  }, [applicationStatusFilter, debouncedSearch, page, pageTr, refreshKey, statusFilter, teachersRequest]);
 
   const statsCards = useMemo(
     () => [
@@ -774,11 +803,12 @@ export default function AdminTeachersPage() {
     }
   };
 
-  const openTeacherApprovalModal = (teacherId) => {
+  const openTeacherReviewModal = (teacherId, decision) => {
     if (!teacherId) return;
     setTeacherApprovalModal({
       open: true,
       teacherId,
+      decision,
       payload: DEFAULT_APPROVAL_NOTIFICATION_PAYLOAD,
     });
   };
@@ -787,17 +817,13 @@ export default function AdminTeachersPage() {
     setTeacherApprovalModal({
       open: false,
       teacherId: "",
+      decision: "approved",
       payload: DEFAULT_APPROVAL_NOTIFICATION_PAYLOAD,
     });
   };
 
   const handleReviewTeacherApplication = async (teacherId, decision, options = {}) => {
-    const note =
-      Object.prototype.hasOwnProperty.call(options, "note")
-        ? options.note
-        : (decision === "rejected"
-          ? window.prompt("Rejection reason:", "Please complete required profile fields.") || ""
-          : "");
+    const note = String(options.note || "").trim();
 
     const notificationPayload = {
       notificationAudience: options.notificationAudience || "all",
@@ -840,17 +866,23 @@ export default function AdminTeachersPage() {
     }
   };
 
-  const handleApproveTeacherWithModal = async () => {
+  const handleTeacherReviewWithModal = async () => {
     if (!teacherApprovalModal.teacherId) return;
     if (!teacherApprovalModal.payload.confirmationChecked) {
-      alert("Please confirm that everything was checked before approval.");
       return;
     }
 
-    await handleReviewTeacherApplication(teacherApprovalModal.teacherId, "approved", {
+    if (teacherApprovalModal.decision === "rejected" && !teacherApprovalModal.payload.note.trim()) {
+      return;
+    }
+
+    await handleReviewTeacherApplication(teacherApprovalModal.teacherId, teacherApprovalModal.decision, {
       note: teacherApprovalModal.payload.note,
       notificationAudience: teacherApprovalModal.payload.notificationAudience,
-      notificationChannels: teacherApprovalModal.payload.notificationChannels,
+      notificationChannels:
+        teacherApprovalModal.decision === "approved"
+          ? teacherApprovalModal.payload.notificationChannels
+          : { push: false, telegram: false },
     });
   };
 
@@ -1113,13 +1145,14 @@ export default function AdminTeachersPage() {
 
       <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-full table-fixed text-sm">
+          <table className="min-w-[1120px] table-fixed text-sm">
             <colgroup>
-              <col className="w-[26%]" />
-              <col className="w-[22%]" />
-              <col className="w-[14%]" />
-              <col className="w-[14%]" />
-              <col className="w-[14%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+              <col className="w-[11%]" />
+              <col className="w-[13%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
               <col className="w-[12%]" />
             </colgroup>
             <thead className="bg-slate-50">
@@ -1127,6 +1160,7 @@ export default function AdminTeachersPage() {
                 <th className={`px-5 py-4 font-bold ${isRTL ? "text-right" : "text-left"}`}>{pageTr("Teacher")}</th>
                 <th className={`px-5 py-4 font-bold ${isRTL ? "text-right" : "text-left"}`}>{pageTr("Email")}</th>
                 <th className={`px-5 py-4 font-bold ${isRTL ? "text-right" : "text-left"}`}>{pageTr("Status")}</th>
+                <th className={`px-5 py-4 font-bold ${isRTL ? "text-right" : "text-left"}`}>{pageTr("Application")}</th>
                 <th className={`px-5 py-4 font-bold ${isRTL ? "text-right" : "text-left"}`}>{pageTr("Joined")}</th>
                 <th className={`px-5 py-4 font-bold ${isRTL ? "text-right" : "text-left"}`}>{pageTr("Contract end date")}</th>
                 <th className="px-5 py-4 text-center font-bold text-slate-500">{pageTr("Actions")}</th>
@@ -1135,7 +1169,7 @@ export default function AdminTeachersPage() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-6">
+                  <td colSpan={7} className="px-5 py-6">
                     <AdminPageLoader
                       label={pageTr("Loading teachers")}
                       minHeight="min-h-[160px]"
@@ -1145,7 +1179,7 @@ export default function AdminTeachersPage() {
                 </tr>
               ) : teachers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center font-bold text-slate-900">
+                  <td colSpan={7} className="px-5 py-12 text-center font-bold text-slate-900">
                     {pageTr("No teachers found for the current filters.")}
                   </td>
                 </tr>
@@ -1175,6 +1209,12 @@ export default function AdminTeachersPage() {
                         </span>
                       </div>
                     </td>
+                    <td className="px-5 py-4 align-middle">
+                      <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-black ${getApplicationStatusStyle(teacher.apiApplicationStatus)}`}>
+                        {teacher.apiApplicationStatus === "submitted" ? <Clock size={13} /> : null}
+                        {mapApplicationStatusToLabel(teacher.apiApplicationStatus, pageTr)}
+                      </span>
+                    </td>
                     <td className="px-5 py-4 align-middle font-semibold text-slate-600">
                       <span className="whitespace-nowrap">{formatDate(teacher.createdAt, language)}</span>
                     </td>
@@ -1189,10 +1229,18 @@ export default function AdminTeachersPage() {
                           type="button"
                           onClick={() => handleViewTeacher(teacher.id)}
                           disabled={actionLoadingId === teacher.id}
-                          className="rounded-xl p-2 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          title={pageTr("View details")}
+                          className={`rounded-xl p-2 transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                            teacher.apiApplicationStatus === "submitted"
+                              ? "bg-primary-50 text-primary-700 hover:bg-primary-100"
+                              : "text-slate-400 hover:bg-blue-50 hover:text-blue-600"
+                          }`}
+                          title={
+                            teacher.apiApplicationStatus === "submitted"
+                              ? pageTr("Review application")
+                              : pageTr("View details")
+                          }
                         >
-                          <Eye size={18} />
+                          {teacher.apiApplicationStatus === "submitted" ? <BadgeCheck size={18} /> : <Eye size={18} />}
                         </button>
                         <button
                           type="button"
@@ -1652,6 +1700,27 @@ export default function AdminTeachersPage() {
                               </article>
                             </div>
 
+                            {applicationStatusRaw === "submitted" ? (
+                              <section className="flex flex-col gap-4 border border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex items-start gap-3">
+                                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-700">
+                                    <Clock size={19} />
+                                  </span>
+                                  <div>
+                                    <p className="text-sm font-black text-amber-950">
+                                      {pageTr("A decision is waiting")}
+                                    </p>
+                                    <p className="mt-1 text-xs font-semibold leading-5 text-amber-800">
+                                      {pageTr("Review the application, documents, links, and experience before making a decision.")}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-amber-700 shadow-sm">
+                                  {pageTr("Review submitted profile")}
+                                </span>
+                              </section>
+                            ) : null}
+
                             <section className="border border-slate-200 bg-white p-5 shadow-sm">
                               <h4 className="text-base font-extrabold text-slate-800">{pageTr("Teacher profile")}</h4>
                               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1948,22 +2017,32 @@ export default function AdminTeachersPage() {
                       >
                         {pageTr("Close")}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleReviewTeacherApplication(selectedTeacher._id, "rejected")}
-                        disabled={actionLoadingId === selectedTeacher._id}
-                        className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {pageTr("Reject profile")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openTeacherApprovalModal(selectedTeacher._id)}
-                        disabled={actionLoadingId === selectedTeacher._id}
-                        className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {pageTr("Approve profile")}
-                      </button>
+                      {applicationStatusRaw === "submitted" ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openTeacherReviewModal(selectedTeacher._id, "rejected")}
+                            disabled={actionLoadingId === selectedTeacher._id}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <UserX size={17} />
+                            {pageTr("Reject profile")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openTeacherReviewModal(selectedTeacher._id, "approved")}
+                            disabled={actionLoadingId === selectedTeacher._id}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <CheckCircle2 size={17} />
+                            {pageTr("Approve profile")}
+                          </button>
+                        </>
+                      ) : (
+                        <span className="self-center text-xs font-bold text-slate-500">
+                          {pageTr("Application already reviewed")}
+                        </span>
+                      )}
                           </div>
                         </div>
                       </div>
@@ -1974,8 +2053,10 @@ export default function AdminTeachersPage() {
             );
           })()
         : null}
-      <TeacherApprovalModal
+      <TeacherReviewDecisionModal
         open={teacherApprovalModal.open}
+        decision={teacherApprovalModal.decision}
+        teacher={selectedTeacher}
         payload={teacherApprovalModal.payload}
         onChange={(updater) =>
           setTeacherApprovalModal((prev) => ({
@@ -1984,126 +2065,256 @@ export default function AdminTeachersPage() {
           }))
         }
         onClose={closeTeacherApprovalModal}
-        onConfirm={handleApproveTeacherWithModal}
+        onConfirm={handleTeacherReviewWithModal}
+        isSubmitting={actionLoadingId === teacherApprovalModal.teacherId}
+        pageTr={pageTr}
+        isRTL={isRTL}
+        language={language}
       />
     </div>
   );
 }
 
-function TeacherApprovalModal({ open, payload, onChange, onClose, onConfirm }) {
+function TeacherReviewDecisionModal({
+  open,
+  decision,
+  teacher,
+  payload,
+  onChange,
+  onClose,
+  onConfirm,
+  isSubmitting,
+  pageTr,
+  isRTL,
+  language,
+}) {
   if (!open) return null;
 
+  const isApproval = decision === "approved";
+  const hasRejectionReason = Boolean(payload.note.trim());
+  const canConfirm =
+    payload.confirmationChecked && (isApproval || hasRejectionReason) && !isSubmitting;
+  const sendsNotification =
+    Boolean(payload.notificationChannels?.push) ||
+    Boolean(payload.notificationChannels?.telegram);
+  const application = teacher?.teacherApplication || {};
+
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 px-4 py-6">
-      <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-xl font-black text-slate-950">Approve teacher profile</h3>
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-              Confirm the profile has been checked, then choose any notifications you want to send.
-            </p>
+    <div
+      className="fixed inset-0 z-[120] flex items-end justify-center bg-slate-950/65 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+      dir={isRTL ? "rtl" : "ltr"}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="teacher-review-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isSubmitting) onClose();
+      }}
+    >
+      <div className="flex max-h-[100dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-slate-200 bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-[28px]">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6 sm:py-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${
+              isApproval ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+            }`}>
+              {isApproval ? <BadgeCheck size={22} /> : <UserX size={22} />}
+            </span>
+            <div className="min-w-0">
+              <h3 id="teacher-review-title" className="text-lg font-black text-slate-950 sm:text-xl">
+                {pageTr(isApproval ? "Approve teacher profile" : "Reject teacher profile")}
+              </h3>
+              <p className="mt-1 truncate text-sm font-bold text-slate-500">
+                {teacher?.name || teacher?.email || pageTr("Teacher")}
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            disabled={isSubmitting}
+            aria-label={pageTr("Close")}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="mt-6 space-y-4">
-          <label className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+          <div className={`rounded-2xl border p-4 ${
+            isApproval
+              ? "border-emerald-100 bg-emerald-50/70"
+              : "border-rose-100 bg-rose-50/70"
+          }`}>
+            <p className={`text-sm font-black ${isApproval ? "text-emerald-950" : "text-rose-950"}`}>
+              {pageTr(
+                isApproval
+                  ? "Approve this application and give the teacher access to continue."
+                  : "Return this application with a clear reason the teacher can act on.",
+              )}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+              <span className="rounded-full bg-white px-2.5 py-1 text-slate-700">
+                {pageTr("Experience")}: {formatNumber(application.yearsExperience || 0, language)} {pageTr("years")}
+              </span>
+              <span className="rounded-full bg-white px-2.5 py-1 text-slate-700">
+                {pageTr("Documents")}: {formatNumber(buildApplicationDocuments(application).length, language)}
+              </span>
+              <span className="rounded-full bg-white px-2.5 py-1 text-slate-700">
+                {pageTr("Submitted")}: {formatDateOnly(application.submittedAt, language)}
+              </span>
+            </div>
+          </div>
+
+          <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3.5 transition ${
+            payload.confirmationChecked
+              ? isApproval
+                ? "border-emerald-300 bg-emerald-50"
+                : "border-rose-300 bg-rose-50"
+              : "border-slate-200 bg-slate-50 hover:border-slate-300"
+          }`}>
             <input
               type="checkbox"
               checked={Boolean(payload.confirmationChecked)}
               onChange={(event) =>
                 onChange((prev) => ({ ...prev, confirmationChecked: event.target.checked }))
               }
-              className="mt-1 h-4 w-4"
+              className={`mt-0.5 h-5 w-5 shrink-0 ${isApproval ? "accent-emerald-600" : "accent-rose-600"}`}
             />
-            <span className="text-sm font-bold text-emerald-900">
-              I checked everything needed before approving this teacher.
+            <span>
+              <span className="block text-sm font-black text-slate-900">{pageTr("Review checklist")}</span>
+              <span className="mt-1 block text-xs font-semibold leading-5 text-slate-600">
+                {pageTr("I reviewed the profile, experience, documents, and provided links.")}
+              </span>
             </span>
           </label>
 
           <div>
-            <label className="mb-1.5 block text-xs font-bold text-slate-600">Approval note</label>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <label className="block text-xs font-black text-slate-700">
+                {pageTr(isApproval ? "Approval note" : "Rejection reason")}
+              </label>
+              {!isApproval ? (
+                <span className="text-[11px] font-bold text-rose-600">{pageTr("A rejection reason is required.")}</span>
+              ) : null}
+            </div>
             <textarea
               value={payload.note}
               onChange={(event) => onChange((prev) => ({ ...prev, note: event.target.value }))}
-              className="min-h-[96px] w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold outline-none"
-              placeholder="Optional note for this approval"
+              className={`min-h-[112px] w-full resize-y rounded-xl border bg-slate-50 p-3 text-sm font-semibold text-slate-900 outline-none transition focus:bg-white focus:ring-4 ${
+                !isApproval && !hasRejectionReason
+                  ? "border-rose-200 focus:border-rose-400 focus:ring-rose-500/10"
+                  : "border-slate-200 focus:border-primary-500 focus:ring-primary-500/10"
+              }`}
+              placeholder={pageTr(
+                isApproval
+                  ? "Optional note for this approval"
+                  : "Explain what the teacher needs to fix before submitting again.",
+              )}
             />
           </div>
 
-          <div>
-            <label className="mb-1.5 block text-xs font-bold text-slate-600">Notification audience</label>
-            <select
-              value={payload.notificationAudience}
-              onChange={(event) =>
-                onChange((prev) => ({ ...prev, notificationAudience: event.target.value }))
-              }
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none"
-            >
-              <option value="all">All</option>
-              <option value="students">Students</option>
-              <option value="teachers">Teachers</option>
-            </select>
-          </div>
+          {isApproval ? (
+            <section className="rounded-2xl border border-slate-200 p-4">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <BellRing size={18} className="mt-0.5 shrink-0 text-primary-600" />
+                  <div>
+                    <p className="text-sm font-black text-slate-900">{pageTr("Notifications")}</p>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                      {pageTr("Notifications are optional. The profile can be approved without sending an announcement.")}
+                    </p>
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${
+                  sendsNotification ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
+                }`}>
+                  {sendsNotification ? pageTr("Active") : pageTr("Optional")}
+                </span>
+              </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800">
-              <input
-                type="checkbox"
-                checked={Boolean(payload.notificationChannels?.push)}
+              <label className="mb-1.5 block text-xs font-black text-slate-700">
+                {pageTr("Notification audience")}
+              </label>
+              <select
+                value={payload.notificationAudience}
                 onChange={(event) =>
                   onChange((prev) => ({
                     ...prev,
-                    notificationChannels: {
-                      ...prev.notificationChannels,
-                      push: event.target.checked,
-                    },
+                    notificationAudience: event.target.value,
                   }))
                 }
-                className="h-4 w-4"
-              />
-              Send web push
-            </label>
-            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800">
-              <input
-                type="checkbox"
-                checked={Boolean(payload.notificationChannels?.telegram)}
-                onChange={(event) =>
-                  onChange((prev) => ({
-                    ...prev,
-                    notificationChannels: {
-                      ...prev.notificationChannels,
-                      telegram: event.target.checked,
-                    },
-                  }))
-                }
-                className="h-4 w-4"
-              />
-              Send Telegram announcement
-            </label>
-          </div>
+                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none focus:border-primary-500"
+              >
+                <option value="all">{pageTr("Everyone")}</option>
+                <option value="students">{pageTr("Students")}</option>
+                <option value="teachers">{pageTr("Teachers")}</option>
+              </select>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {[
+                  ["push", pageTr("Send web push")],
+                  ["telegram", pageTr("Send Telegram announcement")],
+                ].map(([channel, label]) => (
+                  <label
+                    key={channel}
+                    className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 text-sm font-bold transition ${
+                      payload.notificationChannels?.[channel]
+                        ? "border-primary-200 bg-primary-50 text-primary-800"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(payload.notificationChannels?.[channel])}
+                      onChange={(event) =>
+                        onChange((prev) => ({
+                          ...prev,
+                          notificationChannels: {
+                            ...prev.notificationChannels,
+                            [channel]: event.target.checked,
+                          },
+                        }))
+                      }
+                      className="h-4 w-4 accent-primary-600"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              {!sendsNotification ? (
+                <p className="mt-3 text-xs font-semibold text-slate-500">
+                  {pageTr("No announcement selected")}. {pageTr("The teacher will be approved without a public announcement.")}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
         </div>
 
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50/70 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
           <button
             type="button"
             onClick={onClose}
+            disabled={isSubmitting}
             className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
           >
-            Cancel
+            {pageTr("Cancel")}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700"
+            disabled={!canConfirm}
+            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-45 ${
+              isApproval ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"
+            }`}
           >
-            Approve profile
+            {isSubmitting ? (
+              "..."
+            ) : (
+              <>
+                {isApproval ? <CheckCircle2 size={17} /> : <UserX size={17} />}
+                {pageTr(isApproval ? "Confirm approval" : "Confirm rejection")}
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -2170,20 +2381,16 @@ function TeacherAvatar({
   className = "h-10 w-10 rounded-full",
   fallbackClassName = "rounded-full bg-slate-100 font-black text-slate-700",
 }) {
-  const [hasError, setHasError] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState("");
   const initial = (String(name || "-").trim().charAt(0) || "-").toUpperCase();
 
-  useEffect(() => {
-    setHasError(false);
-  }, [avatarUrl]);
-
-  if (avatarUrl && !hasError) {
+  if (avatarUrl && avatarUrl !== failedAvatarUrl) {
     return (
       <img
         src={avatarUrl}
         alt={name || "Teacher"}
         className={`shrink-0 object-cover ${className}`}
-        onError={() => setHasError(true)}
+        onError={() => setFailedAvatarUrl(avatarUrl)}
       />
     );
   }

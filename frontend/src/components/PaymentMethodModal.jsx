@@ -1,5 +1,6 @@
-import { Coins, CreditCard, Landmark, X } from "lucide-react";
+import { Coins, CreditCard, Landmark, MapPin, X } from "lucide-react";
 import { createPortal } from "react-dom";
+import { useRegionalPricing } from "../context/RegionalPricingContext.jsx";
 
 export default function PaymentMethodModal({
   isOpen,
@@ -17,6 +18,7 @@ export default function PaymentMethodModal({
   isBankLoading = false,
 }) {
   const isFa = language === "fa";
+  const { pricingRegion, setPricingRegion } = useRegionalPricing();
   if (!isOpen) return null;
   const normalizedCountryCode = String(bankOptionCountryCode || "").trim().toUpperCase();
   const showBankOption =
@@ -90,6 +92,32 @@ export default function PaymentMethodModal({
         </div>
 
         <div className="space-y-3 px-5 py-5 sm:px-6">
+          <section className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3.5">
+            <div className="flex items-start gap-3">
+              <MapPin size={18} className="mt-0.5 shrink-0 text-primary-600" />
+              <div className="min-w-0 flex-1">
+                <label className="block text-xs font-black text-slate-800">
+                  {isFa ? "منطقه قیمت‌گذاری شما" : "Your pricing region"}
+                </label>
+                <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
+                  {isFa
+                    ? "اگر تشخیص خودکار درست نیست، پیش از پرداخت منطقه را تغییر دهید."
+                    : "If automatic detection is incorrect, change the region before checkout."}
+                </p>
+                <select
+                  value={pricingRegion}
+                  onChange={(event) => setPricingRegion(event.target.value)}
+                  disabled={isLoading || isBankLoading}
+                  className="mt-2 h-10 w-full rounded-xl border border-blue-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-primary-500"
+                >
+                  <option value="afghanistan">{isFa ? "افغانستان (AFN)" : "Afghanistan (AFN)"}</option>
+                  <option value="iran">{isFa ? "ایران (تومان)" : "Iran (Toman)"}</option>
+                  <option value="international">{isFa ? "بین‌المللی (USD)" : "International (USD)"}</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
           <button
             type="button"
             onClick={onSelectHesabPay}
