@@ -1,4 +1,4 @@
-import { Coins, CreditCard, Landmark, MapPin, X } from "lucide-react";
+import { Coins, CreditCard, Landmark, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useRegionalPricing } from "../context/RegionalPricingContext.jsx";
 
@@ -18,7 +18,7 @@ export default function PaymentMethodModal({
   isBankLoading = false,
 }) {
   const isFa = language === "fa";
-  const { pricingRegion, countryName, status } = useRegionalPricing();
+  const { status } = useRegionalPricing();
   const isPricingLoading = status === "loading";
   if (!isOpen) return null;
   const normalizedCountryCode = String(bankOptionCountryCode || "").trim().toUpperCase();
@@ -93,33 +93,6 @@ export default function PaymentMethodModal({
         </div>
 
         <div className="space-y-3 px-5 py-5 sm:px-6">
-          <section className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3.5">
-            <div className="flex items-start gap-3">
-              <MapPin size={18} className="mt-0.5 shrink-0 text-primary-600" />
-              <div className="min-w-0 flex-1">
-                <p className="block text-xs font-black text-slate-800">
-                  {isFa ? "منطقه قیمت‌گذاری تشخیص‌داده‌شده" : "Detected pricing region"}
-                </p>
-                <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
-                  {status === "loading"
-                    ? isFa
-                      ? "در حال بررسی کشور و آماده‌سازی قیمت..."
-                      : "Checking your country and preparing the correct price..."
-                    : isFa
-                      ? "قیمت نمایش‌داده‌شده و مبلغ پرداخت از همین منطقه محاسبه می‌شوند."
-                      : "The displayed price and checkout amount use this same region."}
-                </p>
-                <div className="mt-2 inline-flex rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-black text-slate-800">
-                  {pricingRegion === "afghanistan"
-                    ? isFa ? "افغانستان • افغانی" : "Afghanistan • AFN"
-                    : pricingRegion === "iran"
-                      ? isFa ? "ایران • تومان" : "Iran • Toman"
-                      : isFa ? `بین‌المللی • دالر${countryName ? ` (${countryName})` : ""}` : `International • USD${countryName ? ` (${countryName})` : ""}`}
-                </div>
-              </div>
-            </div>
-          </section>
-
           <button
             type="button"
             onClick={onSelectHesabPay}

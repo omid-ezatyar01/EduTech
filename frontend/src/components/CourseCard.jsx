@@ -181,26 +181,6 @@ export default function CourseCard({
 
   const priceLabel = coursePricing.finalLabel;
   const oldPriceLabel = hasDiscount ? coursePricing.originalLabel : "";
-  const usdBaseLabel =
-    coursePricing.pricingType === "regional" &&
-    coursePricing.currency !== "USD" &&
-    Number(coursePricing.finalPriceUsd) > 0
-      ? `${language === "fa" ? "مبنای پرداخت:" : "Checkout base:"} $${new Intl.NumberFormat("en-US", {
-          minimumFractionDigits: Number.isInteger(Number(coursePricing.finalPriceUsd)) ? 0 : 2,
-          maximumFractionDigits: 2,
-        }).format(Number(coursePricing.finalPriceUsd))} USD`
-      : "";
-  const exchangeRateLabel =
-    coursePricing.pricingType === "regional" &&
-    coursePricing.currency !== "USD" &&
-    Number(coursePricing.usdExchangeRate) > 0
-      ? `${coursePricing.usesInternationalPrice
-          ? language === "fa" ? "نرخ فعلی:" : "Current rate:"
-          : language === "fa" ? "نرخ کورس:" : "Course rate:"} 1 USD = ${new Intl.NumberFormat(
-          language === "fa" ? "fa-AF" : "en-US",
-          { maximumFractionDigits: coursePricing.currency === "TOMAN" ? 0 : 2 },
-        ).format(Number(coursePricing.usdExchangeRate))} ${coursePricing.currency}`
-      : "";
   const legacyCryptoAmountLabel = useCryptoUsdtQuoteLabel(rawPrice, language);
   const cryptoAmountLabel =
     coursePricing.pricingType === "regional"
@@ -594,23 +574,6 @@ export default function CourseCard({
                   </span>
                 </div>
               </div>
-              {usdBaseLabel || exchangeRateLabel ? (
-                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-200 pt-2" dir="ltr">
-                  {usdBaseLabel ? (
-                    <span className="text-[10px] font-bold text-slate-600">
-                      {usdBaseLabel}
-                    </span>
-                  ) : null}
-                  {usdBaseLabel && exchangeRateLabel ? (
-                    <span className="text-slate-300">•</span>
-                  ) : null}
-                  {exchangeRateLabel ? (
-                    <span className="text-[10px] font-semibold text-slate-500">
-                      {exchangeRateLabel}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           ) : (
             <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-700">
