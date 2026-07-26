@@ -15,3 +15,13 @@ verify/.env
 dist/
 build/
 .DS_Store
+
+# Frontend build output
+admin/dist/
+frontend/dist/
+teacher/dist/
+verify/dist/
+
+# Runtime cache
+backend/cache/*
+!backend/cache/.gitkeep
