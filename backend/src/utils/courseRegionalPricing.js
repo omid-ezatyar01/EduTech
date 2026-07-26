@@ -108,10 +108,22 @@ export const validateRegionalPrices = (prices = {}) => {
 
   for (const region of COURSE_PRICING_REGIONS) {
     const row = normalized[region];
+    const inputRow = prices?.[region] || {};
     const disabled = region !== "international" && row.useInternationalPrice;
     if (disabled || row.isFree) continue;
+    if (Number(inputRow.regularPrice) < 0) {
+      errors[`${region}.regularPrice`] = "Regular price cannot be negative";
+    }
+    if (
+      inputRow.discountedPrice !== "" &&
+      inputRow.discountedPrice != null &&
+      Number(inputRow.discountedPrice) < 0
+    ) {
+      errors[`${region}.discountedPrice`] =
+        "Discounted price cannot be negative";
+    }
     if (!(row.regularPrice > 0)) {
-      errors[`${region}.regularPrice`] =
+      errors[`${region}.regularPrice`] ||=
         region === "international"
           ? "International regular price is required"
           : "Regular price is required";
@@ -253,6 +265,47 @@ export const resolveRegionalDisplaySnapshot = async ({
 } = {}) => {
   const region = normalizePricingRegion(requestedRegion);
   const baseUsd = Number(baseAmountUsdCents || 0) / 100;
+  const targetCurrency =
+    region === "afghanistan" ? "AFN" : region === "iran" ? "TOMAN" : "USD";
+
+  if (
+    region !== "international" &&
+    String(resolvedPrice?.currency || "").toUpperCase() !== targetCurrency
+  ) {
+    const quoteCurrency = targetCurrency === "TOMAN" ? "IRR" : "AFN";
+    const rates = await getUsdRatesForCurrencies([quoteCurrency]);
+    const rateRow = rates?.[quoteCurrency] || {};
+    const rawRate = Number(rateRow.rate || 0);
+    if (!(rawRate > 0)) {
+      throw new Error(`Unable to resolve ${targetCurrency} display rate`);
+    }
+    return buildRegionalDisplaySnapshot({
+      resolvedPrice,
+      requestedRegion: region,
+      baseAmountUsdCents,
+      rate: rawRate,
+      rateSource: rateRow.source || "exchange_rate_service",
+      rateRetrievedAt: rateRow.rateRetrievedAt || new Date(),
+    });
+  }
+
+  return buildRegionalDisplaySnapshot({
+    resolvedPrice,
+    requestedRegion: region,
+    baseAmountUsdCents,
+  });
+};
+
+export const buildRegionalDisplaySnapshot = ({
+  resolvedPrice,
+  requestedRegion = "international",
+  baseAmountUsdCents = 0,
+  rate = null,
+  rateSource = "exchange_rate_service",
+  rateRetrievedAt = null,
+} = {}) => {
+  const region = normalizePricingRegion(requestedRegion);
+  const baseUsd = Number(baseAmountUsdCents || 0) / 100;
   if (region === "international") {
     return {
       amount: baseUsd,
@@ -280,10 +333,7 @@ export const resolveRegionalDisplaySnapshot = async ({
     };
   }
 
-  const quoteCurrency = targetCurrency === "TOMAN" ? "IRR" : "AFN";
-  const rates = await getUsdRatesForCurrencies([quoteCurrency]);
-  const rateRow = rates?.[quoteCurrency] || {};
-  const rawRate = Number(rateRow.rate || 0);
+  const rawRate = Number(rate || 0);
   if (!(rawRate > 0)) {
     throw new Error(`Unable to resolve ${targetCurrency} display rate`);
   }
@@ -292,7 +342,7 @@ export const resolveRegionalDisplaySnapshot = async ({
     amount: Math.round(baseUsd * displayRate),
     currency: targetCurrency,
     exchangeRate: roundAmount(displayRate, 6),
-    exchangeRateSource: rateRow.source || "exchange_rate_service",
-    rateRetrievedAt: rateRow.rateRetrievedAt || new Date(),
+    exchangeRateSource: rateSource,
+    rateRetrievedAt: rateRetrievedAt || new Date(),
   };
 };

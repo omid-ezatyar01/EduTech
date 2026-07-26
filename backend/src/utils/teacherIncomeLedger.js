@@ -94,7 +94,7 @@ const resolveRegionMeta = (payment = {}) => {
   if (currency === "AFN") {
     return { key: "afghanistan", label: "Afghanistan", currency };
   }
-  if (currency === "IRR") {
+  if (currency === "IRR" || currency === "TOMAN") {
     return { key: "iran", label: "Iran", currency };
   }
   return { key: "international", label: "International", currency };

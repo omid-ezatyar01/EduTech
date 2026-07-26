@@ -489,11 +489,39 @@ export const createCheckout = async (req, res) => {
     }
 
     const platformCommissionRate = await getTeacherDeductionPercentage();
-    const regionalDisplaySnapshot = await resolveRegionalDisplaySnapshot({
-      resolvedPrice: regionalPrice,
-      requestedRegion: pricingRegion,
-      baseAmountUsdCents,
-    });
+    let hesabPayQuote = null;
+    let regionalDisplaySnapshot;
+    const isAfghanistanHesabPay =
+      method === "HESABPAY_HOSTED" && pricingRegion === "afghanistan";
+
+    if (isAfghanistanHesabPay && regionalPrice?.currency !== "AFN") {
+      hesabPayQuote = await quoteAfnFromUsdCents(baseAmountUsdCents);
+      regionalDisplaySnapshot = {
+        amount: Number(hesabPayQuote.amount || 0),
+        currency: "AFN",
+        exchangeRate: hesabPayQuote.exchangeRate,
+        exchangeRateSource: hesabPayQuote.exchangeRateSource,
+        rateRetrievedAt: hesabPayQuote.rateRetrievedAt,
+      };
+    } else {
+      regionalDisplaySnapshot = await resolveRegionalDisplaySnapshot({
+        resolvedPrice: regionalPrice,
+        requestedRegion: pricingRegion,
+        baseAmountUsdCents,
+      });
+    }
+
+    if (method === "HESABPAY_HOSTED" && !hesabPayQuote) {
+      hesabPayQuote =
+        regionalPrice?.currency === "AFN"
+          ? {
+              amount: Number(regionalPrice.finalPrice || 0),
+              exchangeRate: regionalDisplaySnapshot.exchangeRate,
+              exchangeRateSource: regionalDisplaySnapshot.exchangeRateSource,
+              rateRetrievedAt: regionalDisplaySnapshot.rateRetrievedAt || new Date(),
+            }
+          : await quoteAfnFromUsdCents(baseAmountUsdCents);
+    }
     const order = await findOrCreatePendingOrder(
       {
         userId: req.user._id,
@@ -510,15 +538,7 @@ export const createCheckout = async (req, res) => {
     );
 
     if (method === "HESABPAY_HOSTED") {
-      const quote =
-        regionalPrice?.currency === "AFN"
-          ? {
-              amount: Number(regionalPrice.finalPrice || 0),
-              exchangeRate: null,
-              exchangeRateSource: "regional_course_price",
-              rateRetrievedAt: new Date(),
-            }
-          : await quoteAfnFromUsdCents(baseAmountUsdCents);
+      const quote = hesabPayQuote;
       let paymentAttempt = await PaymentAttempt.findOne({
         orderId: order._id,
         method: "HESABPAY_HOSTED",

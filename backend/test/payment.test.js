@@ -491,6 +491,95 @@ test("HesabPay quote uses AFN and never USDT", async () => {
   assert.notEqual(res.body.currencyTo, "USDT");
 });
 
+test("Afghanistan regional fallback stores the exact AFN amount sent to HesabPay", async () => {
+  const regionalCourse = {
+    ...fakeCourse,
+    _id: new mongoose.Types.ObjectId(),
+    currency: "USD",
+    pricingType: "regional",
+    prices: {
+      afghanistan: {
+        currency: "AFN",
+        regularPrice: 0,
+        discountedPrice: null,
+        isFree: false,
+        useInternationalPrice: true,
+      },
+      iran: {
+        currency: "TOMAN",
+        regularPrice: 0,
+        discountedPrice: null,
+        isFree: false,
+        useInternationalPrice: true,
+      },
+      international: {
+        currency: "USD",
+        regularPrice: 20,
+        discountedPrice: 15,
+        regularPriceUsd: 20,
+        discountedPriceUsd: 15,
+        usdExchangeRate: 1,
+        isFree: false,
+      },
+    },
+  };
+  let storedPayment = null;
+
+  mockingoose(Course).toReturn(regionalCourse, "findById");
+  mockingoose(Course).toReturn(regionalCourse, "findOne");
+  mockingoose(Enrollment).toReturn(null, "findOne");
+  mockingoose(Order).toReturn(null, "findOne");
+  mockingoose(PaymentAttempt).toReturn(null, "findOne");
+  mockingoose(Payment).toReturn((document) => {
+    storedPayment = document.toObject();
+    return document;
+  }, "save");
+
+  nock("https://api.currencyfreaks.test")
+    .get("/v2.0/rates/latest")
+    .query(
+      (query) =>
+        query.apikey === "test-currencyfreaks-key" &&
+        query.symbols === "AFN,IRR,USDT",
+    )
+    .reply(200, { rates: { AFN: 70, IRR: 500000, USDT: 1 } });
+  nock("https://api.hesab.test")
+    .post(
+      "/api/v1/payment/create-session",
+      (body) => body.currency === "AFN" && body.amount === 1050,
+    )
+    .reply(200, {
+      data: {
+        session_id: "hesab-regional-afghanistan",
+        payment_url: "https://checkout.hesab.test/regional-afghanistan",
+      },
+    });
+
+  const res = mockRes();
+  await createCheckout(makeReq({
+    user: {
+      ...fakeStudent,
+      country: "Afghanistan",
+    },
+    body: {
+      courseId: regionalCourse._id,
+      paymentMethod: "HESABPAY_HOSTED",
+      pricingRegion: "iran",
+    },
+  }), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.basePrice.amount, "15.00");
+  assert.equal(Number(res.body.charge.amount), 1050);
+  assert.equal(res.body.charge.currency, "AFN");
+  assert.equal(storedPayment?.pricingRegion, "afghanistan");
+  assert.equal(storedPayment?.sourcePriceAmount, 1050);
+  assert.equal(storedPayment?.sourcePriceCurrency, "AFN");
+  assert.equal(storedPayment?.sourceExchangeRate, 70);
+  assert.equal(storedPayment?.amount, 1050);
+  assert.equal(storedPayment?.gatewayCurrency, "AFN");
+});
+
 test("repeated completion is idempotent and second crypto payment becomes duplicate", async () => {
   const orderId = new mongoose.Types.ObjectId();
   const courseId = new mongoose.Types.ObjectId();
