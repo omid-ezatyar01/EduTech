@@ -24,7 +24,7 @@ const EMPTY_DATA = { ratings: [], feedback: [] };
 const copy = {
   fa: {
     title: "نظرات و بازخورد",
-    subtitle: "نظرهای کورس و استاد را مدیریت کنید و بازخوردهای پلتفرم را تا زمان حل‌شدن پیگیری نمایید.",
+    subtitle: "نظر کورس فوراً منتشر می‌شود؛ این بخش فقط برای گزارش‌ها و محتوای نامناسب است. بازخوردهای پلتفرم را نیز تا زمان حل‌شدن پیگیری کنید.",
     refresh: "تازه‌سازی",
     retry: "تلاش دوباره",
     loading: "در حال بارگذاری نظرات و بازخوردها",
@@ -72,7 +72,7 @@ const copy = {
   },
   en: {
     title: "Reviews & Feedback",
-    subtitle: "Moderate course and teacher reviews, and track platform feedback through resolution.",
+    subtitle: "Course reviews publish immediately; use this area only for reports or inappropriate content, and track platform feedback through resolution.",
     refresh: "Refresh",
     retry: "Try again",
     loading: "Loading reviews and feedback",
@@ -392,7 +392,7 @@ export default function AdminFeedbackPage() {
                     {item.comment ? <p className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold leading-7 text-slate-700">{item.comment}</p> : <p className="mt-4 text-xs font-semibold italic text-slate-400">{text.noComment}</p>}
                     {item.teacherReply ? <div className="mt-3 rounded-xl border-s-4 border-s-blue-400 bg-blue-50/60 px-4 py-3"><p className="text-[11px] font-black text-blue-700">{text.teacherReply}</p><p className="mt-1 text-sm font-semibold text-slate-700">{item.teacherReply}</p></div> : null}
                     <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-                      <button type="button" onClick={() => moderate(item, "published")} disabled={item.moderationStatus === "published" || Boolean(busyKey)} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"><Eye size={14} />{text.publish}</button>
+                      {isTeacherReview ? <button type="button" onClick={() => moderate(item, "published")} disabled={item.moderationStatus === "published" || Boolean(busyKey)} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"><Eye size={14} />{text.publish}</button> : null}
                       <button type="button" onClick={() => moderate(item, "hidden")} disabled={item.moderationStatus === "hidden" || Boolean(busyKey)} className="inline-flex items-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"><EyeOff size={14} />{text.hide}</button>
                       {reportCount ? <span className="inline-flex items-center gap-1.5 rounded-xl bg-rose-100 px-3 py-2 text-xs font-black text-rose-700"><AlertTriangle size={14} />{reportCount} {text.reports}</span> : null}
                     </div>

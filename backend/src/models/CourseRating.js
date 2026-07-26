@@ -46,7 +46,7 @@ const courseRatingSchema = new mongoose.Schema(
     moderationStatus: {
       type: String,
       enum: ["pending", "published", "hidden"],
-      default: "pending",
+      default: "published",
       index: true,
     },
     teacherReply: {

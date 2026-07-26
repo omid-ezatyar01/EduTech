@@ -408,9 +408,13 @@ export const joinStudentLiveSession = async (sessionId) => {
   return data?.data || {};
 };
 
-export const fetchPendingCourseRatings = async () => {
+export const fetchPendingCourseRatings = async (courseId = "") => {
+  const normalizedCourseId = String(courseId || "").trim();
+  const query = normalizedCourseId
+    ? `?courseId=${encodeURIComponent(normalizedCourseId)}`
+    : "";
   const data = await fetchJsonWithCache(
-    `${getApiBase()}/student/ratings/pending`,
+    `${getApiBase()}/student/ratings/pending${query}`,
     { headers: buildAuthHeaders() },
     { ttlMs: 0 },
   );

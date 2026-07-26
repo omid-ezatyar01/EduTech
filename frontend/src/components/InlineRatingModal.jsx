@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Star, X } from "lucide-react";
 import { submitCourseRating, submitTeacherRating, updateStudentRating, updateStudentTeacherRating } from "../../services/courseService.js";
 
@@ -10,7 +10,10 @@ function Stars({ label, value, onChange }) { return <div><p className="mb-2 text
 export default function InlineRatingModal({ open, onClose, courses = [], existingRatings = [], language = "fa", initialCourseId = "", initialTeacherId = "", reviewType = "course", onSaved }) {
   const isFa = language === "fa";
   const isTeacher = reviewType === "teacher";
-  const keyOf = (item) => String(isTeacher ? item.teacherId : item.courseId);
+  const keyOf = useCallback(
+    (item) => String(isTeacher ? item.teacherId : item.courseId),
+    [isTeacher],
+  );
   const options = useMemo(() => { const map = new Map(); courses.forEach((item) => map.set(String(isTeacher ? item.teacherId : item.courseId), item)); existingRatings.forEach((item) => { const key = String(isTeacher ? item.teacherId : item.courseId); if (!map.has(key)) map.set(key, item); }); return [...map.values()]; }, [courses, existingRatings, isTeacher]);
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState(emptyForm);
@@ -18,8 +21,23 @@ export default function InlineRatingModal({ open, onClose, courses = [], existin
   const [error, setError] = useState("");
   const existing = existingRatings.find((item) => keyOf(item) === selectedId);
 
-  useEffect(() => { if (!open) return; const next = String((isTeacher ? initialTeacherId : initialCourseId) || (options[0] ? keyOf(options[0]) : "")); /* eslint-disable-next-line react-hooks/set-state-in-effect */ setSelectedId(next); }, [open, initialCourseId, initialTeacherId, isTeacher, options]);
-  useEffect(() => { const row = existingRatings.find((item) => keyOf(item) === selectedId); /* eslint-disable-next-line react-hooks/set-state-in-effect */ setForm(row ? { rating: Number(isTeacher ? row.teacherRating : row.courseRating), comment: row.comment || "", tags: row.tags || [], displayName: row.displayName !== false } : emptyForm); setError(""); }, [selectedId, existingRatings, isTeacher]);
+  useEffect(() => {
+    if (!open) return;
+    const next = String(
+      (isTeacher ? initialTeacherId : initialCourseId) ||
+        (options[0] ? keyOf(options[0]) : ""),
+    );
+    // Reset the selected review whenever the modal opens for another course.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedId(next);
+  }, [open, initialCourseId, initialTeacherId, isTeacher, keyOf, options]);
+  useEffect(() => {
+    const row = existingRatings.find((item) => keyOf(item) === selectedId);
+    // Keep the editable form synchronized with the selected existing review.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setForm(row ? { rating: Number(isTeacher ? row.teacherRating : row.courseRating), comment: row.comment || "", tags: row.tags || [], displayName: row.displayName !== false } : emptyForm);
+    setError("");
+  }, [selectedId, existingRatings, isTeacher, keyOf]);
   if (!open) return null;
 
   const save = async () => {
@@ -35,7 +53,7 @@ export default function InlineRatingModal({ open, onClose, courses = [], existin
   };
 
   const title = isTeacher ? (isFa ? "نظر درباره استاد" : "Teacher review") : (isFa ? "نظر درباره کورس" : "Course review");
-  return <div className="fixed inset-0 z-[120] overflow-y-auto bg-slate-950/60 p-3 sm:p-6" dir={isFa ? "rtl" : "ltr"}><div className="mx-auto my-4 w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:my-8 sm:p-7"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-black text-slate-950">{title}</h2><p className="mt-1 text-sm font-semibold text-slate-500">{isFa ? "این امتیاز و نظر مستقل ثبت می‌شود." : "This rating and comment are saved independently."}</p></div><button type="button" onClick={onClose} className="rounded-xl border p-2"><X size={20}/></button></div>
+  return <div className="fixed inset-0 z-[120] overflow-y-auto bg-slate-950/60 p-3 sm:p-6" dir={isFa ? "rtl" : "ltr"}><div className="mx-auto my-4 w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:my-8 sm:p-7"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-black text-slate-950">{title}</h2><p className="mt-1 text-sm font-semibold text-slate-500">{isTeacher ? (isFa ? "این امتیاز و نظر مستقل ثبت می‌شود." : "This rating and comment are saved independently.") : (isFa ? "نظر شما بدون انتظار برای تأیید مدیر، فوراً منتشر می‌شود." : "Your review is published immediately without waiting for admin approval.")}</p></div><button type="button" onClick={onClose} className="rounded-xl border p-2"><X size={20}/></button></div>
     {options.length > 1 && <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="mt-5 h-12 w-full rounded-xl border border-slate-200 px-3 font-bold">{options.map((item) => <option key={keyOf(item)} value={keyOf(item)}>{isTeacher ? item.teacherName : item.courseTitle}</option>)}</select>}
     <div className="mt-6"><Stars label={isTeacher ? (isFa ? "امتیاز استاد" : "Teacher rating") : (isFa ? "امتیاز کورس" : "Course rating")} value={form.rating} onChange={(rating) => setForm({...form, rating})}/></div>
     <div className="mt-5 flex flex-wrap gap-2">{TAGS[language].map((tag) => <button type="button" key={tag} onClick={() => setForm({...form, tags: form.tags.includes(tag) ? form.tags.filter((value) => value !== tag) : [...form.tags, tag].slice(0,5)})} className={`rounded-full border px-3 py-2 text-xs font-black ${form.tags.includes(tag) ? "border-primary-600 bg-primary-50 text-primary-700" : "border-slate-200 text-slate-600"}`}>{tag}</button>)}</div>

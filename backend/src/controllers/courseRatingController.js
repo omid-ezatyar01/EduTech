@@ -21,8 +21,10 @@ const normalizeRating = (value, fieldName) => {
 };
 
 export const getPendingStudentCourseRatings = asyncHandler(async (req, res) => {
+  const courseId = String(req.query?.courseId || "").trim() || null;
   const prompts = await getEligibleCourseRatingPrompts(req.user._id, {
-    limit: Math.min(10, Math.max(1, Number(req.query.limit) || 5)),
+    courseId,
+    limit: courseId ? 1 : Math.min(20, Math.max(1, Number(req.query.limit) || 20)),
   });
 
   return res.json(
@@ -41,7 +43,7 @@ export const submitStudentCourseRating = asyncHandler(async (req, res) => {
 
   const prompt = await assertStudentCanRateCourse(req.user._id, courseId);
   if (!prompt) {
-    throw new ApiError(403, "Only enrolled students can rate an active course before it ends");
+    throw new ApiError(403, "Only enrolled students can rate this course");
   }
 
   const courseRating = normalizeRating(req.body?.courseRating, "courseRating");
@@ -66,6 +68,7 @@ export const submitStudentCourseRating = asyncHandler(async (req, res) => {
     comment,
     tags,
     displayName,
+    moderationStatus: "published",
   }).catch((error) => {
     if (error?.code === 11000) {
       throw new ApiError(409, "You have already submitted a rating for this course");
@@ -100,7 +103,7 @@ const ratingPayload = (row) => ({
   comment: row.comment || "",
   tags: Array.isArray(row.tags) ? row.tags : [],
   displayName: row.displayName !== false,
-  moderationStatus: row.moderationStatus || "published",
+  moderationStatus: row.moderationStatus === "hidden" ? "hidden" : "published",
   teacherReply: row.teacherReply || "",
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
@@ -125,6 +128,9 @@ export const updateStudentRating = asyncHandler(async (req, res) => {
   row.comment = String(req.body?.comment || "").trim().slice(0, 500);
   row.tags = [...new Set((Array.isArray(req.body?.tags) ? req.body.tags : []).map((tag) => String(tag || "").trim()).filter(Boolean))].slice(0, 5);
   row.displayName = req.body?.displayName !== false;
+  row.moderationStatus = "published";
+  row.moderatedBy = null;
+  row.moderatedAt = null;
   await row.save();
   await row.populate("courseId", "title thumbnail");
   await row.populate("teacherId", "name avatar");
@@ -266,7 +272,7 @@ export const updateAdminPlatformFeedback = asyncHandler(async (req, res) => {
 });
 
 export const toggleRatingHelpful = asyncHandler(async (req, res) => {
-  let row = await CourseRating.findOne({ _id: req.params.id, moderationStatus: "published" });
+  let row = await CourseRating.findOne({ _id: req.params.id, moderationStatus: { $ne: "hidden" } });
   if (!row) row = await TeacherRating.findOne({ _id: req.params.id, moderationStatus: "published" });
   if (!row) throw new ApiError(404, "Review not found");
   const userId = String(req.user._id);
@@ -277,7 +283,7 @@ export const toggleRatingHelpful = asyncHandler(async (req, res) => {
 });
 
 export const reportRating = asyncHandler(async (req, res) => {
-  let row = await CourseRating.findOne({ _id: req.params.id, moderationStatus: "published" });
+  let row = await CourseRating.findOne({ _id: req.params.id, moderationStatus: { $ne: "hidden" } });
   if (!row) row = await TeacherRating.findOne({ _id: req.params.id, moderationStatus: "published" });
   if (!row) throw new ApiError(404, "Review not found");
   if ((row.reports || []).some((report) => String(report.userId) === String(req.user._id))) throw new ApiError(409, "You already reported this review");

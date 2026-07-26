@@ -28,9 +28,7 @@ import {
 } from "../../services/paymentGateway.js";
 import {
   enrollCourse,
-  fetchPendingCourseRatings,
   fetchPublishedCourseBySlug,
-  fetchStudentRatings,
   getCachedPublishedCourseBySlug,
   fetchStudentEnrollments,
 } from "../../services/courseService.js";
@@ -39,8 +37,6 @@ import PaymentMethodModal from "../components/PaymentMethodModal.jsx";
 import BankPaymentDetailsModal from "../components/BankPaymentDetailsModal.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import ReviewCard from "../components/ReviewCard.jsx";
-import InlineRatingModal from "../components/InlineRatingModal.jsx";
-import { getToken } from "../../services/portal.js";
 import { calculateCourseProgressSnapshot } from "../utils/courseProgress.js";
 import {
   buildCoursePath,
@@ -398,8 +394,6 @@ export default function CourseDetailsPage({ t }) {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [reviewSort, setReviewSort] = useState("newest");
   const [activePreviewIndex, setActivePreviewIndex] = useState(null);
-  const [ratingModalOpen, setRatingModalOpen] = useState(false);
-  const [ratingAccess, setRatingAccess] = useState({ pending: [], submitted: [], loading: false });
   const coursePricing = useCourseRegionalPrice(course, language);
   const isCourseFree = coursePricing.isFree;
   const legacyCryptoAmountLabel = useCryptoUsdtQuoteLabel(Number(course?.price || 0), language);
@@ -486,24 +480,6 @@ export default function CourseDetailsPage({ t }) {
     const timer = window.setInterval(() => setNowMs(Date.now()), 60000);
     return () => window.clearInterval(timer);
   }, []);
-
-  const refreshRatingAccess = async () => {
-    if (!getToken()) return;
-    setRatingAccess((current) => ({ ...current, loading: true }));
-    try {
-      const [pending, submitted] = await Promise.all([fetchPendingCourseRatings(), fetchStudentRatings()]);
-      setRatingAccess({ pending, submitted, loading: false });
-    } catch {
-      setRatingAccess({ pending: [], submitted: [], loading: false });
-    }
-  };
-
-  useEffect(() => {
-    if (!course?._id || !getToken()) return;
-    // Load protected review eligibility when the public course changes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refreshRatingAccess();
-  }, [course?._id]);
 
   useEffect(() => {
     let mounted = true;
@@ -1044,21 +1020,7 @@ export default function CourseDetailsPage({ t }) {
     Math.min(100, Number(course?.certificate?.minimumPassingGrade ?? 60)),
   );
   const courseReviews = Array.isArray(course?.reviews) ? course.reviews : [];
-  const currentCourseId = String(course?._id || course?.id || "");
-  const ownCourseReview = ratingAccess.submitted.find(
-    (item) => String(item.courseId) === currentCourseId,
-  );
-  const ownCourseReviewIsPublic = ownCourseReview && courseReviews.some(
-    (item) => String(item?._id || "") === String(ownCourseReview?._id || ""),
-  );
-  const displayedCourseReviews = ownCourseReview && !ownCourseReviewIsPublic
-    ? [{
-        ...ownCourseReview,
-        rating: Number(ownCourseReview.courseRating || 0),
-        verifiedLearner: true,
-        isOwnReview: true,
-      }, ...courseReviews]
-    : courseReviews;
+  const displayedCourseReviews = courseReviews;
   const sortedCourseReviews = [...displayedCourseReviews].sort((left, right) => reviewSort === "helpful"
     ? Number(right.helpfulCount || 0) - Number(left.helpfulCount || 0)
     : new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
@@ -1810,17 +1772,6 @@ export default function CourseDetailsPage({ t }) {
                   </span>
                 </div>
               </div>
-              {(() => {
-                const courseId = String(course?._id || course?.id || "");
-                const prompt = ratingAccess.pending.find((item) => String(item.courseId) === courseId);
-                const existing = ratingAccess.submitted.find((item) => String(item.courseId) === courseId);
-                const ended = courseEnded;
-                if (ended && existing?.canEdit) return <div className="mt-4"><button type="button" onClick={() => setRatingModalOpen(true)} className="inline-flex min-h-11 items-center rounded-xl bg-primary-600 px-4 text-sm font-black text-white">{language === "fa" ? "ویرایش نظر من" : "Edit my review"}</button><p className="mt-2 text-sm font-bold text-slate-500">{language === "fa" ? "کورس پایان یافته است؛ نظر جدید پذیرفته نمی‌شود." : "The course has ended; new reviews are closed."}</p></div>;
-                if (ended) return <p className="mt-4 rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-600">{language === "fa" ? "این کورس پایان یافته است؛ نظرهای قبلی قابل مشاهده‌اند، اما نظر جدید پذیرفته نمی‌شود." : "This course has ended. Existing reviews remain visible, but new reviews are closed."}</p>;
-                if (prompt || existing?.canEdit) return <button type="button" onClick={() => setRatingModalOpen(true)} className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-primary-600 px-4 text-sm font-black text-white">{existing ? (language === "fa" ? "ویرایش نظر من" : "Edit my review") : (language === "fa" ? "ثبت نظر و امتیاز" : "Rate this course")}</button>;
-                if (getToken() && !ratingAccess.loading) return <p className="mt-4 text-sm font-bold text-slate-500">{language === "fa" ? "فقط شاگردان ثبت‌نام‌شده در این کورس فعال می‌توانند نظر و امتیاز ثبت کنند." : "Only students enrolled in this active course can submit a rating and review."}</p>;
-                return null;
-              })()}
               {Number(course?.ratingCount || 0) > 0 ? (
                 <div className="mt-5 grid gap-5 rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4 sm:grid-cols-[170px_1fr] sm:p-5">
                   <div className="flex flex-col items-center justify-center text-center">
@@ -1836,7 +1787,7 @@ export default function CourseDetailsPage({ t }) {
                       ))}
                     </div>
                     <p className="mt-2 text-xs font-bold text-slate-500">
-                      {course.ratingCount} {language === "fa" ? "نظر تأییدشده" : "verified reviews"}
+                      {course.ratingCount} {language === "fa" ? "نظر شاگردان" : "student reviews"}
                     </p>
                   </div>
                   <div className="space-y-2">
@@ -1870,7 +1821,6 @@ export default function CourseDetailsPage({ t }) {
                     : "No reviews have been posted for this course yet."}
                 </p>
               )}
-              <InlineRatingModal open={ratingModalOpen} onClose={() => setRatingModalOpen(false)} courses={ratingAccess.pending.filter((item) => String(item.courseId) === String(course?._id || course?.id || ""))} existingRatings={ratingAccess.submitted.filter((item) => String(item.courseId) === String(course?._id || course?.id || ""))} initialCourseId={String(course?._id || course?.id || "")} language={language} onSaved={async () => { await refreshRatingAccess(); const fresh = await fetchPublishedCourseBySlug(courseIdentifier, { force: true }); if (fresh) setCourse(fresh); }}/>
             </div>
 
           </div>

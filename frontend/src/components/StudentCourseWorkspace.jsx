@@ -8,7 +8,8 @@ import {
   Download,
   FolderOpen,
   MonitorPlay,
-  PlayCircle,
+  MessageSquareHeart,
+  Star,
   Target,
   Video,
   Wallet,
@@ -19,8 +20,11 @@ import StudentLayout from "./StudentLayout.jsx";
 import {
   fetchStudentAssignments,
   fetchStudentEnrollments,
+  fetchPendingCourseRatings,
   fetchStudentResources,
+  fetchStudentRatings,
 } from "../../services/courseService.js";
+import InlineRatingModal from "./InlineRatingModal.jsx";
 import { clearAuth, setAuthNotice } from "../../services/portal.js";
 import {
   getLocalizedRequestErrorMessage,
@@ -156,7 +160,6 @@ function buildMockStudentWorkspaceData({
   learningPoints = [],
   requirementPoints = [],
   audiencePoints = [],
-  scheduleRows = [],
   language = "fa",
 }) {
   const isFa = language === "fa";
@@ -194,30 +197,6 @@ function buildMockStudentWorkspaceData({
         : index === completedUnits
           ? "bg-primary-50 text-primary-700 border-primary-200"
           : "bg-slate-50 text-slate-600 border-slate-200",
-  }));
-
-  const sessionTimeline = (scheduleRows.length ? scheduleRows : [
-    { day: isFa ? "دوشنبه" : "Monday", startTime: "18:00", endTime: "19:30" },
-    { day: isFa ? "چهارشنبه" : "Wednesday", startTime: "18:00", endTime: "19:30" },
-    { day: isFa ? "جمعه" : "Friday", startTime: "17:00", endTime: "18:00" },
-  ]).slice(0, 4).map((row, index) => ({
-    title:
-      index === 0
-        ? (isFa ? "جلسه بعدی صنف" : "Next live session")
-        : index === 1
-          ? (isFa ? "لابراتوار تمرین" : "Practice lab")
-          : index === 2
-            ? (isFa ? "جلسه رفع اشکال" : "Q&A clinic")
-            : (isFa ? "ارزیابی هفتگی" : "Weekly checkpoint"),
-    date: `${row?.day || (isFa ? "به‌زودی" : "Soon")} • ${row?.startTime || "--"} - ${row?.endTime || "--"}`,
-    note:
-      index === 0
-        ? (isFa ? "ورود مستقیم از بخش صنف آنلاین در زمان شروع." : "Join directly from the live class section at start time.")
-        : index === 1
-          ? (isFa ? "برای تمرین عملی و نمونه‌کار این جلسه را از دست ندهید." : "Use this session for practical work and guided exercises.")
-          : index === 2
-            ? (isFa ? "سوالات درس و تکلیف در این بخش بررسی می‌شود." : "Bring lesson and assignment questions to this session.")
-            : (isFa ? "پیشرفت شما در پایان هفته مرور می‌شود." : "Your weekly progress is reviewed here."),
   }));
 
   const resourceGroups = [
@@ -298,7 +277,6 @@ function buildMockStudentWorkspaceData({
     pendingAssignments,
     downloadableFiles,
     studyModules,
-    sessionTimeline,
     resourceGroups,
     announcements,
     questionThreads,
@@ -319,6 +297,10 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
   const [enrollment, setEnrollment] = useState(null);
   const [courseAssignments, setCourseAssignments] = useState([]);
   const [courseResources, setCourseResources] = useState([]);
+  const [ratingPrompts, setRatingPrompts] = useState([]);
+  const [studentRatings, setStudentRatings] = useState([]);
+  const [ratingModalOpen, setRatingModalOpen] = useState(false);
+  const [ratingNotice, setRatingNotice] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -327,10 +309,18 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
       try {
         setLoading(true);
         setError("");
-        const [enrollmentResult, assignmentsResult, resourcesResult] = await Promise.allSettled([
+        const [
+          enrollmentResult,
+          assignmentsResult,
+          resourcesResult,
+          ratingPromptsResult,
+          studentRatingsResult,
+        ] = await Promise.allSettled([
           fetchStudentEnrollments(),
           fetchStudentAssignments(),
           fetchStudentResources(),
+          fetchPendingCourseRatings(),
+          fetchStudentRatings(),
         ]);
         if (!mounted) return;
         if (enrollmentResult.status === "rejected") {
@@ -355,6 +345,33 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
           : [];
         setCourseAssignments(assignmentRows);
         setCourseResources(resourceRows);
+        let nextRatingPrompts =
+          ratingPromptsResult.status === "fulfilled" &&
+          Array.isArray(ratingPromptsResult.value)
+            ? ratingPromptsResult.value
+            : [];
+        const matchedCourseId = String(matchedCourse?._id || matchedCourse?.id || "");
+        const hasCoursePrompt = nextRatingPrompts.some(
+          (item) => String(item?.courseId || "") === matchedCourseId,
+        );
+        if (matchedCourseId && !hasCoursePrompt) {
+          try {
+            const exactPrompts = await fetchPendingCourseRatings(matchedCourseId);
+            if (!mounted) return;
+            if (Array.isArray(exactPrompts) && exactPrompts.length) {
+              nextRatingPrompts = exactPrompts;
+            }
+          } catch {
+            // The course remains usable if the optional rating prompt cannot load.
+          }
+        }
+        setRatingPrompts(nextRatingPrompts);
+        setStudentRatings(
+          studentRatingsResult.status === "fulfilled" &&
+          Array.isArray(studentRatingsResult.value)
+            ? studentRatingsResult.value
+            : [],
+        );
       } catch (err) {
         if (!mounted) return;
         if (isUnauthorizedError(err)) {
@@ -383,17 +400,38 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
     };
   }, [id, language, navigate]);
 
-  const course = enrollment?.courseId || {};
+  const course = useMemo(() => enrollment?.courseId || {}, [enrollment?.courseId]);
+  const courseId = String(course?._id || course?.id || "");
+  const ratingPrompt = ratingPrompts.find(
+    (item) => String(item?.courseId || "") === courseId,
+  );
+  const existingRating = studentRatings.find(
+    (item) => String(item?.courseId || "") === courseId,
+  );
   const teacher = course?.teacher || {};
   const teacherAvatar = resolveAvatarUrl(String(teacher?.avatar || "").trim());
   const teacherName = String(teacher?.name || (isFa ? "مدرس کورس" : "Course Instructor")).trim();
+  const enrollmentCanRate = ["active", "completed"].includes(
+    String(enrollment?.enrollmentStatus || "").toLowerCase(),
+  ) && String(enrollment?.accessStatus || "allowed").toLowerCase() === "allowed";
+  const courseRatingOption =
+    ratingPrompt ||
+    (!existingRating && enrollmentCanRate && courseId
+      ? {
+          courseId,
+          courseTitle: course?.title || (isFa ? "کورس" : "Course"),
+        }
+      : null);
   const teacherInitials = getInitials(teacherName);
   const courseImage = resolveAvatarUrl(
     String(course?.thumbnail || "").trim(),
     course?.updatedAt || course?.createdAt || "",
   ) || COURSE_IMAGE_FALLBACK;
   const teacherPath = buildTeacherPath(teacher);
-  const scheduleRows = Array.isArray(course?.schedule) ? course.schedule : [];
+  const scheduleRows = useMemo(
+    () => (Array.isArray(course?.schedule) ? course.schedule : []),
+    [course],
+  );
   const learningPoints = normalizeList(course?.whatYouWillLearn || course?.curriculumTopics || []);
   const requirementPoints = normalizeList(course?.requirements || []);
   const audiencePoints = normalizeList(course?.targetAudience || []);
@@ -467,7 +505,6 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
         learningPoints,
         requirementPoints,
         audiencePoints,
-        scheduleRows,
         language,
       }),
     [
@@ -477,7 +514,6 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
       language,
       learningPoints,
       requirementPoints,
-      scheduleRows,
       teacherName,
     ],
   );
@@ -507,6 +543,20 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
       text: isFa ? "مشاهده سرتیفیکیت‌ها و وضعیت تکمیل کورس‌ها." : "View your certificates and course completion status.",
     },
   ];
+
+  const refreshCourseRating = async () => {
+    const [nextPrompts, nextRatings] = await Promise.all([
+      fetchPendingCourseRatings(),
+      fetchStudentRatings(),
+    ]);
+    setRatingPrompts(Array.isArray(nextPrompts) ? nextPrompts : []);
+    setStudentRatings(Array.isArray(nextRatings) ? nextRatings : []);
+    setRatingNotice(
+      isFa
+        ? "امتیاز و نظر شما فوراً ثبت و منتشر شد."
+        : "Your rating and comment were published immediately.",
+    );
+  };
 
   if (loading) {
     return (
@@ -668,6 +718,72 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
         </div>
       </section>
 
+      {(courseRatingOption || existingRating) ? (
+        <section className="mt-6 overflow-hidden rounded-[24px] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-primary-50 p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                <MessageSquareHeart size={22} />
+              </span>
+              <div>
+                <h2 className="text-lg font-black text-slate-950">
+                  {existingRating
+                    ? isFa
+                      ? "نظر شما درباره این کورس"
+                      : "Your review of this course"
+                    : isFa
+                      ? "تجربه خود را با ما شریک کنید"
+                      : "Share your course experience"}
+                </h2>
+                <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-slate-600">
+                  {existingRating
+                    ? isFa
+                      ? "نظر شما منتشر شده است و هر زمان می‌توانید آن را ویرایش کنید."
+                      : "Your review is published. You can edit it whenever needed."
+                    : isFa
+                      ? "به کورس امتیاز بدهید و نظر خود را بنویسید؛ نتیجه فوراً منتشر می‌شود."
+                      : "Rate the course and add a comment. It will be published immediately."}
+                </p>
+                {existingRating ? (
+                  <div className="mt-3 flex items-center gap-1" dir="ltr">
+                    {[1, 2, 3, 4, 5].map((score) => (
+                      <Star
+                        key={score}
+                        size={18}
+                        className="text-amber-500"
+                        fill={score <= Number(existingRating.courseRating || 0) ? "currentColor" : "none"}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setRatingNotice("");
+                setRatingModalOpen(true);
+              }}
+              className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-black text-white shadow-lg shadow-primary-600/20 transition hover:bg-primary-700"
+            >
+              <Star size={18} />
+              {existingRating
+                ? isFa
+                  ? "ویرایش امتیاز و نظر"
+                  : "Edit rating and comment"
+                : isFa
+                  ? "ثبت امتیاز و نظر"
+                  : "Rate and comment"}
+            </button>
+          </div>
+          {ratingNotice ? (
+            <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700">
+              {ratingNotice}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       <div className="mt-6">
         <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -786,36 +902,15 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
         </section>
       </div>
 
-      <div className="mt-6">
-        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
-              <PlayCircle size={20} />
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-slate-950">
-                {isFa ? "جلسات و فعالیت‌های پیش رو" : "Upcoming Sessions & Activities"}
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                {isFa ? "آنچه در ادامه این کورس باید دنبال کنید." : "What to keep track of next in this course."}
-              </p>
-            </div>
-          </div>
-          <div className="mt-5 space-y-3">
-            {workspaceData.sessionTimeline.map((item) => (
-              <div key={`${item.title}-${item.date}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm font-black text-slate-900">{item.title}</p>
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">
-                    {item.date}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-6 text-slate-600">{item.note}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
+      <InlineRatingModal
+        open={ratingModalOpen}
+        onClose={() => setRatingModalOpen(false)}
+        courses={courseRatingOption ? [courseRatingOption] : []}
+        existingRatings={existingRating ? [existingRating] : []}
+        initialCourseId={courseId}
+        language={language}
+        onSaved={refreshCourseRating}
+      />
 
     </StudentLayout>
   );

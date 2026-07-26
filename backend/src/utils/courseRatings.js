@@ -13,6 +13,11 @@ const activeEnrollmentFilter = (now = new Date()) => ({
   ],
 });
 
+const courseRatingEnrollmentFilter = () => ({
+  enrollmentStatus: { $in: ["active", "completed"] },
+  accessStatus: "allowed",
+});
+
 const toObjectId = (value) =>
   mongoose.isValidObjectId(value) ? new mongoose.Types.ObjectId(value) : null;
 
@@ -34,7 +39,7 @@ export const getEligibleCourseRatingPrompts = async (
 
   const filter = {
     studentId: studentObjectId,
-    ...activeEnrollmentFilter(),
+    ...courseRatingEnrollmentFilter(),
   };
   if (courseObjectId) filter.courseId = courseObjectId;
 
@@ -59,7 +64,6 @@ export const getEligibleCourseRatingPrompts = async (
     if (
       course.status !== "published" ||
       course.isPublished !== true ||
-      course.classEndedAt ||
       course.classCancelledAt
     ) continue;
 
@@ -130,7 +134,7 @@ export const getCourseRatingAggregates = async (courseIds = []) => {
   if (!ids.length) return new Map();
 
   const rows = await CourseRating.aggregate([
-    { $match: { courseId: { $in: ids }, moderationStatus: "published" } },
+    { $match: { courseId: { $in: ids }, moderationStatus: { $ne: "hidden" } } },
     {
       $group: {
         _id: "$courseId",
@@ -217,7 +221,7 @@ export const getPublicCourseReviews = async (courseId, { limit = 20 } = {}) => {
 
   const rows = await CourseRating.find({
     courseId: courseObjectId,
-    moderationStatus: "published",
+    moderationStatus: { $ne: "hidden" },
   })
     .populate("studentId", "name")
     .populate("courseId", "title")
