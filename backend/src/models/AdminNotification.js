@@ -9,6 +9,7 @@ const adminNotificationSchema = new mongoose.Schema(
         "course_end_review",
         "course_minimum_override",
         "teacher_application_review",
+        "teacher_bank_payment_review",
       ],
       required: true,
       index: true,

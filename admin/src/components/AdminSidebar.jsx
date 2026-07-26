@@ -15,6 +15,7 @@ import {
   Clapperboard,
   Newspaper,
   MessageSquareHeart,
+  Landmark,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -30,6 +31,7 @@ const menuItems = [
   { key: "articles", icon: Newspaper, path: "/articles" },
   { key: "payments", icon: CreditCard, path: "/payments" },
   { key: "teacherIncome", icon: Wallet, path: "/teacher-income" },
+  { key: "bankReviews", icon: Landmark, path: "/teacher-bank-reviews" },
   { key: "coupons", icon: Ticket, path: "/coupons" },
   { key: "messages", icon: Mail, path: "/messages" },
   { key: "reports", icon: BarChart3, path: "/reports" },

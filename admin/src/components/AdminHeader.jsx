@@ -9,6 +9,7 @@ import {
   Search,
   Trash2,
   UserCheck,
+  Landmark,
   X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -141,9 +142,11 @@ export default function AdminHeader({ admin, onMenuClick }) {
 
     setIsNotificationsOpen(false);
     navigate(
-      notification.type === "teacher_application_review"
-        ? "/teachers"
-        : "/courses?status=pending",
+      notification.type === "teacher_bank_payment_review"
+        ? "/teacher-bank-reviews"
+        : notification.type === "teacher_application_review"
+          ? "/teachers"
+          : "/courses?status=pending",
     );
   };
 
@@ -294,11 +297,15 @@ export default function AdminHeader({ admin, onMenuClick }) {
                           className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${
                             notification.type === "teacher_application_review"
                               ? "bg-blue-100 text-blue-700"
+                              : notification.type === "teacher_bank_payment_review"
+                                ? "bg-emerald-100 text-emerald-700"
                               : "bg-amber-100 text-amber-700"
                           }`}
                         >
                           {notification.type === "teacher_application_review" ? (
                             <UserCheck size={18} />
+                          ) : notification.type === "teacher_bank_payment_review" ? (
+                            <Landmark size={18} />
                           ) : (
                             <BookOpenCheck size={18} />
                           )}
@@ -308,14 +315,18 @@ export default function AdminHeader({ admin, onMenuClick }) {
                             {language === "fa"
                               ? notification.type === "teacher_application_review"
                                 ? "درخواست استاد برای بررسی"
-                                : "کورس جدید برای بررسی"
+                                : notification.type === "teacher_bank_payment_review"
+                                  ? "اطلاعات بانکی برای بررسی"
+                                  : "کورس جدید برای بررسی"
                               : notification.title}
                           </span>
                           <span className="mt-1 block break-words text-xs font-semibold leading-5 text-slate-600">
                             {language === "fa"
                               ? notification.type === "teacher_application_review"
                                 ? `${notification.teacherName || "یک استاد"} فورم درخواست استادی را برای بررسی فرستاد.`
-                                : `${notification.teacherName || "یک استاد"} کورس «${notification.courseTitle || ""}» را برای بررسی فرستاد.`
+                                : notification.type === "teacher_bank_payment_review"
+                                  ? `${notification.teacherName || "یک استاد"} اطلاعات کارت یا حساب خود را برای بررسی فرستاد.`
+                                  : `${notification.teacherName || "یک استاد"} کورس «${notification.courseTitle || ""}» را برای بررسی فرستاد.`
                               : notification.message}
                           </span>
                           <span className="mt-1.5 block text-[10px] font-bold text-slate-400">

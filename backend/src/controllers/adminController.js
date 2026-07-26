@@ -7,6 +7,7 @@ import Course from "../models/Course.js";
 import Payment from "../models/Payment.js";
 import Enrollment from "../models/Enrollment.js";
 import User from "../models/User.js";
+import AdminNotification from "../models/AdminNotification.js";
 import AppSetting from "../models/AppSetting.js";
 import {
   normalizeGlobalCourseDiscountPercentage,
@@ -23,6 +24,7 @@ import {
   sendTelegramTeacherAnnouncementByAdmin,
 } from "../services/telegramAnnouncement.service.js";
 import { buildCertificateId, normalizeCertificateId } from "../utils/certificate.js";
+import { validateAndNormalizeBankPaymentInfo } from "../utils/bankPaymentInfo.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -742,6 +744,74 @@ export const getAllTeachers = async (req, res) => {
   }
 };
 
+// @desc    Get teacher bank/card submissions awaiting admin review
+// @route   GET /api/v1/admin/teacher-bank-reviews
+// @access  Admin
+export const getTeacherBankPaymentReviews = async (req, res) => {
+  try {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const status = String(req.query.status || "pending").trim();
+    const search = String(req.query.search || "").trim();
+    const filter = { role: "teacher" };
+
+    if (status) {
+      filter["bankPaymentReview.status"] = status;
+    }
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+        {
+          "bankPaymentReview.pendingInfo.accountHolderName": {
+            $regex: search,
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+    const [teachers, total, statusCounts] = await Promise.all([
+      User.find(filter)
+        .select(
+          "name email phone avatar bankPaymentInfo bankPaymentReview createdAt updatedAt",
+        )
+        .populate("bankPaymentReview.reviewedBy", "name email")
+        .sort({ "bankPaymentReview.submittedAt": -1, updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      User.countDocuments(filter),
+      User.aggregate([
+        { $match: { role: "teacher" } },
+        {
+          $group: {
+            _id: { $ifNull: ["$bankPaymentReview.status", "not_submitted"] },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    return res.json({
+      teachers,
+      counts: Object.fromEntries(
+        statusCounts.map((item) => [String(item._id), Number(item.count || 0)]),
+      ),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Get issued certificate records for admin review
 // @route   GET /api/v1/admin/certificates
 // @access  Admin
@@ -1137,6 +1207,57 @@ export const reviewTeacherApplicationByAdmin = async (req, res) => {
     return res.status(500).json({
       message: error.message,
     });
+  }
+};
+
+// @desc    Approve or reject a teacher bank/card submission
+// @route   PATCH /api/v1/admin/teachers/:id/bank-payment-review
+// @access  Admin
+export const reviewTeacherBankPaymentInfoByAdmin = async (req, res) => {
+  try {
+    const teacher = await User.findOne({ _id: req.params.id, role: "teacher" });
+    if (!teacher) {
+      return res.status(404).json({ message: "Teacher not found" });
+    }
+    if (teacher.bankPaymentReview?.status !== "pending") {
+      return res.status(409).json({
+        message: "This bank/card submission is no longer pending review",
+      });
+    }
+
+    const decision = String(req.body.decision || "");
+    const note = String(req.body.note || "").trim();
+    const pendingInfo = validateAndNormalizeBankPaymentInfo(
+      teacher.bankPaymentReview?.pendingInfo || {},
+    );
+    if (pendingInfo?.error) {
+      return res.status(400).json({
+        message: `Submitted payment details are invalid: ${pendingInfo.error}`,
+      });
+    }
+
+    if (decision === "approved") {
+      teacher.bankPaymentInfo = pendingInfo;
+    }
+    teacher.bankPaymentReview.status = decision;
+    teacher.bankPaymentReview.reviewedAt = new Date();
+    teacher.bankPaymentReview.reviewedBy = req.user._id;
+    teacher.bankPaymentReview.reviewNote = note;
+    await teacher.save();
+
+    await AdminNotification.deleteOne({
+      dedupeKey: `teacher_bank_payment_review:${teacher._id}`,
+    }).catch(() => {});
+
+    return res.json({
+      message:
+        decision === "approved"
+          ? "Teacher payment details approved successfully"
+          : "Teacher payment details rejected successfully",
+      teacher: cleanUser(teacher),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 
