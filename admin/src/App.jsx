@@ -24,6 +24,7 @@ const loadAdminVideosPage = () => import("./pages/AdminVideosPage");
 const loadAdminArticlesPage = () => import("./pages/AdminArticlesPage");
 const loadAdminPaymentsPage = () => import("./pages/AdminPaymentsPage");
 const loadAdminTeacherIncomePage = () => import("./pages/AdminTeacherIncomePage");
+const loadAdminTeacherBankReviewsPage = () => import("./pages/AdminTeacherBankReviewsPage");
 const loadAdminCouponsPage = () => import("./pages/AdminCouponsPage");
 const loadAdminMessagesPage = () => import("./pages/AdminMessagesPage");
 const loadAdminReportsPage = () => import("./pages/AdminReportsPage");
@@ -41,6 +42,7 @@ const AdminVideosPage = lazy(loadAdminVideosPage);
 const AdminArticlesPage = lazy(loadAdminArticlesPage);
 const AdminPaymentsPage = lazy(loadAdminPaymentsPage);
 const AdminTeacherIncomePage = lazy(loadAdminTeacherIncomePage);
+const AdminTeacherBankReviewsPage = lazy(loadAdminTeacherBankReviewsPage);
 const AdminCouponsPage = lazy(loadAdminCouponsPage);
 const AdminMessagesPage = lazy(loadAdminMessagesPage);
 const AdminReportsPage = lazy(loadAdminReportsPage);
@@ -60,6 +62,7 @@ const preloadRoutes = [
   { key: "articles", test: (path) => path === "/articles", load: loadAdminArticlesPage },
   { key: "payments", test: (path) => path === "/payments", load: loadAdminPaymentsPage },
   { key: "teacher-income", test: (path) => path === "/teacher-income", load: loadAdminTeacherIncomePage },
+  { key: "teacher-bank-reviews", test: (path) => path === "/teacher-bank-reviews", load: loadAdminTeacherBankReviewsPage },
   { key: "coupons", test: (path) => path === "/coupons", load: loadAdminCouponsPage },
   { key: "messages", test: (path) => path === "/messages", load: loadAdminMessagesPage },
   { key: "reports", test: (path) => path === "/reports", load: loadAdminReportsPage },
@@ -95,6 +98,7 @@ const KNOWN_ADMIN_ROUTE_SUFFIXES = [
   "/articles",
   "/payments",
   "/teacher-income",
+  "/teacher-bank-reviews",
   "/coupons",
   "/messages",
   "/reports",
@@ -303,6 +307,7 @@ function AppContent() {
             <Route path="/articles" element={<AdminArticlesPage />} />
             <Route path="/payments" element={<AdminPaymentsPage />} />
             <Route path="/teacher-income" element={<AdminTeacherIncomePage />} />
+            <Route path="/teacher-bank-reviews" element={<AdminTeacherBankReviewsPage />} />
             <Route path="/coupons" element={<AdminCouponsPage />} />
             <Route path="/messages" element={<AdminMessagesPage />} />
             <Route path="/reports" element={<AdminReportsPage />} />

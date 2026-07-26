@@ -6,12 +6,14 @@ import {
   Loader2,
   Lock,
   ShieldCheck,
+  Clock3,
+  AlertCircle,
 } from "lucide-react";
 import { getDisplayCurrency } from "../utils/currencyDisplay";
 import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPasswordInput from "../components/auth/TeacherPasswordInput";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
-import { changeTeacherPassword } from "../../services/authService";
+import { changeTeacherPassword, getCurrentUser } from "../../services/authService";
 import { updateTeacherProfile } from "../../services/teacherPortalService";
 import {
   PORTAL_CONFIG,
@@ -30,9 +32,6 @@ const normalizeLocaleDigits = (value = "") =>
     if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660);
     return char;
   });
-
-const normalizeDigitsOnly = (value = "") =>
-  normalizeLocaleDigits(value).replace(/[^\d]/g, "");
 
 const normalizeCardNumberValue = (value = "") =>
   normalizeLocaleDigits(value).replace(/[\s-]+/g, "");
@@ -186,9 +185,21 @@ const validateBankForm = (form = {}, isFa = true) => {
 const hasSavedBankPaymentInfo = (form = {}) =>
   Object.values(normalizeBankForm(form)).some(Boolean);
 
-const shouldLockBankForm = (form = {}) => {
-  const normalized = normalizeBankForm(form);
-  return hasSavedBankPaymentInfo(normalized) && ["AF", "IR"].includes(normalized.country);
+const getTeacherBankReviewState = (user = {}) => {
+  const review = user?.bankPaymentReview || {};
+  const pendingInfo = normalizeBankForm(review.pendingInfo || {});
+  const approvedInfo = normalizeBankForm(user?.bankPaymentInfo || {});
+  const status =
+    review.status && review.status !== "not_submitted"
+      ? review.status
+      : hasSavedBankPaymentInfo(approvedInfo)
+        ? "approved"
+        : "not_submitted";
+  return {
+    status,
+    reviewNote: String(review.reviewNote || ""),
+    form: ["pending", "rejected"].includes(status) ? pendingInfo : approvedInfo,
+  };
 };
 
 export default function TeacherSettings() {
@@ -201,24 +212,16 @@ export default function TeacherSettings() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [bankForm, setBankForm] = useState(() => {
-    const user = getAuthUser() || {};
-    return normalizeBankForm({
-      country: user?.bankPaymentInfo?.country || "",
-      accountHolderName: user?.bankPaymentInfo?.accountHolderName || "",
-      bankName: user?.bankPaymentInfo?.bankName || "",
-      accountNumber: user?.bankPaymentInfo?.accountNumber || "",
-      cardNumber: user?.bankPaymentInfo?.cardNumber || "",
-      iban: user?.bankPaymentInfo?.iban || "",
-      swiftCode: user?.bankPaymentInfo?.swiftCode || "",
-      currency: user?.bankPaymentInfo?.currency || "",
-      paymentNote: user?.bankPaymentInfo?.paymentNote || user?.bankPaymentInfo?.note || "",
-    });
+    return getTeacherBankReviewState(getAuthUser() || {}).form;
   });
+  const [bankReview, setBankReview] = useState(() =>
+    getTeacherBankReviewState(getAuthUser() || {}),
+  );
   const [bankError, setBankError] = useState("");
   const [bankSuccess, setBankSuccess] = useState("");
   const [isSavingBankInfo, setIsSavingBankInfo] = useState(false);
   const [isBankFormLocked, setIsBankFormLocked] = useState(() =>
-    shouldLockBankForm(getAuthUser()?.bankPaymentInfo || {}),
+    getTeacherBankReviewState(getAuthUser() || {}).status !== "not_submitted",
   );
 
   const teacher = useMemo(() => {
@@ -238,6 +241,25 @@ export default function TeacherSettings() {
     }, 1600);
     return () => window.clearTimeout(timer);
   }, [isComplete]);
+
+  useEffect(() => {
+    let active = true;
+    getCurrentUser()
+      .then((freshUser) => {
+        if (!active || !freshUser || freshUser.role !== "teacher") return;
+        saveAuthUser(freshUser);
+        const nextReview = getTeacherBankReviewState(freshUser);
+        setBankReview(nextReview);
+        setBankForm(nextReview.form);
+        setIsBankFormLocked(nextReview.status !== "not_submitted");
+      })
+      .catch(() => {
+        // Keep the locally cached profile available during a temporary network failure.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -316,24 +338,15 @@ export default function TeacherSettings() {
       });
       if (response?.user) {
         saveAuthUser(response.user);
-        const nextBankInfo = normalizeBankForm({
-          country: response.user?.bankPaymentInfo?.country || "",
-          accountHolderName: response.user?.bankPaymentInfo?.accountHolderName || "",
-          bankName: response.user?.bankPaymentInfo?.bankName || "",
-          accountNumber: response.user?.bankPaymentInfo?.accountNumber || "",
-          cardNumber: response.user?.bankPaymentInfo?.cardNumber || "",
-          iban: response.user?.bankPaymentInfo?.iban || "",
-          swiftCode: response.user?.bankPaymentInfo?.swiftCode || "",
-          currency: response.user?.bankPaymentInfo?.currency || "",
-          paymentNote: response.user?.bankPaymentInfo?.paymentNote || response.user?.bankPaymentInfo?.note || "",
-        });
-        setBankForm(nextBankInfo);
-        setIsBankFormLocked(shouldLockBankForm(nextBankInfo));
+        const nextReview = getTeacherBankReviewState(response.user);
+        setBankReview(nextReview);
+        setBankForm(nextReview.form);
+        setIsBankFormLocked(true);
       }
       setBankSuccess(
         isFa
-          ? "اطلاعات بانکی شما ذخیره شد."
-          : "Your bank payment details were saved.",
+          ? "اطلاعات بانکی برای بررسی مدیر ارسال شد."
+          : "Your bank payment details were submitted for admin review.",
       );
     } catch (requestError) {
       setBankError(
@@ -382,15 +395,26 @@ export default function TeacherSettings() {
                   </h2>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
                     {isFa
-                      ? "این معلومات هنگام انتخاب پرداخت بانکی به دانشجو نشان داده می‌شود."
-                      : "This information is shown to students when they choose bank payment."}
+                      ? "فقط اطلاعات تأییدشده به دانشجو نشان داده می‌شود. هر ویرایش دوباره بررسی خواهد شد."
+                      : "Only approved details are shown to students. Every edit requires a new review."}
                   </p>
                 </div>
               </div>
               <div className="mt-5 flex flex-wrap items-center gap-3">
-                {isBankFormLocked ? (
-                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
-                    {isFa ? "اطلاعات ذخیره شده و قفل است" : "Saved and locked"}
+                {bankReview.status === "pending" ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700">
+                    <Clock3 size={14} />
+                    {isFa ? "در انتظار بررسی مدیر" : "Awaiting admin review"}
+                  </span>
+                ) : bankReview.status === "approved" ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
+                    <CheckCircle2 size={14} />
+                    {isFa ? "تأییدشده" : "Approved"}
+                  </span>
+                ) : bankReview.status === "rejected" ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-700">
+                    <AlertCircle size={14} />
+                    {isFa ? "نیازمند اصلاح" : "Changes required"}
                   </span>
                 ) : null}
                 {isBankFormLocked ? (
@@ -407,6 +431,20 @@ export default function TeacherSettings() {
                   </button>
                 ) : null}
               </div>
+              {bankReview.status === "rejected" && bankReview.reviewNote ? (
+                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800">
+                  {isFa ? "دلیل رد مدیر: " : "Admin feedback: "}
+                  {bankReview.reviewNote}
+                </div>
+              ) : null}
+              {bankReview.status === "pending" &&
+              hasSavedBankPaymentInfo(getAuthUser()?.bankPaymentInfo || {}) ? (
+                <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">
+                  {isFa
+                    ? "تا زمان تأیید این ویرایش، اطلاعات قبلی تأییدشده برای پرداخت فعال می‌ماند."
+                    : "Your previously approved details remain active until this edit is approved."}
+                </div>
+              ) : null}
 
               <form className="mt-7 space-y-5" onSubmit={handleBankInfoSubmit}>
                 {bankError ? (
@@ -560,8 +598,8 @@ export default function TeacherSettings() {
                         ? "در حال ذخیره..."
                         : "Saving details"
                       : isFa
-                        ? "ذخیره اطلاعات بانکی"
-                        : "Save bank details"}
+                        ? "ارسال برای بررسی مدیر"
+                        : "Submit for admin review"}
                   </button>
                 ) : null}
               </form>

@@ -306,6 +306,33 @@ const userSchema = new mongoose.Schema(
         default: "",
       },
     },
+    bankPaymentReview: {
+      status: {
+        type: String,
+        enum: ["not_submitted", "pending", "approved", "rejected"],
+        default: "not_submitted",
+        index: true,
+      },
+      pendingInfo: {
+        country: { type: String, trim: true, uppercase: true, default: "" },
+        accountHolderName: { type: String, trim: true, default: "" },
+        bankName: { type: String, trim: true, default: "" },
+        accountNumber: { type: String, trim: true, default: "" },
+        cardNumber: { type: String, trim: true, default: "" },
+        iban: { type: String, trim: true, default: "" },
+        swiftCode: { type: String, trim: true, default: "" },
+        currency: { type: String, trim: true, uppercase: true, default: "" },
+        paymentNote: { type: String, trim: true, default: "" },
+      },
+      submittedAt: { type: Date, default: null },
+      reviewedAt: { type: Date, default: null },
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      reviewNote: { type: String, trim: true, default: "" },
+    },
 
     teacherApplication: {
       status: {

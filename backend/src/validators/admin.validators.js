@@ -15,6 +15,20 @@ export const adminTeachersQuerySchema = paginationQuerySchema.keys({
   status: Joi.string().valid("active", "blocked", "pending_verification"),
 });
 
+export const adminTeacherBankReviewsQuerySchema = paginationQuerySchema.keys({
+  status: Joi.string().valid("pending", "approved", "rejected", "not_submitted", ""),
+});
+
+export const adminTeacherBankReviewDecisionSchema = Joi.object({
+  decision: Joi.string().valid("approved", "rejected").required(),
+  note: Joi.string().trim().max(1000).allow("").default(""),
+}).custom((value, helpers) => {
+  if (value.decision === "rejected" && !String(value.note || "").trim()) {
+    return helpers.message("A rejection reason is required");
+  }
+  return value;
+});
+
 export const adminCertificatesQuerySchema = paginationQuerySchema.keys({
   status: Joi.string().valid("approved", "rejected", ""),
 });

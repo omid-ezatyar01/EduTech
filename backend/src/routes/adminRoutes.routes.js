@@ -8,6 +8,8 @@ import {
   getTeacherById,
   updateTeacherByAdmin,
   reviewTeacherApplicationByAdmin,
+  getTeacherBankPaymentReviews,
+  reviewTeacherBankPaymentInfoByAdmin,
   deleteTeacherByAdmin,
   getUserById,
   updateUserByAdmin,
@@ -51,6 +53,8 @@ import {
   adminUsersQuerySchema,
   adminCertificatesQuerySchema,
   adminCertificateDecisionSchema,
+  adminTeacherBankReviewsQuerySchema,
+  adminTeacherBankReviewDecisionSchema,
 } from "../validators/admin.validators.js";
 import {
   messageIdParamSchema,
@@ -156,6 +160,17 @@ router.post(
   "/teachers/:id/application-review",
   validateRequest(adminEntityIdParamSchema, "params"),
   reviewTeacherApplicationByAdmin,
+);
+router.get(
+  "/teacher-bank-reviews",
+  validateRequest(adminTeacherBankReviewsQuerySchema, "query"),
+  getTeacherBankPaymentReviews,
+);
+router.patch(
+  "/teachers/:id/bank-payment-review",
+  validateRequest(adminEntityIdParamSchema, "params"),
+  validateRequest(adminTeacherBankReviewDecisionSchema),
+  reviewTeacherBankPaymentInfoByAdmin,
 );
 
 router

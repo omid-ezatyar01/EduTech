@@ -233,6 +233,15 @@ const buildAvatarUrl = (req, avatar) => {
 };
 
 const publicUserPayload = (req, user, includeToken = false) => {
+  const approvedBankInfo = getNormalizedBankPaymentDisplay(user.bankPaymentInfo || {});
+  const storedBankReviewStatus = String(user.bankPaymentReview?.status || "not_submitted");
+  const hasLegacyApprovedBankInfo = Object.values(approvedBankInfo).some((value) =>
+    String(value || "").trim(),
+  );
+  const effectiveBankReviewStatus =
+    storedBankReviewStatus === "not_submitted" && hasLegacyApprovedBankInfo
+      ? "approved"
+      : storedBankReviewStatus;
   const payload = {
     _id: user._id,
     name: user.name,
@@ -271,7 +280,17 @@ const publicUserPayload = (req, user, includeToken = false) => {
       twitter: user.socialLinks?.twitter || "",
       github: user.socialLinks?.github || "",
     },
-    bankPaymentInfo: getNormalizedBankPaymentDisplay(user.bankPaymentInfo || {}),
+    bankPaymentInfo: approvedBankInfo,
+    bankPaymentReview: {
+      status: effectiveBankReviewStatus,
+      pendingInfo: getNormalizedBankPaymentDisplay(
+        user.bankPaymentReview?.pendingInfo || {},
+      ),
+      submittedAt: user.bankPaymentReview?.submittedAt || null,
+      reviewedAt: user.bankPaymentReview?.reviewedAt || null,
+      reviewedBy: user.bankPaymentReview?.reviewedBy || null,
+      reviewNote: user.bankPaymentReview?.reviewNote || "",
+    },
     teacherApplication: {
       status: user.teacherApplication?.status || "draft",
       submittedAt: user.teacherApplication?.submittedAt || null,
@@ -1957,6 +1976,9 @@ export const updateUserProfile = async (req, res) => {
       user.role === "teacher" &&
       value.teacherApplicationAction === "submit_for_review" &&
       user.teacherApplication?.status !== "submitted";
+    const shouldNotifyBankPaymentReview =
+      user.role === "teacher" &&
+      Object.prototype.hasOwnProperty.call(value, "bankPaymentInfo");
 
     if (value.email && value.email !== user.email) {
       const emailExists = await User.findOne({ email: value.email, _id: { $ne: user._id } });
@@ -2006,8 +2028,22 @@ export const updateUserProfile = async (req, res) => {
       };
     }
 
-    if (value.bankPaymentInfo) {
-      user.bankPaymentInfo = validateAndNormalizeBankPaymentInfo(value.bankPaymentInfo);
+    if (Object.prototype.hasOwnProperty.call(value, "bankPaymentInfo")) {
+      if (user.role !== "teacher") {
+        return res.status(403).json({
+          message: "Bank payment details are only available for teacher accounts",
+        });
+      }
+      const pendingInfo = validateAndNormalizeBankPaymentInfo(value.bankPaymentInfo);
+      user.bankPaymentReview = {
+        ...(user.bankPaymentReview?.toObject?.() || user.bankPaymentReview || {}),
+        status: "pending",
+        pendingInfo,
+        submittedAt: new Date(),
+        reviewedAt: null,
+        reviewedBy: null,
+        reviewNote: "",
+      };
     }
 
     if (value.teacherApplication || value.teacherApplicationAction) {
@@ -2209,6 +2245,32 @@ export const updateUserProfile = async (req, res) => {
           `Failed to send teacher application review push notification: ${notificationError.message}`,
         );
       });
+    }
+
+    if (shouldNotifyBankPaymentReview) {
+      try {
+        await AdminNotification.findOneAndUpdate(
+          { dedupeKey: `teacher_bank_payment_review:${user._id}` },
+          {
+            $set: {
+              type: "teacher_bank_payment_review",
+              title: "Teacher payment details awaiting review",
+              message: `${user.name || "A teacher"} submitted bank/card details for admin review.`,
+              submittedBy: user._id,
+              readBy: [],
+              hiddenBy: [],
+            },
+            $setOnInsert: {
+              dedupeKey: `teacher_bank_payment_review:${user._id}`,
+            },
+          },
+          { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
+        );
+      } catch (notificationError) {
+        console.warn(
+          `Failed to create teacher bank review notification: ${notificationError.message}`,
+        );
+      }
     }
 
     return res.json({
