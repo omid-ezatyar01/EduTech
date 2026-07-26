@@ -4,6 +4,22 @@ export const REGION_DEFINITIONS = [
   { key: "iran", currency: "TOMAN", labelEn: "Iran", labelFa: "ایران" },
 ];
 
+export const normalizePriceInput = (value = "") => {
+  const normalizedDigits = String(value)
+    .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+    .replace(/٫/g, ".")
+    .replace(/[,\u066C\s]/g, "")
+    .replace(/[^\d.]/g, "");
+  const decimalIndex = normalizedDigits.indexOf(".");
+
+  if (decimalIndex === -1) return normalizedDigits;
+
+  const whole = normalizedDigits.slice(0, decimalIndex) || "0";
+  const fraction = normalizedDigits.slice(decimalIndex + 1).replace(/\./g, "");
+  return `${whole}.${fraction}`;
+};
+
 export const createEmptyRegionalPrices = () => ({
   afghanistan: { currency: "AFN", regularPrice: "", discountedPrice: "", regularPriceUsd: null, discountedPriceUsd: null, usdExchangeRate: null, isFree: false, useInternationalPrice: true },
   iran: { currency: "TOMAN", regularPrice: "", discountedPrice: "", regularPriceUsd: null, discountedPriceUsd: null, usdExchangeRate: null, isFree: false, useInternationalPrice: true },

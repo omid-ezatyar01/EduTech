@@ -1,7 +1,10 @@
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCoursePricingExchangeRates } from "../../../services/pricing";
-import { REGION_DEFINITIONS } from "../../utils/coursePricingForm";
+import {
+  normalizePriceInput,
+  REGION_DEFINITIONS,
+} from "../../utils/coursePricingForm";
 
 const INITIAL_RATE_STATE = {
   afnPerUsd: 0,
@@ -89,17 +92,23 @@ export default function CoursePricingFields({
       if (row.isFree || row.useInternationalPrice) continue;
       const nextRow = { ...row };
       if (Number(row.regularPrice) > 0 && !(Number(row.regularPriceUsd) > 0)) {
-        nextRow.regularPriceUsd = toUsdSnapshot(row.regularPrice, rate);
-        nextRow.usdExchangeRate = rate;
-        changed = true;
+        const regularPriceUsd = toUsdSnapshot(row.regularPrice, rate);
+        if (regularPriceUsd > 0) {
+          nextRow.regularPriceUsd = regularPriceUsd;
+          nextRow.usdExchangeRate = rate;
+          changed = true;
+        }
       }
       if (
         Number(row.discountedPrice) > 0 &&
         !(Number(row.discountedPriceUsd) > 0)
       ) {
-        nextRow.discountedPriceUsd = toUsdSnapshot(row.discountedPrice, rate);
-        nextRow.usdExchangeRate = rate;
-        changed = true;
+        const discountedPriceUsd = toUsdSnapshot(row.discountedPrice, rate);
+        if (discountedPriceUsd > 0) {
+          nextRow.discountedPriceUsd = discountedPriceUsd;
+          nextRow.usdExchangeRate = rate;
+          changed = true;
+        }
       }
       nextPrices[region] = nextRow;
     }
@@ -244,6 +253,7 @@ function RegionCard({
   const updatePrice = (field, value) => {
     const usdField =
       field === "regularPrice" ? "regularPriceUsd" : "discountedPriceUsd";
+    const usdSnapshot = value === "" ? null : toUsdSnapshot(value, usdRate);
     updateRegion(key, {
       [field]: value,
       ...(isInternational
@@ -252,7 +262,7 @@ function RegionCard({
             usdExchangeRate: 1,
           }
         : {
-            [usdField]: value === "" ? null : toUsdSnapshot(value, usdRate),
+            [usdField]: usdSnapshot > 0 ? usdSnapshot : null,
             usdExchangeRate: usdRate > 0 ? usdRate : row.usdExchangeRate,
           }),
     });
@@ -519,12 +529,13 @@ function PriceInput({
       {label}
       <div className="relative mt-1">
         <input
-          type="number"
-          min="0"
-          step="any"
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          pattern="[0-9]*[.]?[0-9]*"
           value={value}
           disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => onChange(normalizePriceInput(event.target.value))}
           className={`h-10 w-full rounded-xl border bg-white ps-3 pe-16 text-sm font-semibold outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 ${
             error
               ? "border-rose-400 focus:ring-2 focus:ring-rose-100"
