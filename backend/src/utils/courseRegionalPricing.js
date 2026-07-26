@@ -137,7 +137,6 @@ export const validateRegionalPrices = (prices = {}) => {
     }
     if (
       region !== "international" &&
-      row.regularPriceUsd != null &&
       (!(row.regularPriceUsd > 0) || !(row.usdExchangeRate > 0))
     ) {
       errors[`${region}.regularPriceUsd`] =
@@ -158,7 +157,6 @@ export const validateRegionalPrices = (prices = {}) => {
     if (
       region !== "international" &&
       row.discountedPrice != null &&
-      row.discountedPriceUsd != null &&
       (!(row.discountedPriceUsd > 0) ||
         Math.abs(
           roundAmount(row.discountedPrice / row.usdExchangeRate) -
@@ -171,6 +169,59 @@ export const validateRegionalPrices = (prices = {}) => {
   }
 
   return { prices: normalized, errors, valid: Object.keys(errors).length === 0 };
+};
+
+export const validateRegionalMinimumPrices = (
+  prices = {},
+  minimumPriceUsd = 0,
+) => {
+  const normalized = normalizeRegionalPrices(prices);
+  const minimum = Math.max(0, Number(minimumPriceUsd) || 0);
+  const errors = {};
+
+  if (!(minimum > 0)) {
+    return { prices: normalized, errors, valid: true };
+  }
+
+  for (const region of COURSE_PRICING_REGIONS) {
+    const row = normalized[region];
+    if (
+      row.isFree ||
+      (region !== "international" && row.useInternationalPrice)
+    ) {
+      continue;
+    }
+
+    const regularPriceUsd =
+      region === "international"
+        ? Number(row.regularPrice)
+        : Number(row.regularPriceUsd);
+    const discountedPriceUsd =
+      row.discountedPrice == null
+        ? null
+        : region === "international"
+          ? Number(row.discountedPrice)
+          : Number(row.discountedPriceUsd);
+
+    if (!Number.isFinite(regularPriceUsd) || regularPriceUsd < minimum) {
+      errors[`${region}.regularPrice`] =
+        `${region} regular price must be at least ${minimum} USD`;
+    }
+    if (
+      discountedPriceUsd !== null &&
+      (!Number.isFinite(discountedPriceUsd) ||
+        discountedPriceUsd < minimum)
+    ) {
+      errors[`${region}.discountedPrice`] =
+        `${region} discounted price must be at least ${minimum} USD`;
+    }
+  }
+
+  return {
+    prices: normalized,
+    errors,
+    valid: Object.keys(errors).length === 0,
+  };
 };
 
 export const resolveCourseRegionalPrice = (course = {}, requestedRegion = "international") => {

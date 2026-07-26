@@ -1,3 +1,5 @@
+import { clearTeacherPageCache } from "../src/utils/teacherPageCache.js";
+
 export const PORTAL_CONFIG = {
   role: "teacher",
   loginEndpoint: "/auth/teacher/login",
@@ -12,6 +14,15 @@ export const PORTAL_CONFIG = {
 const TEACHER_USER_KEY = "edutech_teacher_user";
 const TEACHER_TOKEN_KEY = "edutech_teacher_token";
 const TEACHER_AUTH_KEY = "edutech_teacher_auth";
+const TERMINAL_AUTH_CODES = new Set([
+  "AUTH_TOKEN_MISSING",
+  "AUTH_TOKEN_EXPIRED",
+  "AUTH_TOKEN_INVALID",
+  "AUTH_USER_NOT_FOUND",
+  "AUTH_TOKEN_REVOKED",
+  "ACCOUNT_BLOCKED",
+  "TEACHER_CONTRACT_EXPIRED",
+]);
 
 export const readLocalStorage = (key) => {
   try {
@@ -57,6 +68,7 @@ export const saveAuthUser = (user) =>
   writeLocalStorage(TEACHER_USER_KEY, JSON.stringify(user || {}));
 
 export const clearAuth = ({ notify = true } = {}) => {
+  clearTeacherPageCache();
   removeLocalStorage(TEACHER_USER_KEY);
   removeLocalStorage(TEACHER_TOKEN_KEY);
   removeLocalStorage(TEACHER_AUTH_KEY);
@@ -74,12 +86,15 @@ export const handleAuthExpired = () => {
   window.location.replace(PORTAL_CONFIG.loginPath);
 };
 
-export const isAuthExpiredResponse = (status, message = "") => {
+export const isAuthExpiredResponse = (status, message = "", code = "") => {
   const normalizedMessage = String(message || "");
+  const normalizedCode = String(code || "").trim().toUpperCase();
+
+  if (TERMINAL_AUTH_CODES.has(normalizedCode)) return true;
+  if (![401, 403].includes(Number(status))) return false;
 
   return (
-    status === 401 ||
-    /not authorized, user not found|jwt expired|invalid token|token failed|account has been blocked|contract has expired/i.test(
+    /not authorized, (?:no token|user not found|token expired|token failed)|jwt expired|invalid token|password changed|account has been blocked|contract has expired/i.test(
       normalizedMessage,
     )
   );

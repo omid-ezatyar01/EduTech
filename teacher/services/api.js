@@ -23,8 +23,9 @@ api.interceptors.response.use(
   (error) => {
     const status = error?.response?.status;
     const message = String(error?.response?.data?.message || "");
+    const code = String(error?.response?.data?.code || "");
 
-    if (isAuthExpiredResponse(status, message)) {
+    if (isAuthExpiredResponse(status, message, code)) {
       handleAuthExpired();
     }
 

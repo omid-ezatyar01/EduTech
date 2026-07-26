@@ -69,10 +69,35 @@ export const regionalPricesFromCourse = (course = {}) => {
 
 export const validateRegionalPricingForm = (
   prices = {},
-  { minInternationalPrice = 0, language = "en" } = {},
+  { minimumPriceUsd = 0, language = "en" } = {},
 ) => {
   const isFa = language === "fa";
+  const minimumUsd = Math.max(0, Number(minimumPriceUsd) || 0);
   const errors = {};
+  const minimumError = ({ key, field, row, usdValue }) => {
+    const regionLabel = REGION_DEFINITIONS.find((item) => item.key === key);
+    const priceLabel =
+      field === "discountedPrice"
+        ? isFa ? "قیمت تخفیف‌خورده" : "Discounted price"
+        : isFa ? "قیمت اصلی" : "Regular price";
+    const regionName = isFa ? regionLabel?.labelFa : regionLabel?.labelEn;
+    const exchangeRate = Number(row.usdExchangeRate);
+    const currency = regionLabel?.currency || "USD";
+    const minimumLocal =
+      key !== "international" && exchangeRate > 0
+        ? Math.ceil(minimumUsd * exchangeRate)
+        : null;
+
+    if (isFa) {
+      return minimumLocal
+        ? `${priceLabel} ${regionName} معادل ${Number(usdValue).toLocaleString("fa-AF", { maximumFractionDigits: 2 })} دالر است. حداقل سیستم ${minimumUsd.toLocaleString("fa-AF")} دالر است؛ مبلغ را حداقل ${minimumLocal.toLocaleString("fa-AF")} ${currency} وارد کنید.`
+        : `${priceLabel} ${regionName} باید حداقل ${minimumUsd.toLocaleString("fa-AF")} دالر باشد.`;
+    }
+    return minimumLocal
+      ? `${regionName} ${priceLabel.toLowerCase()} equals ${Number(usdValue).toLocaleString("en-US", { maximumFractionDigits: 2 })} USD. The system minimum is ${minimumUsd.toLocaleString("en-US")} USD; enter at least ${minimumLocal.toLocaleString("en-US")} ${currency}.`
+      : `${regionName} ${priceLabel.toLowerCase()} must be at least ${minimumUsd.toLocaleString("en-US")} USD.`;
+  };
+
   for (const { key } of REGION_DEFINITIONS) {
     const row = prices?.[key] || {};
     if (key !== "international" && row.useInternationalPrice) continue;
@@ -87,10 +112,6 @@ export const validateRegionalPricingForm = (
         key === "international"
           ? isFa ? "قیمت بین‌المللی الزامی است." : "International price is required."
           : isFa ? "قیمت اصلی الزامی است." : "Regular price is required.";
-    } else if (key === "international" && regularPrice < minInternationalPrice) {
-      errors[`${key}.regularPrice`] = isFa
-        ? `قیمت بین‌المللی باید حداقل ${minInternationalPrice} دالر باشد.`
-        : `International price must be at least ${minInternationalPrice} USD.`;
     }
     if (!Number.isFinite(regularPrice) || regularPrice < 0) {
       errors[`${key}.regularPrice`] = isFa
@@ -107,10 +128,17 @@ export const validateRegionalPricingForm = (
         ? "قیمت تخفیف‌خورده باید کمتر از قیمت اصلی باشد."
         : "Discounted price must be lower than the regular price.";
     }
+    const regularPriceUsd =
+      key === "international" ? regularPrice : Number(row.regularPriceUsd);
+    const discountedPriceUsd =
+      key === "international"
+        ? discountedPrice
+        : Number(row.discountedPriceUsd);
     if (
       key !== "international" &&
-      (!Number.isFinite(Number(row.regularPriceUsd)) ||
-        !(Number(row.regularPriceUsd) > 0) ||
+      regularPrice > 0 &&
+      (!Number.isFinite(regularPriceUsd) ||
+        !(regularPriceUsd > 0) ||
         !(Number(row.usdExchangeRate) > 0))
     ) {
       errors[`${key}.regularPrice`] = isFa
@@ -125,6 +153,34 @@ export const validateRegionalPricingForm = (
       errors[`${key}.discountedPrice`] = isFa
         ? "مبنای دالری قیمت تخفیف‌خورده هنوز آماده نیست."
         : "The discounted USD base is not ready yet.";
+    }
+    if (
+      minimumUsd > 0 &&
+      Number.isFinite(regularPriceUsd) &&
+      regularPriceUsd > 0 &&
+      regularPriceUsd < minimumUsd
+    ) {
+      errors[`${key}.regularPrice`] = minimumError({
+        key,
+        field: "regularPrice",
+        row,
+        usdValue: regularPriceUsd,
+      });
+    }
+    if (
+      minimumUsd > 0 &&
+      discountedPrice !== null &&
+      discountedPrice < regularPrice &&
+      Number.isFinite(discountedPriceUsd) &&
+      discountedPriceUsd > 0 &&
+      discountedPriceUsd < minimumUsd
+    ) {
+      errors[`${key}.discountedPrice`] = minimumError({
+        key,
+        field: "discountedPrice",
+        row,
+        usdValue: discountedPriceUsd,
+      });
     }
   }
   return errors;

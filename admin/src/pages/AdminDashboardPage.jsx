@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Users,
   GraduationCap,
@@ -22,9 +22,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { clearAuth } from "../../services/portal.js";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http.js";
-import { useNavigate } from "react-router-dom";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 import AdminPageLoader from "../components/common/AdminPageLoader.jsx";
 import useLatestRequest from "../hooks/useLatestRequest.js";
@@ -152,8 +150,10 @@ const shouldSkipRecentDashboardRequest = (key) => {
 
 export default function AdminDashboardPage() {
   const { t, tr, language, isRTL } = useAdminI18n();
-  const pageTr = (text) => translateDashboardText(tr(text), language);
-  const navigate = useNavigate();
+  const pageTr = useCallback(
+    (text) => translateDashboardText(tr(text), language),
+    [language, tr],
+  );
   const [stats, setStats] = useState(INITIAL_STATS);
   const [monthlyIncome, setMonthlyIncome] = useState([]);
   const [recentPayments, setRecentPayments] = useState([]);
@@ -194,12 +194,6 @@ export default function AdminDashboardPage() {
           headers: buildAuthHeaders(),
         });
 
-        if (response.status === 401 || response.status === 403) {
-          clearAuth();
-          navigate("/login", { replace: true });
-          return null;
-        }
-
         return parseJsonResponse(response);
       }, {
         onSuccess: (data) => {
@@ -239,7 +233,7 @@ export default function AdminDashboardPage() {
     };
 
     fetchDashboardData();
-  }, [dashboardRequest, navigate]);
+  }, [dashboardRequest, language, pageTr]);
 
   const lineData = useMemo(
     () => [

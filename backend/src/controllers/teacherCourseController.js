@@ -33,6 +33,7 @@ import { getCoursePublicState } from "../utils/coursePublicState.js";
 import { publishCourseStarted } from "../services/courseNotification.service.js";
 import {
   normalizeRegionalPrices,
+  validateRegionalMinimumPrices,
   validateRegionalPrices,
 } from "../utils/courseRegionalPricing.js";
 
@@ -304,15 +305,17 @@ export const createTeacherCourse = asyncHandler(async (req, res) => {
         `Course price must be at least ${Number(pricing.minTeacherCoursePrice || 0)} USD`,
       );
     }
-  } else if (
-    !payload.prices.international.isFree &&
-    Number(payload.prices.international.regularPrice || 0) <
-      Number(pricing.minTeacherCoursePrice || 0)
-  ) {
-    throw new ApiError(
-      400,
-      `International course price must be at least ${Number(pricing.minTeacherCoursePrice || 0)} USD`,
+  } else {
+    const minimumValidation = validateRegionalMinimumPrices(
+      payload.prices,
+      pricing.minTeacherCoursePrice,
     );
+    if (!minimumValidation.valid) {
+      throw new ApiError(
+        400,
+        Object.values(minimumValidation.errors)[0],
+      );
+    }
   }
   payload.certificate = {
     ...(payload.certificate || {}),
@@ -534,6 +537,18 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
   const usesRegionalPricing = nextPricingType === "regional"
     ? applyRegionalPricingPayload(payload, existingCourse)
     : false;
+  if (usesRegionalPricing) {
+    const minimumValidation = validateRegionalMinimumPrices(
+      payload.prices,
+      pricing.minTeacherCoursePrice,
+    );
+    if (!minimumValidation.valid) {
+      throw new ApiError(
+        400,
+        Object.values(minimumValidation.errors)[0],
+      );
+    }
+  }
   if (usesRegionalPricing && payload.certificate) {
     payload.certificate = {
       ...payload.certificate,

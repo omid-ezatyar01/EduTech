@@ -1,3 +1,5 @@
+import { clearAdminPageCache } from "../src/utils/adminPageCache.js";
+
 export const PORTAL_CONFIG = {
   role: "admin",
   loginEndpoint: "/auth/admin/login",
@@ -32,6 +34,14 @@ export const buildAdminPath = (path = "/") => {
 const ADMIN_USER_KEY = "edutech_admin_user";
 const ADMIN_TOKEN_KEY = "edutech_admin_token";
 const ADMIN_AUTH_KEY = "edutech_admin_auth";
+const TERMINAL_AUTH_CODES = new Set([
+  "AUTH_TOKEN_MISSING",
+  "AUTH_TOKEN_EXPIRED",
+  "AUTH_TOKEN_INVALID",
+  "AUTH_USER_NOT_FOUND",
+  "AUTH_TOKEN_REVOKED",
+  "ACCOUNT_BLOCKED",
+]);
 
 export const readLocalStorage = (key) => {
   try {
@@ -77,6 +87,7 @@ export const saveAuthUser = (user) =>
   writeLocalStorage(ADMIN_USER_KEY, JSON.stringify(user || {}));
 
 export const clearAuth = () => {
+  clearAdminPageCache();
   removeLocalStorage(ADMIN_USER_KEY);
   removeLocalStorage(ADMIN_TOKEN_KEY);
   removeLocalStorage(ADMIN_AUTH_KEY);
@@ -91,6 +102,16 @@ export const handleAuthExpired = () => {
   if (window.location.pathname === loginPath) return;
 
   window.location.replace(loginPath);
+};
+
+export const isAuthExpiredResponse = (status, message = "", code = "") => {
+  const normalizedCode = String(code || "").trim().toUpperCase();
+  if (TERMINAL_AUTH_CODES.has(normalizedCode)) return true;
+  if (![401, 403].includes(Number(status))) return false;
+
+  return /not authorized, (?:no token|user not found|token expired|token failed)|jwt expired|invalid token|password changed|account has been blocked/i.test(
+    String(message || ""),
+  );
 };
 
 export const saveAuth = (data) => {

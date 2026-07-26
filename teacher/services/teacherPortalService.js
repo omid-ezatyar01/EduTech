@@ -1,6 +1,10 @@
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "./http";
 import { getToken } from "./portal";
 
+const ACCESS_PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+let accessProfileCache = null;
+let accessProfileRequest = null;
+
 export const fetchTeacherDashboard = async () => {
   const response = await fetch(`${getApiBase()}/teacher/dashboard`, {
     headers: buildAuthHeaders(),
@@ -87,6 +91,47 @@ export const fetchTeacherProfile = async () => {
 
   const data = await parseJsonResponse(response);
   return data?.data || {};
+};
+
+export const fetchTeacherAccessProfile = async () => {
+  const token = getToken() || "";
+  const now = Date.now();
+  if (
+    accessProfileCache?.token === token &&
+    now - Number(accessProfileCache?.updatedAt || 0) < ACCESS_PROFILE_CACHE_TTL_MS
+  ) {
+    return accessProfileCache.data;
+  }
+  if (accessProfileRequest?.token === token) {
+    return accessProfileRequest.promise;
+  }
+
+  const promise = fetch(`${getApiBase()}/teacher/profile`, {
+    headers: buildAuthHeaders(),
+  })
+    .then(parseJsonResponse)
+    .then((data) => {
+      const profile = data?.data || {};
+      accessProfileCache = {
+        token,
+        data: profile,
+        updatedAt: Date.now(),
+      };
+      return profile;
+    })
+    .finally(() => {
+      if (accessProfileRequest?.promise === promise) {
+        accessProfileRequest = null;
+      }
+    });
+
+  accessProfileRequest = { token, promise };
+  return promise;
+};
+
+export const invalidateTeacherAccessProfile = () => {
+  accessProfileCache = null;
+  accessProfileRequest = null;
 };
 
 export const updateTeacherProfile = async (payload = {}) => {
@@ -178,6 +223,7 @@ export const updateTeacherProfile = async (payload = {}) => {
   });
 
   const data = await parseJsonResponse(response);
+  invalidateTeacherAccessProfile();
   return {
     message: data?.message || "",
     user: data?.user || null,

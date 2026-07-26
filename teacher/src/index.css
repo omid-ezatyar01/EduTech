@@ -56,6 +56,7 @@ a {
 .edutech-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.95) transparent;
+  -webkit-overflow-scrolling: touch;
 }
 
 .edutech-scrollbar::-webkit-scrollbar {

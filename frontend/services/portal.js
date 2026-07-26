@@ -9,6 +9,14 @@ export const PORTAL_CONFIG = {
   loginPath: "/login",
 };
 const AUTH_NOTICE_KEY = "edutech_auth_notice";
+const TERMINAL_AUTH_CODES = new Set([
+  "AUTH_TOKEN_MISSING",
+  "AUTH_TOKEN_EXPIRED",
+  "AUTH_TOKEN_INVALID",
+  "AUTH_USER_NOT_FOUND",
+  "AUTH_TOKEN_REVOKED",
+  "ACCOUNT_BLOCKED",
+]);
 
 export const getStoredJson = (key, fallback = null) => {
   try {
@@ -40,6 +48,16 @@ export const handleAuthExpired = (message = "") => {
   if (window.location.pathname === PORTAL_CONFIG.loginPath) return;
 
   window.location.replace(PORTAL_CONFIG.loginPath);
+};
+
+export const isAuthExpiredResponse = (status, message = "", code = "") => {
+  const normalizedCode = String(code || "").trim().toUpperCase();
+  if (TERMINAL_AUTH_CODES.has(normalizedCode)) return true;
+  if (![401, 403].includes(Number(status))) return false;
+
+  return /not authorized, (?:no token|user not found|token expired|token failed)|jwt expired|invalid token|password changed|account has been blocked/i.test(
+    String(message || ""),
+  );
 };
 
 export const setAuthNotice = (message) => {

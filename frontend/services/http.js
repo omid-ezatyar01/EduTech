@@ -1,4 +1,8 @@
-import { getToken, handleAuthExpired } from "./portal";
+import {
+  getToken,
+  handleAuthExpired,
+  isAuthExpiredResponse,
+} from "./portal";
 
 const DEFAULT_API_BASE = "http://localhost:5000/api/v1";
 const apiResponseCache = new Map();
@@ -83,12 +87,11 @@ export const parseJsonResponse = async (response) => {
     const error = new Error(data?.message || "Request failed");
     error.status = response.status;
     error.data = data;
-    error.isUnauthorized =
-      response.status === 401 ||
-      response.status === 403 ||
-      /not[_\s-]?authorized|unauthorized|not[_\s-]?authenticated/i.test(
-        String(data?.message || ""),
-      );
+    error.isUnauthorized = isAuthExpiredResponse(
+      response.status,
+      data?.message,
+      data?.code,
+    );
     if (error.isUnauthorized) {
       handleAuthExpired(data?.message || "");
     }
@@ -157,11 +160,11 @@ export const invalidateApiCache = (matcher) => {
 
 export const isUnauthorizedError = (error) => {
   if (!error) return false;
-  if (error.isUnauthorized) return true;
-  if (error.status === 401 || error.status === 403) return true;
-  const message = String(error.message || "");
-  return /not[_\s-]?authorized|unauthorized|not[_\s-]?authenticated/i.test(
-    message,
+  if (typeof error.isUnauthorized === "boolean") return error.isUnauthorized;
+  return isAuthExpiredResponse(
+    error.status,
+    error.message,
+    error?.data?.code,
   );
 };
 

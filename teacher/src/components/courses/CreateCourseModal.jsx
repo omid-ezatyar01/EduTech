@@ -1,11 +1,13 @@
-import { Check, CheckCircle2, Eye, Loader2, Save, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Check, CheckCircle2, CircleHelp, Eye, Loader2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CourseStartDatePicker from "./CourseStartDatePicker";
 import CourseImageCropModal from "./CourseImageCropModal";
 import CourseTypePicker from "./CourseTypePicker";
 import CourseCategoryFields from "./CourseCategoryFields";
 import CourseTimeZonePicker from "./CourseTimeZonePicker";
 import CoursePricingFields from "./CoursePricingFields";
+import CoursePolicyInfoModal from "./CoursePolicyInfoModal";
+import { COURSE_POLICY_CONTENT } from "../../data/coursePolicyContent";
 import {
   buildRegionalPricesPayload,
   createEmptyRegionalPrices,
@@ -88,7 +90,6 @@ const CREATE_FORM_STEPS = [
   { id: 5, titleFa: "قوانین", titleEn: "Policies" },
   { id: 6, titleFa: "پیش‌نمایش", titleEn: "Preview" },
 ];
-const CREATE_DRAFT_STORAGE_KEY = "edutech:teacher:create-course-draft:v2";
 const LIST_ROW_BREAK_REGEX = /\r\n?|\n|\u2028|\u2029/g;
 const normalizeTextareaRows = (raw = "") =>
   String(raw)
@@ -104,12 +105,6 @@ const parseListLines = (raw = "") =>
 const parseVideoLinks = (raw = "") => {
   return normalizeTextareaRows(raw).filter(Boolean);
 };
-const parseTags = (raw = "") =>
-  String(raw || "")
-    .split(/[,،\n]/u)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
 const getYouTubeVideoKey = (value = "") => {
   try {
     const url = new URL(String(value || "").trim());
@@ -296,7 +291,6 @@ export default function CreateCourseModal({
   const getInitialForm = () => ({
     title: "",
     description: "",
-    tagsText: "",
     category: firstCategory,
     subcategory: "",
     level: "beginner",
@@ -339,23 +333,14 @@ export default function CreateCourseModal({
     thumbnailFile: null,
   });
 
-  const [form, setForm] = useState(() => {
-    const initial = getInitialForm();
-    try {
-      const stored = JSON.parse(localStorage.getItem(CREATE_DRAFT_STORAGE_KEY) || "null");
-      return stored && typeof stored === "object"
-        ? { ...initial, ...stored, thumbnailFile: null }
-        : initial;
-    } catch {
-      return initial;
-    }
-  });
+  const [form, setForm] = useState(() => getInitialForm());
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [pendingThumbnailFile, setPendingThumbnailFile] = useState(null);
   const [mobileStep, setMobileStep] = useState(1);
   const [submissionSucceeded, setSubmissionSucceeded] = useState(false);
-  const [draftStatus, setDraftStatus] = useState("");
+  const [activePolicyKey, setActivePolicyKey] = useState("");
+  const formScrollRef = useRef(null);
   const selectedCategory = form.category || firstCategory;
   const selectedSubcategory = categories.some(
     (item) => String(item._id) === String(form.subcategory || ""),
@@ -380,7 +365,7 @@ export default function CreateCourseModal({
   const regionalPricingErrors =
     form.pricingType !== "free" && form.priceMode === "regional"
       ? validateRegionalPricingForm(form.regionalPrices, {
-          minInternationalPrice: minTeacherCoursePrice,
+          minimumPriceUsd: minTeacherCoursePrice,
           language,
         })
       : {};
@@ -409,20 +394,17 @@ export default function CreateCourseModal({
   }, [form.thumbnailFile]);
 
   useEffect(() => {
-    if (!open) return undefined;
-    const timer = window.setTimeout(() => {
-      const serializableForm = { ...form };
-      delete serializableForm.thumbnailFile;
-      localStorage.setItem(CREATE_DRAFT_STORAGE_KEY, JSON.stringify(serializableForm));
-      setDraftStatus(language === "fa" ? "پیش‌نویس در این دستگاه ذخیره شد" : "Draft saved on this device");
-    }, 700);
-    return () => window.clearTimeout(timer);
-  }, [form, language, open]);
-
-  useEffect(() => {
     if (!thumbnailPreviewUrl || typeof URL === "undefined") return undefined;
     return () => URL.revokeObjectURL(thumbnailPreviewUrl);
   }, [thumbnailPreviewUrl]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      formScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [mobileStep, open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -533,7 +515,6 @@ export default function CreateCourseModal({
       const titleLength = String(form.title || "").trim().length;
       const descriptionLength = String(form.description || "").trim().length;
       const previewVideoUrls = parseVideoLinks(form.previewVideoUrlsText);
-      const tags = parseTags(form.tagsText);
 
       if (titleLength < TITLE_MIN_CHARS || titleLength > TITLE_MAX_CHARS) {
         return language === "fa"
@@ -549,16 +530,6 @@ export default function CreateCourseModal({
         return language === "fa"
           ? `توضیحات کامل باید بین ${DESCRIPTION_MIN_CHARS} تا ${DESCRIPTION_MAX_CHARS} کاراکتر باشد.`
           : `Detailed description must be between ${DESCRIPTION_MIN_CHARS} and ${DESCRIPTION_MAX_CHARS} characters.`;
-      }
-      const normalizedTags = tags.map((item) => item.toLowerCase());
-      if (
-        tags.length > 10 ||
-        tags.some((item) => item.length > 30) ||
-        new Set(normalizedTags).size !== normalizedTags.length
-      ) {
-        return language === "fa"
-          ? "حداکثر ۱۰ برچسب متفاوت وارد کنید؛ هر برچسب حداکثر ۳۰ کاراکتر."
-          : "Add up to 10 unique tags, each no longer than 30 characters.";
       }
       const previewVideoError = getPreviewVideoError(previewVideoUrls, language);
       if (previewVideoError) return previewVideoError;
@@ -729,8 +700,6 @@ export default function CreateCourseModal({
     if (step === 1) {
       const title = String(form.title || "").trim();
       const description = String(form.description || "").trim();
-      const tags = parseTags(form.tagsText);
-      const normalizedTags = tags.map((item) => item.toLowerCase());
       if (
         title.length < TITLE_MIN_CHARS ||
         title.length > TITLE_MAX_CHARS ||
@@ -740,11 +709,6 @@ export default function CreateCourseModal({
         description.length < DESCRIPTION_MIN_CHARS ||
         description.length > DESCRIPTION_MAX_CHARS
       ) return "description";
-      if (
-        tags.length > 10 ||
-        tags.some((item) => item.length > 30) ||
-        new Set(normalizedTags).size !== normalizedTags.length
-      ) return "tagsText";
       if (getPreviewVideoError(parseVideoLinks(form.previewVideoUrlsText), language)) {
         return "previewVideoUrlsText";
       }
@@ -841,15 +805,6 @@ export default function CreateCourseModal({
         );
       case "description":
         return value.length < DESCRIPTION_MIN_CHARS || value.length > DESCRIPTION_MAX_CHARS;
-      case "tagsText": {
-        const tags = parseTags(form.tagsText);
-        const normalized = tags.map((item) => item.toLowerCase());
-        return (
-          tags.length > 10 ||
-          tags.some((item) => item.length > 30) ||
-          new Set(normalized).size !== normalized.length
-        );
-      }
       case "previewVideoUrlsText":
         return Boolean(
           getPreviewVideoError(parseVideoLinks(form.previewVideoUrlsText), language),
@@ -967,6 +922,21 @@ export default function CreateCourseModal({
   const handleSubmit = async (event) => {
     event.preventDefault();
     setFormError("");
+
+    // An implicit form submission (such as Enter on a mobile keyboard)
+    // advances one validated step and must never skip the final preview.
+    if (!isFinalStep) {
+      const validationError = validateStep(mobileStep);
+      if (validationError) {
+        setFormError(validationError);
+        return;
+      }
+      setMobileStep((previous) =>
+        Math.min(CREATE_FORM_STEPS.length, previous + 1),
+      );
+      return;
+    }
+
     for (let step = 1; step <= 5; step += 1) {
       const validationError = validateStep(step);
       if (validationError) {
@@ -976,6 +946,8 @@ export default function CreateCourseModal({
       }
     }
     const { pricingType, priceMode, regionalPrices, ...rest } = form;
+    // Old locally saved drafts may still contain the removed tags field.
+    delete rest.tagsText;
     const isFree = pricingType === "free";
     const price = Number(form.price || 0);
     const teacherDiscountPercentage = Number(form.teacherDiscountPercentage || 0);
@@ -990,7 +962,6 @@ export default function CreateCourseModal({
     const requirements = listFieldConfigs[2].items;
     const curriculumTopics = listFieldConfigs[3].items;
     const previewVideoUrls = parseVideoLinks(form.previewVideoUrlsText);
-    const tags = parseTags(form.tagsText);
     const listFieldError = getInvalidListFieldError(listFieldConfigs, language);
     const startDateValue = new Date(`${form.startDate}T00:00:00`);
     const startTime = form.startTime;
@@ -1046,7 +1017,7 @@ export default function CreateCourseModal({
     const submitRegionalErrors =
       !isFree && priceMode === "regional"
         ? validateRegionalPricingForm(regionalPrices, {
-            minInternationalPrice: minTeacherCoursePrice,
+            minimumPriceUsd: minTeacherCoursePrice,
             language,
           })
         : {};
@@ -1257,7 +1228,6 @@ export default function CreateCourseModal({
       requirements,
       curriculumTopics,
       previewVideoUrls,
-      tags,
       timezone: form.timezone,
       certificate: {
         enabled: !isFree,
@@ -1282,6 +1252,9 @@ export default function CreateCourseModal({
         sessionCommitmentAccepted: Boolean(form.sessionCommitmentAccepted),
       },
       });
+      setForm(getInitialForm());
+      setFieldErrors({});
+      setMobileStep(1);
       setSubmissionSucceeded(true);
     } catch (error) {
       setFormError(
@@ -1341,29 +1314,24 @@ export default function CreateCourseModal({
           </div>
         ) : (
         <form
+          ref={formScrollRef}
           noValidate
           onSubmit={handleSubmit}
-          className="min-h-0 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4"
+          className="edutech-scrollbar min-h-0 overflow-y-auto overscroll-contain px-4 py-3 [scrollbar-gutter:stable] sm:px-5 sm:py-4"
           dir="ltr"
         >
           <div className="mb-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-3" dir={isRTL ? "rtl" : "ltr"}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold text-slate-500">
-                  {language === "fa"
-                    ? `مرحله ${mobileStep} از ${CREATE_FORM_STEPS.length}`
-                    : `Step ${mobileStep} of ${CREATE_FORM_STEPS.length}`}
-                </p>
-                <p className="mt-1 text-sm font-black text-slate-800">
-                  {language === "fa"
-                    ? CREATE_FORM_STEPS[mobileStep - 1]?.titleFa
-                    : CREATE_FORM_STEPS[mobileStep - 1]?.titleEn}
-                </p>
-              </div>
-              <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                <Save size={14} />
-                <span>{draftStatus}</span>
-              </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500">
+                {language === "fa"
+                  ? `مرحله ${mobileStep} از ${CREATE_FORM_STEPS.length}`
+                  : `Step ${mobileStep} of ${CREATE_FORM_STEPS.length}`}
+              </p>
+              <p className="mt-1 text-sm font-black text-slate-800">
+                {language === "fa"
+                  ? CREATE_FORM_STEPS[mobileStep - 1]?.titleFa
+                  : CREATE_FORM_STEPS[mobileStep - 1]?.titleEn}
+              </p>
             </div>
             <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
               {CREATE_FORM_STEPS.map((step) => (
@@ -1372,10 +1340,17 @@ export default function CreateCourseModal({
                   type="button"
                   onClick={() => {
                     if (step.id > mobileStep) {
-                      const validationError = validateStep(mobileStep);
-                      if (validationError) {
-                        setFormError(validationError);
-                        return;
+                      for (
+                        let stepToValidate = mobileStep;
+                        stepToValidate < step.id;
+                        stepToValidate += 1
+                      ) {
+                        const validationError = validateStep(stepToValidate);
+                        if (validationError) {
+                          setMobileStep(stepToValidate);
+                          setFormError(validationError);
+                          return;
+                        }
                       }
                     }
                     setFormError("");
@@ -1448,26 +1423,6 @@ export default function CreateCourseModal({
               : `${String(form.description || "").trim().length} / ${DESCRIPTION_MAX_CHARS} chars (min ${DESCRIPTION_MIN_CHARS})`}
           </p>
           <div className="-mt-3 sm:col-span-2">{renderFieldError("description")}</div>
-          <div className="sm:col-span-2">
-            <label className="mb-1 block text-xs font-bold text-slate-600">
-              {language === "fa" ? "برچسب‌های کورس" : "Course tags"}
-            </label>
-            <input
-              value={form.tagsText}
-              onChange={(event) => setForm({ ...form, tagsText: event.target.value })}
-              placeholder={language === "fa" ? "JavaScript، برنامه‌نویسی، توسعه وب" : "JavaScript, programming, web development"}
-              className={fieldClass(
-                "tagsText",
-                "h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold outline-none",
-              )}
-            />
-            <p className="mt-1 text-[11px] font-semibold text-slate-500">
-              {language === "fa"
-                ? `${parseTags(form.tagsText).length} از ۱۰ برچسب`
-                : `${parseTags(form.tagsText).length} of 10 tags`}
-            </p>
-            {renderFieldError("tagsText")}
-          </div>
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "تصویر کورس *" : "Course image *"}
@@ -1848,6 +1803,7 @@ export default function CreateCourseModal({
               }
               errors={regionalPricingErrors}
               language={language}
+              minimumPriceUsd={minTeacherCoursePrice}
             />
           ) : null}
 
@@ -2121,17 +2077,34 @@ export default function CreateCourseModal({
               </p>
               <div className="mt-4 space-y-3">
                 {policyConfirmations.map((item) => (
-                  <label key={item.key} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(form[item.key])}
-                      onChange={(event) => setForm((previous) => ({ ...previous, [item.key]: event.target.checked }))}
-                      className="mt-0.5 h-5 w-5 shrink-0"
-                    />
-                    <span className="text-sm font-bold leading-6 text-slate-700">
-                      {language === "fa" ? item.fa : item.en}
-                    </span>
-                  </label>
+                  <div
+                    key={item.key}
+                    className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-3"
+                  >
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form[item.key])}
+                        onChange={(event) => setForm((previous) => ({ ...previous, [item.key]: event.target.checked }))}
+                        className="mt-0.5 h-5 w-5 shrink-0"
+                      />
+                      <span className="text-sm font-bold leading-6 text-slate-700">
+                        {language === "fa" ? item.fa : item.en}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setActivePolicyKey(item.key)}
+                      aria-label={
+                        language === "fa"
+                          ? `توضیح ${item.fa}`
+                          : `Learn more about ${item.en}`
+                      }
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-50 text-primary-700 transition hover:bg-primary-100"
+                    >
+                      <CircleHelp size={18} />
+                    </button>
+                  </div>
                 ))}
               </div>
             </section>
@@ -2141,17 +2114,34 @@ export default function CreateCourseModal({
               </h4>
               <div className="mt-4 space-y-3">
                 {finalConfirmations.map((item) => (
-                  <label key={item.key} className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(form[item.key])}
-                      onChange={(event) => setForm((previous) => ({ ...previous, [item.key]: event.target.checked }))}
-                      className="mt-0.5 h-5 w-5 shrink-0"
-                    />
-                    <span className="text-sm font-bold leading-6 text-slate-700">
-                      {language === "fa" ? item.fa : item.en}
-                    </span>
-                  </label>
+                  <div
+                    key={item.key}
+                    className="flex items-start gap-2 rounded-xl border border-primary-100 bg-white/80 p-3"
+                  >
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form[item.key])}
+                        onChange={(event) => setForm((previous) => ({ ...previous, [item.key]: event.target.checked }))}
+                        className="mt-0.5 h-5 w-5 shrink-0"
+                      />
+                      <span className="text-sm font-bold leading-6 text-slate-700">
+                        {language === "fa" ? item.fa : item.en}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setActivePolicyKey(item.key)}
+                      aria-label={
+                        language === "fa"
+                          ? `توضیح ${item.fa}`
+                          : `Learn more about ${item.en}`
+                      }
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-50 text-primary-700 transition hover:bg-primary-100"
+                    >
+                      <CircleHelp size={18} />
+                    </button>
+                  </div>
                 ))}
               </div>
               {renderFieldError("agreements")}
@@ -2259,6 +2249,12 @@ export default function CreateCourseModal({
         </form>
         )}
       </div>
+      <CoursePolicyInfoModal
+        policy={COURSE_POLICY_CONTENT[activePolicyKey]}
+        language={language}
+        isRTL={isRTL}
+        onClose={() => setActivePolicyKey("")}
+      />
       <CourseImageCropModal
         open={Boolean(pendingThumbnailFile)}
         file={pendingThumbnailFile}

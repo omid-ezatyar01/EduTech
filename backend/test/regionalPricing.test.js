@@ -7,6 +7,7 @@ import {
   resolveCourseRegionalPrice,
   resolveRegionalDisplaySnapshot,
   resolveStudentPricingRegion,
+  validateRegionalMinimumPrices,
   validateRegionalPrices,
 } from "../src/utils/courseRegionalPricing.js";
 import {
@@ -124,6 +125,73 @@ test("regional validation requires International and rejects invalid discounts",
     invalidDiscount.errors["afghanistan.discountedPrice"],
     /lower/i,
   );
+});
+
+test("admin minimum applies to every active regional regular and discounted USD value", () => {
+  const prices = {
+    afghanistan: {
+      currency: "AFN",
+      regularPrice: 700,
+      discountedPrice: 560,
+      regularPriceUsd: 10,
+      discountedPriceUsd: 8,
+      usdExchangeRate: 70,
+      isFree: false,
+      useInternationalPrice: false,
+    },
+    iran: {
+      currency: "TOMAN",
+      regularPrice: 450000,
+      discountedPrice: null,
+      regularPriceUsd: 9,
+      discountedPriceUsd: null,
+      usdExchangeRate: 50000,
+      isFree: false,
+      useInternationalPrice: false,
+    },
+    international: {
+      currency: "USD",
+      regularPrice: 12,
+      discountedPrice: 9,
+      isFree: false,
+    },
+  };
+
+  const result = validateRegionalMinimumPrices(prices, 10);
+
+  assert.equal(result.valid, false);
+  assert.match(result.errors["afghanistan.discountedPrice"], /10 USD/i);
+  assert.match(result.errors["iran.regularPrice"], /10 USD/i);
+  assert.match(result.errors["international.discountedPrice"], /10 USD/i);
+  assert.equal(result.errors["afghanistan.regularPrice"], undefined);
+  assert.equal(result.errors["international.regularPrice"], undefined);
+});
+
+test("admin minimum ignores free and International-fallback regions", () => {
+  const prices = {
+    afghanistan: {
+      currency: "AFN",
+      regularPrice: 1,
+      discountedPrice: 0.5,
+      isFree: false,
+      useInternationalPrice: true,
+    },
+    iran: {
+      currency: "TOMAN",
+      regularPrice: 1,
+      discountedPrice: 0.5,
+      isFree: true,
+      useInternationalPrice: false,
+    },
+    international: {
+      currency: "USD",
+      regularPrice: 15,
+      discountedPrice: 10,
+      isFree: false,
+    },
+  };
+
+  assert.equal(validateRegionalMinimumPrices(prices, 10).valid, true);
 });
 
 test("country values map to the expected pricing region", () => {

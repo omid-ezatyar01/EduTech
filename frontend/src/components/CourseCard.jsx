@@ -457,40 +457,43 @@ export default function CourseCard({
 
   return (
     <article
-      className="group relative mx-auto flex h-full w-full max-w-[390px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.08)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_32px_rgba(15,23,42,0.14)]"
+      className="group relative mx-auto flex h-full w-full max-w-[390px] flex-col overflow-hidden rounded-[22px] border border-slate-200/90 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.07)] transition duration-300 hover:-translate-y-1 hover:border-primary-200 hover:shadow-[0_18px_42px_rgba(15,23,42,0.13)]"
     >
       <div
         className="relative w-full overflow-hidden bg-slate-100"
         style={{ aspectRatio: COURSE_IMAGE_ASPECT_RATIO }}
       >
-        <img
-          src={courseImage}
-          alt={course?.title || "Course"}
-          className={`block h-full w-full object-center transition duration-300 group-hover:scale-[1.01] ${
-            courseImage === fallbackCourseImage ? "object-contain p-8" : "object-contain"
-          }`}
-          onError={(event) => {
-            event.currentTarget.onerror = null;
-            event.currentTarget.src = fallbackCourseImage;
-            event.currentTarget.className =
-              "block h-full w-full object-contain object-center p-8 transition duration-300 group-hover:scale-[1.01]";
-          }}
-        />
+        <Link to={coursePath} aria-label={course?.title || uiText.seeDetails}>
+          <img
+            src={courseImage}
+            alt={course?.title || "Course"}
+            className={`block h-full w-full object-center transition duration-500 group-hover:scale-[1.04] ${
+              courseImage === fallbackCourseImage ? "object-contain p-8" : "object-cover"
+            }`}
+            onError={(event) => {
+              event.currentTarget.onerror = null;
+              event.currentTarget.src = fallbackCourseImage;
+              event.currentTarget.className =
+                "block h-full w-full object-contain object-center p-8 transition duration-500 group-hover:scale-[1.04]";
+            }}
+          />
+        </Link>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-slate-950/45 to-transparent" />
 
         <div className="absolute inset-x-0 top-0 flex items-start justify-between p-3">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex rounded-md bg-black/65 px-2 py-1 text-[11px] font-bold text-white">
+            <span className="inline-flex rounded-full border border-white/20 bg-slate-950/70 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm">
               {course.level}
             </span>
             {isSpecialCourse ? (
-              <span className="inline-flex h-6 items-center gap-1 rounded-md bg-amber-500 px-2 text-[11px] font-black leading-none text-white shadow-sm">
+              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-amber-400 px-2.5 text-[10px] font-black leading-none text-amber-950 shadow-sm">
                 <Star size={12} fill="currentColor" className="shrink-0" />
                 <span className="leading-none">{language === "fa" ? "ویژه" : "Special"}</span>
               </span>
             ) : null}
           </div>
           {discountPercent > 0 && !isCourseFree ? (
-            <span className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-1 text-[11px] font-black text-white">
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
               <BadgePercent size={12} />
               {discountPercent}% {uiText.discount}
             </span>
@@ -500,59 +503,64 @@ export default function CourseCard({
           type="button"
           onClick={handleShareCourse}
           aria-label={language === "fa" ? "اشتراک‌گذاری کورس" : "Share course"}
-          className="absolute bottom-3 end-3 grid h-9 w-9 place-items-center rounded-full bg-white/95 text-slate-800 shadow-lg transition hover:bg-primary-600 hover:text-white"
+          className="absolute bottom-3 end-3 grid h-9 w-9 place-items-center rounded-full border border-white/70 bg-white/95 text-slate-700 shadow-[0_6px_18px_rgba(15,23,42,0.18)] transition hover:bg-primary-600 hover:text-white"
         >
           <Share2 size={16} />
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col p-4 sm:p-5">
-        {publicStateLabel ? (
-          <div className="mb-3">
-            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-black ${publicStateTone}`}>
+      <div className="flex flex-1 flex-col p-4 sm:p-[18px]">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {hasTeacherAvatar ? (
+              <img
+                src={teacherAvatar}
+                alt={teacherName}
+                className="h-7 w-7 shrink-0 rounded-full border border-slate-200 bg-white object-cover object-center"
+                onError={() => setFailedAvatarKey(avatarKey)}
+              />
+            ) : (
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[9px] font-black leading-none text-slate-700">
+                {teacherInitials}
+              </div>
+            )}
+            <p className="truncate text-xs font-bold text-slate-500">
+              {uiText.instructor}{" "}
+              {teacherProfilePath ? (
+                <Link
+                  className="font-black text-slate-800 underline-offset-2 transition hover:text-primary-700 hover:underline"
+                  to={teacherProfilePath}
+                >
+                  {teacherName}
+                </Link>
+              ) : (
+                <span className="font-black text-slate-800">{teacherName}</span>
+              )}
+            </p>
+          </div>
+          {publicStateLabel ? (
+            <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black ${publicStateTone}`}>
               {publicStateLabel}
             </span>
-            {publicStateMessage ? (
-              <p className="mt-1.5 text-xs font-bold leading-5 text-slate-500">
-                {publicStateMessage}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="mb-3 flex items-center gap-2">
-          {hasTeacherAvatar ? (
-            <img
-              src={teacherAvatar}
-              alt={teacherName}
-              className="h-6 w-6 rounded-full border border-slate-200 bg-white object-cover object-center"
-              onError={() => setFailedAvatarKey(avatarKey)}
-            />
-          ) : (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[9px] font-black leading-none text-slate-700">
-              {teacherInitials}
-            </div>
-          )}
-          <p className="truncate text-sm font-bold text-slate-900">
-            {uiText.instructor}{" "}
-            {teacherProfilePath ? (
-              <Link
-                className="text-primary-700 underline-offset-2 transition hover:text-primary-800 hover:underline"
-                to={teacherProfilePath}
-              >
-                {teacherName}
-              </Link>
-            ) : (
-              teacherName
-            )}
-          </p>
+          ) : null}
         </div>
 
-        <h3 className="text-[1.05rem] font-black leading-7 text-slate-950">
-          {course.title}
-        </h3>
+        <Link to={coursePath} className="mt-3 block">
+          <h3
+            className="min-h-12 text-base font-black leading-6 text-slate-950 transition group-hover:text-primary-700"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {course.title}
+          </h3>
+        </Link>
         <p
           dir="auto"
-          className="mt-2 text-sm leading-6 text-slate-600 [overflow-wrap:anywhere] break-words"
+          className="mt-1.5 min-h-10 text-[13px] leading-5 text-slate-500 [overflow-wrap:anywhere] break-words"
           style={{
             display: "-webkit-box",
             WebkitLineClamp: 2,
@@ -562,84 +570,109 @@ export default function CourseCard({
         >
           {description}
         </p>
+        {!canEnroll && publicStateMessage ? (
+          <p className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] font-bold leading-4 text-slate-600">
+            {publicStateMessage}
+          </p>
+        ) : null}
 
-        <div className="mt-auto pt-4">
+        <div className="mt-auto pt-3">
           {!isEnrolled ? (
-            <div className={`${language === "fa" ? "text-right" : "text-left"}`}>
-              <p className="text-xs font-black tracking-wide text-slate-500">
-                {uiText.priceTitle}
-              </p>
-              <p className="text-[1.15rem] font-black text-slate-950" dir="ltr">
-                {isCourseFree ? uiText.free : priceLabel}
-              </p>
-              {hasDiscount ? (
-                <p className="text-sm font-bold text-slate-400 line-through" dir="ltr">
-                  {oldPriceLabel}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+              <div className="flex items-end justify-between gap-3">
+                <p className="text-[11px] font-black text-slate-500">
+                  {uiText.priceTitle}
                 </p>
-              ) : null}
-              {usdBaseLabel ? (
-                <p className="mt-1 text-[11px] font-bold text-slate-500" dir="ltr">
-                  {usdBaseLabel}
-                </p>
-              ) : null}
-              {exchangeRateLabel ? (
-                <p className="mt-0.5 text-[10px] font-semibold text-slate-400" dir="ltr">
-                  {exchangeRateLabel}
-                </p>
+                <div className="flex flex-wrap items-baseline justify-end gap-x-2" dir="ltr">
+                  {hasDiscount ? (
+                    <span className="text-xs font-bold text-slate-400 line-through">
+                      {oldPriceLabel}
+                    </span>
+                  ) : null}
+                  <span className={`font-black ${isCourseFree ? "text-base text-emerald-700" : "text-xl text-slate-950"}`}>
+                    {isCourseFree ? uiText.free : priceLabel}
+                  </span>
+                </div>
+              </div>
+              {usdBaseLabel || exchangeRateLabel ? (
+                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-200 pt-2" dir="ltr">
+                  {usdBaseLabel ? (
+                    <span className="text-[10px] font-bold text-slate-600">
+                      {usdBaseLabel}
+                    </span>
+                  ) : null}
+                  {usdBaseLabel && exchangeRateLabel ? (
+                    <span className="text-slate-300">•</span>
+                  ) : null}
+                  {exchangeRateLabel ? (
+                    <span className="text-[10px] font-semibold text-slate-500">
+                      {exchangeRateLabel}
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           ) : (
-            <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">
+            <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-700">
               {uiText.enrolled}
             </p>
           )}
 
-          {countdownText ? (
-            <div className="mt-4 inline-flex w-full items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-black text-sky-800">
-              <Clock3 size={14} />
-              <span>{countdownText}</span>
+          {countdownText ||
+          (course?.publicState?.remainingSeats !== null &&
+            course?.publicState?.remainingSeats !== undefined &&
+            !["completed", "canceled"].includes(publicStateKey)) ? (
+            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+              {countdownText ? (
+                <div className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-sky-50 px-2.5 py-2 text-[11px] font-black text-sky-800">
+                  <Clock3 size={14} className="shrink-0" />
+                  <span className="leading-4">{countdownText}</span>
+                </div>
+              ) : null}
+              {course?.publicState?.remainingSeats !== null &&
+              course?.publicState?.remainingSeats !== undefined &&
+              !["completed", "canceled"].includes(publicStateKey) ? (
+                <div className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-black text-amber-800">
+                  <UsersRound size={14} className="shrink-0" />
+                  <span>
+                    {language === "fa"
+                      ? `${Number(course.publicState.remainingSeats).toLocaleString("fa-AF")} جای باقی مانده`
+                      : `${Number(course.publicState.remainingSeats).toLocaleString("en-US")} seats remaining`}
+                  </span>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
-          {course?.publicState?.remainingSeats !== null &&
-          course?.publicState?.remainingSeats !== undefined &&
-          !["completed", "canceled"].includes(publicStateKey) ? (
-            <p className="mt-3 text-xs font-black text-slate-600">
-              {language === "fa"
-                ? `${Number(course.publicState.remainingSeats).toLocaleString("fa-AF")} جای باقی مانده`
-                : `${Number(course.publicState.remainingSeats).toLocaleString("en-US")} seats remaining`}
-            </p>
-          ) : null}
-
-          <div className={`mt-4 text-sm text-slate-500 ${language === "fa" ? "text-right" : "text-left"}`}>
-            <p className="inline-flex flex-wrap items-center gap-1.5">
-              <Star size={14} fill="currentColor" className="text-amber-500" />
-              <span className="font-black text-slate-700">
+          <div className="mt-3 grid grid-cols-3 divide-x divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white text-center text-[10px] font-bold text-slate-500 rtl:divide-x-reverse">
+            <div className="flex min-w-0 items-center justify-center gap-1 px-1.5 py-2">
+              <Star size={13} fill="currentColor" className="shrink-0 text-amber-500" />
+              <span className="truncate text-slate-700">
                 {ratingCount > 0
-                  ? `${uiText.rating} ${rating.toFixed(1)}`
+                  ? rating.toFixed(1)
                   : language === "fa"
-                    ? "هنوز امتیازی نیست"
-                    : "No ratings yet"}
+                    ? "بدون امتیاز"
+                    : "No rating"}
               </span>
-              <span className="text-slate-300">|</span>
-              <span>
-                {uiText.level} {course?.level || "-"}
+            </div>
+            <div className="truncate px-1.5 py-2">
+              {uiText.level} {course?.level || "-"}
+            </div>
+            <div className="flex min-w-0 items-center justify-center gap-1 px-1.5 py-2">
+              <UsersRound size={13} className="shrink-0" />
+              <span className="truncate">
+                {studentsCount.toLocaleString()} {uiText.students}
               </span>
-              <span className="text-slate-300">|</span>
-              <span className="inline-flex items-center gap-1">
-                <UsersRound size={14} />
-                {uiText.students} {studentsCount.toLocaleString()}
-              </span>
-            </p>
+            </div>
           </div>
 
           <div
-            className={`mt-4 grid grid-cols-1 gap-2 border-t border-slate-100 pt-3 ${
+            className={`mt-3 grid grid-cols-1 gap-2 ${
               isEnrolled || canEnroll ? "sm:grid-cols-2" : ""
             }`}
           >
             <Link
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 transition hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700"
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700"
               to={coursePath}
             >
               <CalendarDays size={15} />
@@ -650,7 +683,7 @@ export default function CourseCard({
             {isEnrolled ? (
               <Link
                 to={workspacePath}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-primary-700 to-primary-600 px-3 text-sm font-black text-white transition hover:from-primary-600 hover:to-primary-500"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-700 to-primary-600 px-3 text-xs font-black text-white shadow-sm transition hover:from-primary-600 hover:to-primary-500"
               >
                 <ArrowIcon size={15} />
                 {publicActionLabel}
@@ -658,7 +691,7 @@ export default function CourseCard({
             ) : canEnroll ? (
               <button
                 type="button"
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-primary-700 to-primary-600 px-3 text-sm font-black text-white transition hover:from-primary-600 hover:to-primary-500 disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-700 to-primary-600 px-3 text-xs font-black text-white shadow-sm transition hover:from-primary-600 hover:to-primary-500 disabled:cursor-not-allowed disabled:opacity-70"
                 onClick={handleBuy}
                 disabled={isStartingPayment}
               >

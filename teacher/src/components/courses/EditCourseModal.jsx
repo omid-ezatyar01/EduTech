@@ -1,5 +1,5 @@
 import { Check, CheckCircle2, Eye, Loader2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getApiBase } from "../../../services/http";
 import CourseStartDatePicker from "./CourseStartDatePicker";
 import CourseImageCropModal from "./CourseImageCropModal";
@@ -510,6 +510,7 @@ export default function EditCourseModal({
   const [isSaving, setIsSaving] = useState(false);
   const [submissionSucceeded, setSubmissionSucceeded] = useState(false);
   const [pendingThumbnailFile, setPendingThumbnailFile] = useState(null);
+  const formScrollRef = useRef(null);
   const parentCategories = useMemo(() => getParentCategories(categories), [categories]);
   const courseLanguageOptions = useMemo(
     () => buildCourseLanguageOptions(teacherLanguages),
@@ -538,7 +539,7 @@ export default function EditCourseModal({
   const regionalPricingErrors =
     form.pricingType !== "free" && form.priceMode === "regional"
       ? validateRegionalPricingForm(form.regionalPrices, {
-          minInternationalPrice: minTeacherCoursePrice,
+          minimumPriceUsd: minTeacherCoursePrice,
           language,
         })
       : {};
@@ -578,6 +579,14 @@ export default function EditCourseModal({
       return undefined;
     return () => URL.revokeObjectURL(selectedThumbnailPreviewUrl);
   }, [selectedThumbnailPreviewUrl]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      formScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [editStep, open]);
   const selectedCategory = form.category || parentCategories[0]?._id || "";
   const selectedSubcategory = categories.some(
     (item) => String(item._id) === String(form.subcategory || ""),
@@ -654,9 +663,106 @@ export default function EditCourseModal({
     });
   };
 
+  const getEditStepValidationError = (step) => {
+    if (step !== 4) return "";
+
+    const isFree = form.pricingType === "free";
+    const price = Number(form.price || 0);
+    const teacherDiscountPercentage = Number(
+      form.teacherDiscountPercentage || 0,
+    );
+    const minimumAttendance = Number(form.certificateMinimumAttendance);
+    const minimumPassingGrade = Number(form.certificateMinimumPassingGrade);
+    const maxStudents = Number(form.maxStudents || 0);
+    const minimumStudentsToStart = Number(form.minimumStudentsToStart || 0);
+
+    if (
+      !isFree &&
+      form.priceMode !== "regional" &&
+      (price < minTeacherCoursePrice ||
+        price > PRICE_MAX_USD ||
+        !isWholeDollarAmount(price))
+    ) {
+      return language === "fa"
+        ? `برای کورس پولی، قیمت باید حداقل ${minTeacherCoursePrice} دالر، حداکثر ${PRICE_MAX_USD} دالر و فقط به‌صورت عدد صحیح باشد.`
+        : `For a paid course, price must be at least ${minTeacherCoursePrice} USD, at most ${PRICE_MAX_USD} USD, and use whole numbers only.`;
+    }
+    if (
+      !isFree &&
+      form.priceMode !== "regional" &&
+      (!Number.isFinite(teacherDiscountPercentage) ||
+        teacherDiscountPercentage < 0 ||
+        teacherDiscountPercentage > 100)
+    ) {
+      return language === "fa"
+        ? "درصد تخفیف مدرس باید بین ۰ تا ۱۰۰ باشد."
+        : "Teacher discount percentage must be between 0 and 100.";
+    }
+    if (
+      !isFree &&
+      form.priceMode === "regional" &&
+      Object.keys(regionalPricingErrors).length
+    ) {
+      return Object.values(regionalPricingErrors)[0];
+    }
+    if (
+      !isFree &&
+      (!Number.isFinite(minimumAttendance) ||
+        minimumAttendance < 0 ||
+        minimumAttendance > 100)
+    ) {
+      return language === "fa"
+        ? "حداقل حضور باید بین ۰ تا ۱۰۰ درصد باشد."
+        : "Minimum attendance must be between 0 and 100 percent.";
+    }
+    if (
+      !isFree &&
+      (!Number.isFinite(minimumPassingGrade) ||
+        minimumPassingGrade < 0 ||
+        minimumPassingGrade > 100)
+    ) {
+      return language === "fa"
+        ? "حداقل نمره قبولی باید بین ۰ تا ۱۰۰ درصد باشد."
+        : "Minimum passing grade must be between 0 and 100 percent.";
+    }
+    if (
+      !Number.isInteger(maxStudents) ||
+      maxStudents < MAX_STUDENTS_MIN ||
+      maxStudents > MAX_STUDENTS_MAX
+    ) {
+      return language === "fa"
+        ? `حداکثر شاگرد باید بین ${MAX_STUDENTS_MIN} تا ${MAX_STUDENTS_MAX} باشد.`
+        : `Max students must be between ${MAX_STUDENTS_MIN} and ${MAX_STUDENTS_MAX}.`;
+    }
+    if (
+      !Number.isInteger(minimumStudentsToStart) ||
+      minimumStudentsToStart < MINIMUM_STUDENTS_TO_START_MIN ||
+      minimumStudentsToStart > maxStudents
+    ) {
+      return language === "fa"
+        ? "حداقل شاگرد برای شروع باید حداقل ۱ نفر و کمتر یا مساوی ظرفیت کورس باشد."
+        : "Minimum students to start must be at least 1 and cannot exceed course capacity.";
+    }
+    return "";
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setFormError("");
+
+    // Native form submission (for example, pressing Enter on a mobile
+    // keyboard) must never bypass the review and preview steps.
+    if (!isFinalStep) {
+      const stepError = getEditStepValidationError(editStep);
+      if (stepError) {
+        setFormError(stepError);
+        return;
+      }
+      setEditStep((previous) =>
+        Math.min(EDIT_FORM_STEPS.length, previous + 1),
+      );
+      return;
+    }
 
     const isFree = form.pricingType === "free";
     const price = Number(form.price || 0);
@@ -1054,9 +1160,10 @@ export default function EditCourseModal({
           </div>
         ) : (
         <form
+          ref={formScrollRef}
           noValidate
           onSubmit={handleSubmit}
-          className="min-h-0 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4"
+          className="edutech-scrollbar min-h-0 overflow-y-auto overscroll-contain px-4 py-3 [scrollbar-gutter:stable] sm:px-5 sm:py-4"
           dir="ltr"
         >
           <div
@@ -1080,6 +1187,17 @@ export default function EditCourseModal({
                   type="button"
                   disabled={isSaving}
                   onClick={() => {
+                    if (step.id > editStep) {
+                      const stepToValidate =
+                        editStep <= 4 && step.id > 4 ? 4 : editStep;
+                      const stepError =
+                        getEditStepValidationError(stepToValidate);
+                      if (stepError) {
+                        setEditStep(stepToValidate);
+                        setFormError(stepError);
+                        return;
+                      }
+                    }
                     setFormError("");
                     setEditStep(step.id);
                   }}
@@ -1583,6 +1701,7 @@ export default function EditCourseModal({
                 errors={regionalPricingErrors}
                 language={language}
                 disabled={isCoursePricingLocked}
+                minimumPriceUsd={minTeacherCoursePrice}
               />
             ) : null}
 
@@ -1967,6 +2086,11 @@ export default function EditCourseModal({
                   type="button"
                   disabled={isSaving}
                   onClick={() => {
+                    const stepError = getEditStepValidationError(editStep);
+                    if (stepError) {
+                      setFormError(stepError);
+                      return;
+                    }
                     setFormError("");
                     setEditStep((previous) =>
                       Math.min(EDIT_FORM_STEPS.length, previous + 1),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { fetchTeacherProfile } from "../../services/teacherPortalService";
+import { fetchTeacherAccessProfile } from "../../services/teacherPortalService";
 import { getAuthUser, isTeacherAuthenticated } from "../../services/portal.js";
 import TeacherPageLoader from "../components/common/TeacherPageLoader.jsx";
 
@@ -21,7 +21,7 @@ export default function TeacherProtectedRoute({ children }) {
       if (!isTeacherAuthenticated()) return;
 
       try {
-        const data = await fetchTeacherProfile();
+        const data = await fetchTeacherAccessProfile();
         if (!mounted) return;
         const status = String(data?.teacherApplication?.status || "");
         setIsApproved(status === "approved");

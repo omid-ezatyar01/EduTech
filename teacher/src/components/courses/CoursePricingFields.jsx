@@ -30,8 +30,10 @@ export default function CoursePricingFields({
   errors = {},
   language = "en",
   disabled = false,
+  minimumPriceUsd = 0,
 }) {
   const isFa = language === "fa";
+  const normalizedMinimumPriceUsd = Math.max(0, Number(minimumPriceUsd) || 0);
   const [rateState, setRateState] = useState(INITIAL_RATE_STATE);
 
   const loadRates = useCallback(async () => {
@@ -179,6 +181,13 @@ export default function CoursePricingFields({
               ? "ابتدا قیمت پایه را به دالر تعیین کنید. سپس برای افغانستان و ایران همان قیمت را استفاده کنید یا قیمت محلی جداگانه وارد نمایید."
               : "First set the USD fallback. Then let Afghanistan and Iran use that price or add a local override."}
           </div>
+          {normalizedMinimumPriceUsd > 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs font-bold leading-5 text-amber-900">
+              {isFa
+                ? `حداقل تعیین‌شده توسط مدیر ${normalizedMinimumPriceUsd.toLocaleString("fa-AF")} دالر است. قیمت اصلی و هر قیمت تخفیف‌خوردهٔ پولی در تمام مناطق باید معادل همین مبلغ یا بیشتر باشد.`
+                : `The administrator minimum is ${normalizedMinimumPriceUsd.toLocaleString("en-US")} USD. Every paid regular and discounted price in every region must equal this amount or more.`}
+            </div>
+          ) : null}
 
           <RegionCard
             definition={internationalDefinition}

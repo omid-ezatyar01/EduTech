@@ -62,7 +62,7 @@ export default function TeacherSidebar({
         </div>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-4 [direction:ltr] sm:pt-6">
+      <nav className="edutech-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-4 pt-4 [direction:ltr] [scrollbar-gutter:stable] sm:pt-6">
         <div className="space-y-1.5" dir={isRTL ? "rtl" : "ltr"}>
           {menuItems.map((item) => (
             <NavLink

@@ -68,6 +68,16 @@ const preloadRoutes = [
   { key: "telegram-redirect", test: (path) => path === "/telegram", load: loadAdminSettingsPage },
 ];
 
+const isConstrainedConnection = () => {
+  if (typeof navigator === "undefined") return false;
+  const connection =
+    navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  return (
+    Boolean(connection?.saveData) ||
+    /(^|slow-)2g/i.test(String(connection?.effectiveType || ""))
+  );
+};
+
 import {
   clearAuth,
   isAdminAuthenticated,
@@ -225,6 +235,40 @@ function AppContent() {
     if (typeof window === "undefined") return;
     prefetchPath(location.pathname);
   }, [location.pathname, prefetchPath]);
+
+  useEffect(() => {
+    if (!isAuthenticated || isConstrainedConnection()) return undefined;
+    let cancelled = false;
+    const preloadInBackground = async () => {
+      for (const route of preloadRoutes) {
+        if (cancelled) break;
+        if (["login", "telegram-redirect"].includes(route.key)) continue;
+        if (prefetchedRoutesRef.current.has(route.key)) continue;
+        prefetchedRoutesRef.current.add(route.key);
+        try {
+          await route.load();
+        } catch {
+          prefetchedRoutesRef.current.delete(route.key);
+        }
+      }
+    };
+    const callback = () => {
+      preloadInBackground();
+    };
+    const idleId =
+      typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback(callback, { timeout: 2500 })
+        : window.setTimeout(callback, 1200);
+
+    return () => {
+      cancelled = true;
+      if (typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      } else {
+        window.clearTimeout(idleId);
+      }
+    };
+  }, [isAuthenticated]);
 
   const handleLogout = () => {
     clearAuth();

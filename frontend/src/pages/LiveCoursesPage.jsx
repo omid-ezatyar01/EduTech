@@ -90,15 +90,22 @@ const buildCategoryPath = (categories = [], targetId = "") => {
 
 function CourseGridSkeleton() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+    <div
+      className="grid items-stretch gap-4 px-3 sm:grid-cols-2 sm:px-0 xl:grid-cols-4"
+      aria-hidden="true"
+    >
       {Array.from({ length: 6 }, (_, index) => (
-        <div key={index} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div
+          key={index}
+          className="mx-auto flex h-full w-full max-w-[390px] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white"
+        >
           <div className="aspect-[16/9] animate-pulse bg-slate-100" />
-          <div className="space-y-3 p-5">
+          <div className="flex flex-1 flex-col space-y-3 p-4 sm:p-[18px]">
             <div className="h-4 w-1/3 animate-pulse rounded bg-slate-100" />
             <div className="h-5 w-4/5 animate-pulse rounded bg-slate-200" />
             <div className="h-4 w-2/3 animate-pulse rounded bg-slate-100" />
-            <div className="h-11 animate-pulse rounded-xl bg-slate-100" />
+            <div className="mt-auto h-11 animate-pulse rounded-xl bg-slate-100" />
+            <div className="h-10 animate-pulse rounded-xl bg-slate-100" />
           </div>
         </div>
       ))}
@@ -125,6 +132,46 @@ function FilterSelect({ label, value, onChange, options, setCurrentPage }) {
         ))}
       </select>
     </label>
+  );
+}
+
+function FilterChoiceGroup({
+  label,
+  value,
+  onChange,
+  options,
+  setCurrentPage,
+  className = "",
+}) {
+  return (
+    <fieldset className={className}>
+      <legend className="mb-2 block text-xs font-black text-slate-700">
+        {label}
+      </legend>
+      <div className="flex flex-wrap gap-2">
+        {options.map((item) => {
+          const selected = item.value === value;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => {
+                setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+                onChange(item.value);
+              }}
+              className={`inline-flex min-h-10 min-w-[calc(50%-0.25rem)] flex-1 items-center justify-center rounded-xl border px-3 text-xs font-black transition sm:min-w-0 sm:flex-none ${
+                selected
+                  ? "border-teal-600 bg-teal-600 text-white shadow-sm"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800"
+              }`}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -200,6 +247,18 @@ export default function LiveCoursesPage({ t }) {
     setCurrentPage(INITIAL_LIST_PAGE_COUNT);
     setSearchTerm(searchInput.trim());
   }, [searchInput]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const nextSearch = searchInput.trim();
+      if (nextSearch !== searchTerm) {
+        setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+        setSearchTerm(nextSearch);
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [searchInput, searchTerm]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -475,6 +534,24 @@ export default function LiveCoursesPage({ t }) {
       label: `${item.value} (${item.count})`,
     })),
   ];
+  const pricingOptions = [
+    { value: "all", label: language === "fa" ? "همه" : "All" },
+    { value: "free", label: language === "fa" ? "رایگان" : "Free" },
+    { value: "paid", label: language === "fa" ? "پولی" : "Paid" },
+  ];
+  const courseTypeOptions = [
+    { value: "all", label: language === "fa" ? "همه" : "All" },
+    { value: "general", label: language === "fa" ? "عمومی" : "General" },
+    { value: "special", label: language === "fa" ? "ویژه" : "Special" },
+  ];
+  const paymentPlanOptions = [
+    { value: "all", label: language === "fa" ? "همه" : "All" },
+    { value: "monthly", label: language === "fa" ? "ماهانه" : "Monthly" },
+    {
+      value: "whole_period",
+      label: language === "fa" ? "تمام دوره" : "Whole period",
+    },
+  ];
   const advancedFilterCount = [
     category,
     level,
@@ -630,6 +707,59 @@ export default function LiveCoursesPage({ t }) {
       setSearchParams(nextParams, { replace: true });
     }
   };
+  const quickFilters = [
+    {
+      key: "all",
+      label: language === "fa" ? "همه کورس‌ها" : "All courses",
+      selected: activeFilterCount === 0,
+      action: resetFilters,
+    },
+    {
+      key: "free",
+      label: language === "fa" ? "رایگان" : "Free",
+      selected: pricing === "free",
+      action: () => {
+        setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+        setPricing((current) => (current === "free" ? "all" : "free"));
+      },
+    },
+    {
+      key: "paid",
+      label: language === "fa" ? "پولی" : "Paid",
+      selected: pricing === "paid",
+      action: () => {
+        setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+        setPricing((current) => (current === "paid" ? "all" : "paid"));
+      },
+    },
+    {
+      key: "beginner",
+      label: language === "fa" ? "مناسب مبتدی" : "Beginner friendly",
+      selected: level === "beginner",
+      action: () => {
+        setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+        setLevel((current) => (current === "beginner" ? "all" : "beginner"));
+      },
+    },
+    {
+      key: "special",
+      label: language === "fa" ? "کورس‌های ویژه" : "Special courses",
+      selected: courseType === "special",
+      action: () => {
+        setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+        setCourseType((current) => (current === "special" ? "all" : "special"));
+      },
+    },
+    {
+      key: "starting",
+      label: language === "fa" ? "شروع نزدیک" : "Starting soon",
+      selected: sortMode === "startDate",
+      action: () => {
+        setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+        setSortMode((current) => (current === "startDate" ? "popular" : "startDate"));
+      },
+    },
+  ];
   const totalCourses = displayTotalCourses;
   const seoCourses = useMemo(() => {
     const sourceRows = isRootSectionMode
@@ -814,35 +944,43 @@ export default function LiveCoursesPage({ t }) {
                 ) : null}
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_240px_auto]">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_230px_auto]">
                 <label>
-                  <span className="mb-1.5 block text-xs font-black text-slate-600">
-                    {language === "fa" ? "جستجو" : "Search"}
-                  </span>
-                  <div className="flex gap-2">
-                    <span className="flex h-12 min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-500 transition focus-within:border-teal-400 focus-within:bg-white">
-                      <Search size={19} className="text-slate-400" />
-                      <input
-                        value={searchInput}
-                        onChange={(event) => setSearchInput(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            applySearch();
-                          }
-                        }}
-                        className="min-w-0 flex-1 bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
-                        placeholder={page.searchPlaceholder}
-                        type="search"
-                      />
+                  <span className="mb-1.5 flex items-center justify-between gap-2 text-xs font-black text-slate-600">
+                    <span>{language === "fa" ? "جستجوی فوری" : "Instant search"}</span>
+                    <span className="text-[10px] font-bold text-teal-700">
+                      {language === "fa" ? "خودکار" : "Automatic"}
                     </span>
-                    <button
-                      type="button"
-                      onClick={applySearch}
-                      className="inline-flex h-12 shrink-0 items-center justify-center rounded-xl bg-teal-600 px-4 text-sm font-black text-white transition hover:bg-teal-700"
-                    >
-                      {language === "fa" ? "جستجو" : "Search"}
-                    </button>
+                  </span>
+                  <div className="flex h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-500 transition focus-within:border-teal-400 focus-within:bg-white focus-within:ring-4 focus-within:ring-teal-50">
+                    <Search size={19} className="shrink-0 text-slate-400" />
+                    <input
+                      value={searchInput}
+                      onChange={(event) => setSearchInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          applySearch();
+                        }
+                      }}
+                      className="min-w-0 flex-1 bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
+                      placeholder={page.searchPlaceholder}
+                      type="search"
+                    />
+                    {searchInput ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchInput("");
+                          setSearchTerm("");
+                          setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+                        }}
+                        aria-label={language === "fa" ? "پاک‌کردن جستجو" : "Clear search"}
+                        className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-200 text-slate-600 transition hover:bg-rose-100 hover:text-rose-700"
+                      >
+                        <X size={14} />
+                      </button>
+                    ) : null}
                   </div>
                 </label>
 
@@ -877,6 +1015,26 @@ export default function LiveCoursesPage({ t }) {
                     ) : null}
                   </button>
                 </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
+                <span className="shrink-0 text-[11px] font-black text-slate-500">
+                  {language === "fa" ? "انتخاب سریع:" : "Quick filters:"}
+                </span>
+                {quickFilters.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    aria-pressed={item.selected}
+                    onClick={item.action}
+                    className={`inline-flex h-9 shrink-0 items-center justify-center rounded-full border px-3.5 text-xs font-black transition ${
+                      item.selected
+                        ? "border-teal-600 bg-teal-600 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
               {filterChips.length > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3"><span className="text-xs font-black text-slate-500">{language === "fa" ? "فیلترهای فعال:" : "Active filters:"}</span>{filterChips.map((chip) => <button key={chip.key} type="button" onClick={() => removeFilter(chip.key)} className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-3 py-1.5 text-xs font-black text-primary-700 transition hover:bg-rose-50 hover:text-rose-700"><span className="max-w-48 truncate">{chip.label}</span><X size={13} /></button>)}</div> : null}
             </div>
@@ -955,80 +1113,122 @@ export default function LiveCoursesPage({ t }) {
                         options={languageOptions}
                         setCurrentPage={setCurrentPage}
                       />
-                      <FilterSelect
-                        label={language === "fa" ? "سطح" : "Level"}
+                      <FilterChoiceGroup
+                        label={language === "fa" ? "سطح کورس" : "Course level"}
                         value={level}
                         onChange={setLevel}
                         options={levelOptions}
                         setCurrentPage={setCurrentPage}
                       />
-                      <FilterSelect
-                        label={language === "fa" ? "قیمت" : "Price type"}
+                      <FilterChoiceGroup
+                        label={language === "fa" ? "نوع قیمت" : "Price type"}
                         value={pricing}
                         onChange={setPricing}
+                        options={pricingOptions}
                         setCurrentPage={setCurrentPage}
-                        options={[
-                          { value: "all", label: language === "fa" ? "رایگان و پولی" : "Free & paid" },
-                          { value: "free", label: language === "fa" ? "فقط رایگان" : "Free only" },
-                          { value: "paid", label: language === "fa" ? "فقط پولی" : "Paid only" },
-                        ]}
                       />
-                      <FilterSelect
+                      <FilterChoiceGroup
                         label={language === "fa" ? "نوع کورس" : "Course type"}
                         value={courseType}
                         onChange={setCourseType}
+                        options={courseTypeOptions}
                         setCurrentPage={setCurrentPage}
-                        options={[
-                          { value: "all", label: language === "fa" ? "همه انواع" : "All types" },
-                          { value: "general", label: language === "fa" ? "عمومی" : "General" },
-                          { value: "special", label: language === "fa" ? "ویژه" : "Special" },
-                        ]}
                       />
-                      <FilterSelect
+                      <FilterChoiceGroup
                         label={language === "fa" ? "روش پرداخت" : "Payment plan"}
                         value={paymentPlan}
                         onChange={setPaymentPlan}
+                        options={paymentPlanOptions}
                         setCurrentPage={setCurrentPage}
-                        options={[
-                          { value: "all", label: language === "fa" ? "همه روش‌ها" : "All plans" },
-                          { value: "monthly", label: language === "fa" ? "پرداخت ماهانه" : "Monthly" },
-                          { value: "whole_period", label: language === "fa" ? "پرداخت تمام دوره" : "Whole period" },
-                        ]}
+                        className="sm:col-span-2"
                       />
-                      <label>
-                        <span className="mb-1.5 block text-xs font-black text-slate-600">
-                          {language === "fa" ? "قیمت از (USD)" : "Min price (USD)"}
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          max={meta?.facets?.priceRange?.max || 10000}
-                          value={minPrice}
-                          onChange={(event) => {
-                            setCurrentPage(INITIAL_LIST_PAGE_COUNT);
-                            setMinPrice(event.target.value);
-                          }}
-                          placeholder={String(meta?.facets?.priceRange?.min ?? 0)}
-                          className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-teal-400 focus:bg-white"
-                        />
-                      </label>
-                      <label>
-                        <span className="mb-1.5 block text-xs font-black text-slate-600">
-                          {language === "fa" ? "قیمت تا (USD)" : "Max price (USD)"}
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="10000"
-                          value={maxPrice}
-                          onChange={(event) => {
-                            setCurrentPage(INITIAL_LIST_PAGE_COUNT);
-                            setMaxPrice(event.target.value);
-                          }}
-                          placeholder={String(meta?.facets?.priceRange?.max ?? 0)}
-                          className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-teal-400 focus:bg-white"
-                        />
-                      </label>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:col-span-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900">
+                              {language === "fa" ? "محدوده قیمت دالری" : "USD price range"}
+                            </h3>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                              {language === "fa"
+                                ? "یک محدوده آماده را انتخاب کنید یا مبلغ دلخواه وارد نمایید."
+                                : "Choose a preset or enter your own range."}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              {
+                                key: "any",
+                                label: language === "fa" ? "همه" : "Any",
+                                min: "",
+                                max: "",
+                              },
+                              { key: "under10", label: "< $10", min: "", max: "10" },
+                              { key: "10to25", label: "$10–$25", min: "10", max: "25" },
+                              { key: "over25", label: "$25+", min: "25", max: "" },
+                            ].map((range) => {
+                              const selected =
+                                minPrice === range.min && maxPrice === range.max;
+                              return (
+                                <button
+                                  key={range.key}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  onClick={() => {
+                                    setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+                                    setMinPrice(range.min);
+                                    setMaxPrice(range.max);
+                                  }}
+                                  className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-black transition ${
+                                    selected
+                                      ? "border-teal-600 bg-teal-600 text-white"
+                                      : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"
+                                  }`}
+                                >
+                                  {range.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <label>
+                            <span className="mb-1.5 block text-xs font-black text-slate-600">
+                              {language === "fa" ? "از (USD)" : "From (USD)"}
+                            </span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              max={meta?.facets?.priceRange?.max || 10000}
+                              value={minPrice}
+                              onChange={(event) => {
+                                setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+                                setMinPrice(event.target.value);
+                              }}
+                              placeholder={String(meta?.facets?.priceRange?.min ?? 0)}
+                              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-50"
+                            />
+                          </label>
+                          <label>
+                            <span className="mb-1.5 block text-xs font-black text-slate-600">
+                              {language === "fa" ? "تا (USD)" : "To (USD)"}
+                            </span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              max="10000"
+                              value={maxPrice}
+                              onChange={(event) => {
+                                setCurrentPage(INITIAL_LIST_PAGE_COUNT);
+                                setMaxPrice(event.target.value);
+                              }}
+                              placeholder={String(meta?.facets?.priceRange?.max ?? 0)}
+                              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-50"
+                            />
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1082,13 +1282,13 @@ export default function LiveCoursesPage({ t }) {
                             sectionRowRefs.current[section.category._id] = element;
                           }}
                           onScroll={(event) => updateSectionRowNav(section.category._id, event.currentTarget)}
-                          className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 sm:grid sm:snap-none sm:grid-cols-2 sm:overflow-visible xl:grid-cols-4"
+                          className="edutech-scrollbar flex snap-x snap-mandatory items-stretch gap-3 overflow-x-auto px-1 pb-2 sm:grid sm:snap-none sm:grid-cols-2 sm:overflow-visible xl:grid-cols-4"
                           dir={language === "fa" ? "rtl" : "ltr"}
                         >
                         {section.courses.map((course, itemIndex) => (
                           <div
                             key={course._id || course.id || `${course.title}-${itemIndex}`}
-                            className="relative w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start sm:w-auto sm:min-w-0"
+                            className="relative h-full w-[min(100%,390px)] min-w-[min(100%,390px)] shrink-0 snap-start sm:w-auto sm:min-w-0"
                           >
                             <CourseCatalogCard
                               course={course}
@@ -1135,11 +1335,11 @@ export default function LiveCoursesPage({ t }) {
                   ))}
                 </div>
               ) : (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid items-stretch gap-4 px-3 sm:grid-cols-2 sm:px-0 xl:grid-cols-4">
                 {courses.map((course, index) => (
                   <div
                     key={course._id || course.id || `${course.title}-${index}`}
-                    className="relative w-full"
+                    className="relative mx-auto h-full w-full max-w-[390px]"
                   >
                     <CourseCatalogCard
                       course={course}

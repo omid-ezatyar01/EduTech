@@ -1,6 +1,10 @@
-import { getToken, handleAuthExpired } from "./portal.js";
+import {
+  getToken,
+  handleAuthExpired,
+  isAuthExpiredResponse,
+} from "./portal.js";
 
-const GET_REQUEST_CACHE_TTL_MS = 1200;
+const GET_REQUEST_CACHE_TTL_MS = 15 * 1000;
 const inflightGetRequests = new Map();
 const recentGetResponses = new Map();
 let fetchGuardInstalled = false;
@@ -159,9 +163,11 @@ export const parseJsonResponse = async (response) => {
 
   if (!response.ok) {
     const message = data?.message || "Request failed";
-    const isExpiredSession =
-      response.status === 401 ||
-      /not authorized, user not found|jwt expired|invalid token|token failed/i.test(message);
+    const isExpiredSession = isAuthExpiredResponse(
+      response.status,
+      message,
+      data?.code,
+    );
 
     if (isExpiredSession) {
       handleAuthExpired();

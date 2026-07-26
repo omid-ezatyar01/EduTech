@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import TeacherProtectedRoute from "./TeacherProtectedRoute";
 import { getTeacherEntryPath, isTeacherAuthenticated } from "../../services/portal.js";
@@ -135,6 +135,40 @@ export default function TeacherRoutes() {
     },
     [prefetchPath],
   );
+
+  useEffect(() => {
+    if (!isAuthenticated || isConstrainedConnection()) return undefined;
+    let cancelled = false;
+    const preloadInBackground = async () => {
+      for (const route of preloadRoutes) {
+        if (cancelled) break;
+        if (["login", "password-recovery"].includes(route.key)) continue;
+        if (prefetchedRoutesRef.current.has(route.key)) continue;
+        prefetchedRoutesRef.current.add(route.key);
+        try {
+          await route.load();
+        } catch {
+          prefetchedRoutesRef.current.delete(route.key);
+        }
+      }
+    };
+    const callback = () => {
+      preloadInBackground();
+    };
+    const idleId =
+      typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback(callback, { timeout: 2500 })
+        : window.setTimeout(callback, 1200);
+
+    return () => {
+      cancelled = true;
+      if (typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      } else {
+        window.clearTimeout(idleId);
+      }
+    };
+  }, [isAuthenticated]);
 
   return (
     <div onPointerEnterCapture={handleRouteIntent} onFocusCapture={handleRouteIntent}>

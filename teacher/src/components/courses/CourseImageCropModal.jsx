@@ -271,10 +271,12 @@ export default function CourseImageCropModal({
   return (
     <div className="fixed inset-0 z-[140] flex items-end justify-center bg-[#0F172A]/70 p-0 sm:items-center sm:p-4">
       <div
-        className="max-h-[100dvh] w-full max-w-4xl overflow-y-auto rounded-t-[28px] bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-[32px]"
-        dir={isFa ? "rtl" : "ltr"}
+        className="edutech-scrollbar max-h-[100dvh] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-t-[28px] bg-white shadow-2xl [direction:ltr] [scrollbar-gutter:stable] sm:max-h-[95vh] sm:rounded-[32px]"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-5 sm:px-6">
+        <div
+          className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-5 sm:px-6"
+          dir={isFa ? "rtl" : "ltr"}
+        >
           <div>
             <h3 className="text-lg font-black text-slate-950">{t.title}</h3>
             <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">{t.subtitle}</p>
@@ -288,7 +290,7 @@ export default function CourseImageCropModal({
           </button>
         </div>
 
-        <div className="space-y-5 p-5 sm:p-6">
+        <div className="space-y-5 p-5 sm:p-6" dir={isFa ? "rtl" : "ltr"}>
           <div className="grid grid-cols-2 gap-3">
             {[
               { value: "fit", icon: Image, label: t.fit, help: t.fitHelp },

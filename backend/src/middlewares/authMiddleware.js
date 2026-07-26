@@ -7,27 +7,44 @@ export const protect = async (req, res, next) => {
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({
+      code: "AUTH_TOKEN_MISSING",
       message: "Not authorized, no token",
     });
   }
 
+  const token = authHeader.split(" ")[1];
+  let decoded;
+
   try {
-    const token = authHeader.split(" ")[1];
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (error) {
+    return res.status(401).json({
+      code:
+        error?.name === "TokenExpiredError"
+          ? "AUTH_TOKEN_EXPIRED"
+          : "AUTH_TOKEN_INVALID",
+      message:
+        error?.name === "TokenExpiredError"
+          ? "Not authorized, token expired"
+          : "Not authorized, token failed",
+    });
+  }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
+  try {
     const user = await User.findById(decoded.id).select(
       "-password -emailOtpHash -emailOtpExpiresAt -emailOtpAttempts",
     );
 
     if (!user) {
       return res.status(401).json({
+        code: "AUTH_USER_NOT_FOUND",
         message: "Not authorized, user not found",
       });
     }
 
     if (Number(decoded.tokenVersion || 0) !== Number(user.tokenVersion || 0)) {
       return res.status(401).json({
+        code: "AUTH_TOKEN_REVOKED",
         message: "Password changed. Please login again",
       });
     }
@@ -35,18 +52,21 @@ export const protect = async (req, res, next) => {
     const didExpireContract = await blockTeacherIfContractExpired(user);
     if (didExpireContract) {
       return res.status(403).json({
+        code: "TEACHER_CONTRACT_EXPIRED",
         message: "Your teacher account contract has expired and the account was blocked",
       });
     }
 
     if (user.status === "blocked") {
       return res.status(403).json({
+        code: "ACCOUNT_BLOCKED",
         message: "Your account has been blocked",
       });
     }
 
     if (user.role === "student" && (!user.isEmailVerified || user.status === "pending_verification")) {
       return res.status(403).json({
+        code: "EMAIL_VERIFICATION_REQUIRED",
         message: "Please verify your email before continuing",
       });
     }
@@ -54,8 +74,11 @@ export const protect = async (req, res, next) => {
     req.user = user;
     return next();
   } catch (error) {
-    return res.status(401).json({
-      message: "Not authorized, token failed",
+    console.error("Authentication service error:", error?.message || error);
+    res.set("Retry-After", "3");
+    return res.status(503).json({
+      code: "AUTH_SERVICE_UNAVAILABLE",
+      message: "Authentication service is temporarily unavailable. Please retry.",
     });
   }
 };
