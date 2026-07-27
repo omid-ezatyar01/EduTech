@@ -758,6 +758,19 @@ export const getTeacherBankPaymentReviews = async (req, res) => {
     if (status) {
       filter["bankPaymentReview.status"] = status;
     }
+    if (["pending", "rejected"].includes(status)) {
+      filter.$and = [
+        { "bankPaymentReview.pendingInfo.accountHolderName": { $nin: ["", null] } },
+        { "bankPaymentReview.pendingInfo.bankName": { $nin: ["", null] } },
+        {
+          $or: [
+            { "bankPaymentReview.pendingInfo.accountNumber": { $nin: ["", null] } },
+            { "bankPaymentReview.pendingInfo.cardNumber": { $nin: ["", null] } },
+            { "bankPaymentReview.pendingInfo.iban": { $nin: ["", null] } },
+          ],
+        },
+      ];
+    }
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },

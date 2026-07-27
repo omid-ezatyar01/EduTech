@@ -36,6 +36,44 @@ export const formatDisplayCurrencyAmount = (
   return `${formatted} ${getDisplayCurrencyLabel(displayCurrency, language)}`;
 };
 
+export const formatUsdToLocalCalculation = (item = {}, language = "en") => {
+  if (item.sourcePriceAmount === null || item.sourcePriceAmount === undefined) return "";
+
+  const sourceCurrency = normalizeCurrency(item.sourcePriceCurrency || "USD");
+  const displayCurrency = getDisplayCurrency(sourceCurrency);
+  const localAmount = getDisplayCurrencyAmount(item.sourcePriceAmount, sourceCurrency);
+  const usdAmount = Number(item.baseRevenue ?? item.totalRevenue ?? 0);
+  const savedRate = getDisplayCurrencyAmount(item.sourceExchangeRate, sourceCurrency);
+  const localLabel = formatDisplayCurrencyAmount(
+    item.sourcePriceAmount,
+    sourceCurrency,
+    language,
+    { maximumFractionDigits: 2 },
+  );
+
+  if (displayCurrency === "USD" || !(usdAmount > 0)) return localLabel;
+
+  const effectiveRate =
+    Number.isFinite(savedRate) && savedRate > 0
+      ? savedRate
+      : localAmount > 0
+        ? localAmount / usdAmount
+        : 0;
+  if (!(effectiveRate > 0)) return localLabel;
+
+  const locale = language === "fa" ? "fa-AF" : "en-US";
+  const usdLabel = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(usdAmount);
+  const rateLabel = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  }).format(effectiveRate);
+
+  return `${usdLabel} USD × ${rateLabel} ${getDisplayCurrencyLabel(displayCurrency, language)}/USD = ${localLabel}`;
+};
+
 export const replaceIranRialTextForDisplay = (value = "") =>
   String(value || "").replace(
     /(-?\d[\d,]*(?:\.\d+)?)\s*IRR\b/gi,

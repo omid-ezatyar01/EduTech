@@ -2,11 +2,39 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  extractBankPaymentSubmission,
   hasUsableBankPaymentInfo,
   isValidIranianSheba,
   normalizeBankPaymentInfo,
   validateAndNormalizeBankPaymentInfo,
 } from "../src/utils/bankPaymentInfo.js";
+
+test("teacher profile submission without bank fields does not create a bank review submission", () => {
+  const result = extractBankPaymentSubmission({
+    name: "Teacher Name",
+    teacherApplication: JSON.stringify({ professionalTitle: "English teacher" }),
+    teacherApplicationAction: "submit_for_review",
+  });
+
+  assert.equal(result.submitted, false);
+  assert.equal(result.value, undefined);
+});
+
+test("bank review submission is detected only when bank details are explicitly sent", () => {
+  const result = extractBankPaymentSubmission({
+    bankPaymentInfo: JSON.stringify({
+      country: "IR",
+      accountHolderName: "Omid Ezatyar",
+      bankName: "Melli",
+      cardNumber: "6037997512345678",
+    }),
+    bankCountry: "IR",
+  });
+
+  assert.equal(result.submitted, true);
+  assert.equal(result.value.country, "IR");
+  assert.equal(result.value.cardNumber, "6037997512345678");
+});
 
 test("Afghanistan bank info saves successfully without IBAN", () => {
   const result = validateAndNormalizeBankPaymentInfo({

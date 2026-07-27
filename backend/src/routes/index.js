@@ -21,6 +21,7 @@ import aiChatRoutes from "./aiChat.routes.js";
 import videoRoutes from "./video.routes.js";
 import teacherFollowRoutes from "./teacherFollow.routes.js";
 import articleRoutes from "./article.routes.js";
+import supportRoutes from "./support.routes.js";
 
 const router = express.Router();
 
@@ -46,5 +47,6 @@ router.use("/", aiChatRoutes);
 router.use("/", videoRoutes);
 router.use("/", teacherFollowRoutes);
 router.use("/", articleRoutes);
+router.use("/", supportRoutes);
 
 export default router;

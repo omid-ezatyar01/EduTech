@@ -30,6 +30,18 @@ const envSchema = Joi.object({
   CURRENCYFREAKS_BASE_URL: Joi.string().uri().default("https://api.currencyfreaks.com/v2.0"),
   CURRENCYFREAKS_TIMEOUT_MS: Joi.number().integer().min(1000).default(10000),
   CURRENCYFREAKS_CACHE_TTL_MS: Joi.number().integer().min(1000).default(300000),
+  IRAN_MARKET_RATE_PROVIDER: Joi.string()
+    .trim()
+    .valid("currencyapi", "navasan")
+    .default("currencyapi"),
+  IRAN_MARKET_CACHE_TTL_MS: Joi.number().integer().min(3600000).default(86400000),
+  CURRENCYAPI_API_KEY: Joi.string().trim().allow("").default(""),
+  CURRENCYAPI_BASE_URL: Joi.string().uri().default("https://api.currencyapi.com/v3"),
+  NAVASAN_API_KEY: Joi.string().trim().allow("").default(""),
+  NAVASAN_BASE_URL: Joi.string().uri().default("https://api.navasan.tech"),
+  NAVASAN_USD_FIELD: Joi.string().trim().default("usd_sell.value"),
+  NAVASAN_RATE_UNIT: Joi.string().trim().valid("rial", "toman").default("toman"),
+  IRAN_MARKET_MIN_USD_TO_TOMAN_RATE: Joi.number().positive().default(50000),
   HESABPAY_EXCHANGE_RATE_API_URL: Joi.string()
     .uri()
     .default("https://open.er-api.com/v6/latest/USD"),
@@ -135,6 +147,24 @@ export const validateEnv = () => {
       extraErrors.push("COURSE_PUBLIC_ORIGIN is required in production");
     } else if (!/^https:\/\//i.test(String(value.COURSE_PUBLIC_ORIGIN || "").trim())) {
       extraErrors.push("COURSE_PUBLIC_ORIGIN must use https:// in production");
+    }
+
+    if (
+      value.IRAN_MARKET_RATE_PROVIDER === "currencyapi" &&
+      !String(value.CURRENCYAPI_API_KEY || "").trim()
+    ) {
+      extraErrors.push(
+        "CURRENCYAPI_API_KEY is required in production for Iran market pricing",
+      );
+    }
+
+    if (
+      value.IRAN_MARKET_RATE_PROVIDER === "navasan" &&
+      !String(value.NAVASAN_API_KEY || "").trim()
+    ) {
+      extraErrors.push(
+        "NAVASAN_API_KEY is required in production for Iran free-market pricing",
+      );
     }
   }
 

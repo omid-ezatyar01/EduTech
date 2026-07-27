@@ -121,7 +121,9 @@ Before production:
 
 ## Exchange Rate Setup
 
-The backend uses CurrencyFreaks for exchange-rate lookups so the same provider can serve `AFN`, `IRR`, and `USDT`.
+The backend fetches `AFN`, `IRR`, and `USDT` together from CurrencyAPI in one
+daily request. CurrencyAPI's USD/IRR value tracks the market-style rate shown
+by Google instead of the old official `42,000 IRR` value.
 
 Supported configuration:
 
@@ -131,6 +133,12 @@ CURRENCYFREAKS_API_KEY=your-currencyfreaks-api-key
 CURRENCYFREAKS_BASE_URL=https://api.currencyfreaks.com/v2.0
 CURRENCYFREAKS_TIMEOUT_MS=10000
 CURRENCYFREAKS_CACHE_TTL_MS=300000
+IRAN_MARKET_RATE_PROVIDER=currencyapi
+IRAN_MARKET_CACHE_TTL_MS=86400000
+CURRENCYAPI_API_KEY=your-currencyapi-key
+CURRENCYAPI_BASE_URL=https://api.currencyapi.com/v3
+IRAN_MARKET_MIN_USD_TO_TOMAN_RATE=50000
+CURRENCY_CONVERSION_DEBUG=false
 HESABPAY_EXCHANGE_RATE_API_URL=https://open.er-api.com/v6/latest/USD
 HESABPAY_EXCHANGE_RATE_TIMEOUT_MS=10000
 HESABPAY_EXCHANGE_RATE_CACHE_TTL_MS=300000
@@ -140,12 +148,21 @@ HESABPAY_USD_TO_AFN_RATE=70
 
 Behavior:
 
-- uses CurrencyFreaks first
+- uses one CurrencyAPI request for `data.AFN.value`, `data.IRR.value`, and
+  `data.USDT.value`
+- stores both the normalized toman value and its IRR equivalent
+- force-refreshes all rates at 11:00 and 13:00 Kabul time and persists each
+  snapshot, using about 60–62 scheduled requests per month
 - validates the returned currency rate
-- caches the rate in memory
+- rejects Iran rates below the configured market sanity threshold, preventing
+  the official 4,200-toman rate from entering pricing
+- treats CurrencyAPI's IRR value as rials and divides it by 10 when storing
+  the normalized toman rate
+- caches the rate in memory and on disk only for the configured TTL; an old persisted rate is not treated as fresh until the next daily refresh
 - falls back to the last known good rate when available
 - keeps an emergency fallback rate for `AFN` so HesabPay can still function if the upstream API is temporarily unavailable
 - logs when fallback behavior is used
+- can temporarily log raw IRR, normalized toman, teacher toman, and final USD values with `CURRENCY_CONVERSION_DEBUG=true`
 
 ## API Routes
 

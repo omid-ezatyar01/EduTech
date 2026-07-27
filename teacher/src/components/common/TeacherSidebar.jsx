@@ -13,6 +13,7 @@ import {
   UserCheck,
   Newspaper,
   MessageSquareHeart,
+  Headphones,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
@@ -28,6 +29,7 @@ const menuItems = [
   { key: "articles", labelFa: "مقاله‌های من", labelEn: "My Articles", path: "/teacher/articles", icon: Newspaper },
   { key: "reports", labelFa: "گزارش‌ها", labelEn: "Reports", path: "/teacher/reports", icon: BarChart3 },
   { key: "feedback", labelFa: "بازخورد شاگردان", labelEn: "Student Feedback", path: "/teacher/feedback", icon: MessageSquareHeart },
+  { key: "support", labelFa: "کمک و پشتیبانی", labelEn: "Help & Support", path: "/teacher/support", icon: Headphones },
   { key: "income", labelFa: "درآمد", labelEn: "Income", path: "/teacher/income", icon: DollarSign },
   { key: "profile", labelFa: "پروفایل", labelEn: "Profile", path: "/teacher/profile", icon: User },
   { key: "settings", labelFa: "تنظیمات", labelEn: "Settings", path: "/teacher/settings", icon: Settings },

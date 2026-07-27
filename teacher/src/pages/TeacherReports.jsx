@@ -25,6 +25,7 @@ import {
 } from "../../services/teacherPortalService";
 import { fetchTeacherMessageConversations } from "../../services/messageService";
 import { getAuthUser } from "../../services/portal";
+import { formatUsdToLocalCalculation } from "../utils/currencyDisplay";
 
 const formatUsd = (value, language = "fa") => {
   const amount = Number(value || 0);
@@ -83,6 +84,7 @@ const DEFAULT_REPORT = {
     teacherEarnings: 0,
     paymentsCount: 0,
     courseWise: [],
+    recentPayments: [],
   },
   updatedAt: null,
 };
@@ -146,6 +148,9 @@ export default function TeacherReports() {
             teacherEarnings: Number(earningsPayload?.teacherEarnings || 0),
             paymentsCount: Number(earningsPayload?.paymentsCount || 0),
             courseWise: Array.isArray(earningsPayload?.courseWise) ? earningsPayload.courseWise : [],
+            recentPayments: Array.isArray(earningsPayload?.recentPayments)
+              ? earningsPayload.recentPayments
+              : [],
           },
           updatedAt: new Date().toISOString(),
         };
@@ -376,6 +381,42 @@ export default function TeacherReports() {
                     value={String(report.earnings.paymentsCount)}
                   />
                 </div>
+                {Array.isArray(report.earnings.recentPayments) &&
+                report.earnings.recentPayments.length > 0 ? (
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                      {language === "fa"
+                        ? "محاسبات دقیق قیمت منطقه‌ای"
+                        : "Exact regional price calculations"}
+                    </p>
+                    <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                      {language === "fa"
+                        ? "بر اساس نرخ ذخیره‌شده در روز هر پرداخت"
+                        : "Using the rate saved on each payment day"}
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {report.earnings.recentPayments.slice(0, 5).map((payment) => (
+                        <div
+                          key={payment.paymentId || `${payment.courseTitle}-${payment.paidAt}`}
+                          className="rounded-xl border border-slate-100 bg-slate-50 p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="line-clamp-1 text-xs font-bold text-slate-700">
+                              {payment.courseTitle || "-"}
+                            </p>
+                            <span className="shrink-0 text-[10px] font-bold text-slate-400">
+                              {payment.regionLabel || ""}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] font-black text-[#0B4FD8]" dir="ltr">
+                            {formatUsdToLocalCalculation(payment, "en") ||
+                              formatUsd(payment.baseRevenue, "en")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </article>
 
               <article className="rounded-2xl border border-slate-200 bg-white p-5">

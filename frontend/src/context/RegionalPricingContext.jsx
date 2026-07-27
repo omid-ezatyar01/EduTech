@@ -11,9 +11,11 @@ const RegionalPricingContext = createContext(null);
 const DEFAULT_RATES = {
   AFN: null,
   IRR: null,
+  TOMAN: null,
   USDT: null,
 };
-const RATES_CACHE_KEY = "edutech_regional_rates_v1";
+const RATES_CACHE_KEY = "edutech_regional_rates_v2";
+const LEGACY_RATES_CACHE_KEY = "edutech_regional_rates_v1";
 const COUNTRY_CACHE_KEY = "edutech_regional_country_v1";
 const COUNTRY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -164,29 +166,29 @@ function writeCachedJson(key, value) {
   }
 }
 
-function getNextKabulNoonMs(nowMs = Date.now()) {
+function getNextKabulRateRefreshMs(nowMs = Date.now()) {
   const offsetMinutes = 270;
   const shiftedNow = new Date(nowMs + offsetMinutes * 60 * 1000);
   const year = shiftedNow.getUTCFullYear();
   const month = shiftedNow.getUTCMonth();
   const day = shiftedNow.getUTCDate();
-  const hour = shiftedNow.getUTCHours();
-  const minute = shiftedNow.getUTCMinutes();
-  const second = shiftedNow.getUTCSeconds();
-  const millisecond = shiftedNow.getUTCMilliseconds();
-  const useTomorrow =
-    hour > 12 ||
-    (hour === 12 && (minute > 0 || second > 0 || millisecond > 0));
-
-  return Date.UTC(year, month, day + (useTomorrow ? 1 : 0), 12, 0, 0, 0)
-    - offsetMinutes * 60 * 1000;
+  for (const hour of [11, 13]) {
+    const candidate =
+      Date.UTC(year, month, day, hour, 0, 0, 0) -
+      offsetMinutes * 60 * 1000;
+    if (candidate > nowMs) return candidate;
+  }
+  return (
+    Date.UTC(year, month, day + 1, 11, 0, 0, 0) -
+    offsetMinutes * 60 * 1000
+  );
 }
 
 function readCachedRates() {
   const cached = readCachedJson(RATES_CACHE_KEY);
   if (!cached || !cached.savedAt || !cached.rates) return null;
   const savedAt = Number(cached.savedAt);
-  if (!Number.isFinite(savedAt) || Date.now() >= getNextKabulNoonMs(savedAt)) return null;
+  if (!Number.isFinite(savedAt) || Date.now() >= getNextKabulRateRefreshMs(savedAt)) return null;
   return cached.rates;
 }
 
@@ -225,6 +227,14 @@ function readStoredProfileCountry() {
 }
 
 export function RegionalPricingProvider({ children }) {
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_RATES_CACHE_KEY);
+    } catch {
+      // The versioned key already prevents an old official IRR rate from loading.
+    }
+  }, []);
+
   const cachedCountry = useMemo(() => readCachedCountry(), []);
   const profileCountry = useMemo(() => readStoredProfileCountry(), []);
   const browserCountry = useMemo(() => detectCountryFromBrowserSignals(), []);
@@ -263,6 +273,7 @@ export function RegionalPricingProvider({ children }) {
             rates: {
               AFN: cachedRates.AFN,
               IRR: cachedRates.IRR,
+              TOMAN: cachedRates.TOMAN,
               USDT: cachedRates.USDT,
             },
           })
@@ -295,6 +306,10 @@ export function RegionalPricingProvider({ children }) {
           ratesResult.status === "fulfilled"
             ? Number(ratesResult.value?.rates?.IRR || 0)
             : cachedRates?.IRR ?? null,
+        TOMAN:
+          ratesResult.status === "fulfilled"
+            ? Number(ratesResult.value?.normalizedRates?.TOMAN || 0)
+            : cachedRates?.TOMAN ?? null,
         USDT:
           ratesResult.status === "fulfilled"
             ? Number(ratesResult.value?.rates?.USDT || 0)
@@ -319,7 +334,7 @@ export function RegionalPricingProvider({ children }) {
 
   useEffect(() => {
     let active = true;
-    const refreshAt = getNextKabulNoonMs(Date.now()) + 1000;
+    const refreshAt = getNextKabulRateRefreshMs(Date.now()) + 1000;
     const timer = window.setTimeout(async () => {
       try {
         const result = await getUsdExchangeRates();
@@ -327,6 +342,7 @@ export function RegionalPricingProvider({ children }) {
         const nextRates = {
           AFN: Number(result?.rates?.AFN || 0) || null,
           IRR: Number(result?.rates?.IRR || 0) || null,
+          TOMAN: Number(result?.normalizedRates?.TOMAN || 0) || null,
           USDT: Number(result?.rates?.USDT || 0) || null,
         };
         setRates(nextRates);
@@ -387,7 +403,7 @@ export function RegionalPricingProvider({ children }) {
 
       const rate =
         displayCurrency === "TOMAN"
-          ? Number(rates.IRR || 0) / 10
+          ? Number(rates.TOMAN || 0)
           : Number(rates[displayCurrency] || 0);
       const convertedAmount = rate > 0 ? numericAmount * rate : numericAmount;
 

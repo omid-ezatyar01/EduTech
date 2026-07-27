@@ -22,6 +22,57 @@ const normalizeIbanValue = (value = "") =>
 const normalizeSwiftCode = (value = "") =>
   normalizeTrimmed(normalizeLocaleDigits(value)).replace(/\s+/g, "").toUpperCase();
 
+const BANK_PAYMENT_FLAT_FIELDS = {
+  bankCountry: "country",
+  bankAccountHolderName: "accountHolderName",
+  bankBankName: "bankName",
+  bankAccountNumber: "accountNumber",
+  bankCardNumber: "cardNumber",
+  bankIban: "iban",
+  bankSwiftCode: "swiftCode",
+  bankCurrency: "currency",
+  bankPaymentNote: "paymentNote",
+  bankNote: "paymentNote",
+};
+
+const parseBankPaymentJson = (value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{")) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+};
+
+export const extractBankPaymentSubmission = (body = {}) => {
+  const source = body && typeof body === "object" ? body : {};
+  const hasNestedField = Object.prototype.hasOwnProperty.call(source, "bankPaymentInfo");
+  const submittedFlatFields = Object.entries(BANK_PAYMENT_FLAT_FIELDS).filter(([requestKey]) =>
+    Object.prototype.hasOwnProperty.call(source, requestKey),
+  );
+
+  if (!hasNestedField && submittedFlatFields.length === 0) {
+    return { submitted: false, value: undefined };
+  }
+
+  const parsed = parseBankPaymentJson(source.bankPaymentInfo);
+  const nested = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  const flat = {};
+  submittedFlatFields.forEach(([requestKey, valueKey]) => {
+    flat[valueKey] = source[requestKey];
+  });
+
+  return {
+    submitted: true,
+    value: {
+      ...nested,
+      ...flat,
+    },
+  };
+};
+
 const inferBankPaymentCountry = (value = {}) => {
   const explicitCountry = normalizeCountry(value?.country || "");
   if (explicitCountry === "AF" || explicitCountry === "IR") return explicitCountry;

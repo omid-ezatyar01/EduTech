@@ -159,3 +159,36 @@ test("income summary honors payment-time commission snapshots", () => {
   assert.deepEqual(summary.commissionRatesUsed, [10]);
   assert.equal(summary.currentCommissionRate, 15);
 });
+
+test("IRR gateway amounts never replace USD ledger totals in income reports", () => {
+  const summary = summarizeTeacherIncomeRows({
+    rows: [
+      row({
+        totalRevenue: 10,
+        platformCommission: 1.5,
+        teacherEarnings: 8.5,
+        teacherPayoutDue: 8.5,
+        paymentDetails: [
+          payment({
+            sourcePriceAmount: 1_900_000,
+            sourcePriceCurrency: "IRR",
+            gatewayAmount: 1_900_000,
+            gatewayCurrency: "IRR",
+            baseRevenue: 10,
+            platformCommission: 1.5,
+            teacherEarnings: 8.5,
+            teacherPayoutAmount: 8.5,
+          }),
+        ],
+      }),
+    ],
+    defaultCommissionRate: 15,
+  });
+
+  assert.equal(summary.totalRevenue, 10);
+  assert.equal(summary.platformCommission, 1.5);
+  assert.equal(summary.teacherEarnings, 8.5);
+  assert.equal(summary.teacherPayoutTotal, 8.5);
+  assert.equal(summary.recentPayments[0].gatewayAmount, 1_900_000);
+  assert.equal(summary.recentPayments[0].gatewayCurrency, "IRR");
+});

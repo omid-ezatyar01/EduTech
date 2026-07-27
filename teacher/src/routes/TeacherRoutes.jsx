@@ -20,6 +20,7 @@ const loadTeacherSettings = () => import("../pages/TeacherSettings");
 const loadTeacherVideos = () => import("../pages/TeacherVideos");
 const loadTeacherArticles = () => import("../pages/TeacherArticles");
 const loadTeacherFeedback = () => import("../pages/TeacherFeedback");
+const loadTeacherSupport = () => import("../pages/TeacherSupport");
 const loadTeacherPasswordRecovery = () => import("../auth/TeacherPasswordRecovery");
 
 const TeacherLogin = lazy(loadTeacherLogin);
@@ -38,6 +39,7 @@ const TeacherSettings = lazy(loadTeacherSettings);
 const TeacherVideos = lazy(loadTeacherVideos);
 const TeacherArticles = lazy(loadTeacherArticles);
 const TeacherFeedback = lazy(loadTeacherFeedback);
+const TeacherSupport = lazy(loadTeacherSupport);
 const TeacherPasswordRecovery = lazy(loadTeacherPasswordRecovery);
 
 const preloadRoutes = [
@@ -326,6 +328,10 @@ export default function TeacherRoutes() {
           <Route
             path="/teacher/feedback"
             element={<TeacherProtectedRoute><TeacherFeedback /></TeacherProtectedRoute>}
+          />
+          <Route
+            path="/teacher/support"
+            element={<TeacherProtectedRoute><TeacherSupport /></TeacherProtectedRoute>}
           />
           <Route
             path="/teacher/settings"

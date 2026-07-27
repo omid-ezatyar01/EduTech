@@ -30,6 +30,12 @@ process.env.CURRENCYFREAKS_API_KEY = "test-currencyfreaks-key";
 process.env.CURRENCYFREAKS_BASE_URL = "https://api.currencyfreaks.test/v2.0";
 process.env.CURRENCYFREAKS_TIMEOUT_MS = "2000";
 process.env.CURRENCYFREAKS_CACHE_TTL_MS = "1000";
+process.env.IRAN_MARKET_RATE_PROVIDER = "navasan";
+process.env.NAVASAN_API_KEY = "test-navasan-key";
+process.env.NAVASAN_BASE_URL = "https://api.navasan.test";
+process.env.NAVASAN_USD_FIELD = "usd_sell";
+process.env.NAVASAN_RATE_UNIT = "toman";
+process.env.IRAN_MARKET_MIN_USD_TO_TOMAN_RATE = "50000";
 process.env.HESABPAY_EXCHANGE_RATE_API_URL = "https://rates.test/v1/latest/USD";
 process.env.HESABPAY_EXCHANGE_RATE_TIMEOUT_MS = "2000";
 process.env.HESABPAY_EXCHANGE_RATE_CACHE_TTL_MS = "1000";
@@ -133,7 +139,11 @@ const mockCourseCheckoutFlow = () => {
 test("USD 15 creates the correct AFN quote using a mocked rate", async () => {
   nock("https://api.currencyfreaks.test")
     .get("/v2.0/rates/latest")
-    .query((query) => query.apikey === "test-currencyfreaks-key" && query.symbols === "AFN")
+    .query(
+      (query) =>
+        query.apikey === "test-currencyfreaks-key" &&
+        query.symbols === "AFN",
+    )
     .reply(200, { rates: { AFN: 70 } });
 
   const res = mockRes();
@@ -479,8 +489,13 @@ test("direct BSC verification rejects mismatched amounts through the BscScan API
 });
 
 test("HesabPay quote uses AFN and never USDT", async () => {
-  nock("https://rates.test")
-    .get("/v1/latest/USD")
+  nock("https://api.currencyfreaks.test")
+    .get("/v2.0/rates/latest")
+    .query(
+      (query) =>
+        query.apikey === "test-currencyfreaks-key" &&
+        query.symbols === "AFN",
+    )
     .reply(200, { rates: { AFN: 70 } });
 
   const res = mockRes();
@@ -540,9 +555,9 @@ test("Afghanistan regional fallback stores the exact AFN amount sent to HesabPay
     .query(
       (query) =>
         query.apikey === "test-currencyfreaks-key" &&
-        query.symbols === "AFN,IRR,USDT",
+        query.symbols === "AFN",
     )
-    .reply(200, { rates: { AFN: 70, IRR: 500000, USDT: 1 } });
+    .reply(200, { rates: { AFN: 70 } });
   nock("https://api.hesab.test")
     .post(
       "/api/v1/payment/create-session",

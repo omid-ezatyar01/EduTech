@@ -14,6 +14,8 @@ import TeacherIncomeSettlement from "../models/TeacherIncomeSettlement.js";
 import StudentNotification from "../models/StudentNotification.js";
 import TeacherNotification from "../models/TeacherNotification.js";
 import TeacherFollow from "../models/TeacherFollow.js";
+import SupportTicket from "../models/SupportTicket.js";
+import SupportMessage from "../models/SupportMessage.js";
 import { deleteCoursesWithRelationsByFilter } from "./courseCascadeDelete.service.js";
 
 const userIdOf = (user) => user?._id || user;
@@ -86,6 +88,8 @@ export const deleteUserRelatedData = async (user) => {
   }
 
   const teacherScopedCourseFilter = buildCourseScopedDeleteFilter(userId, preservedCourseIds);
+  const supportTickets = await SupportTicket.find({ requester: userId }).select("_id").lean();
+  const supportTicketIds = supportTickets.map((ticket) => ticket._id);
 
   await Promise.all([
     Enrollment.deleteMany({ studentId: userId }),
@@ -124,6 +128,9 @@ export const deleteUserRelatedData = async (user) => {
     }),
     OtpVerification.deleteMany({ userId }),
     GoogleAccount.deleteMany({ userId }),
+    SupportMessage.deleteMany({ ticket: { $in: supportTicketIds } }),
+    SupportTicket.deleteMany({ requester: userId }),
+    SupportTicket.updateMany({ assignedTo: userId }, { $set: { assignedTo: null } }),
   ]);
 
   return { deletedCourses, preservedHistoricalCourses };

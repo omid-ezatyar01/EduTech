@@ -27,6 +27,7 @@ const loadTeacherDetails = () => import("./pages/TeacherDetails.jsx");
 const loadAboutPage = () => import("./pages/AboutPage.jsx");
 const loadContactPage = () => import("./pages/ContactPage.jsx");
 const loadStudentFeedbackPage = () => import("./pages/StudentFeedbackPage.jsx");
+const loadStudentSupportPage = () => import("./pages/StudentSupportPage.jsx");
 const loadLoginPage = () => import("./pages/LoginPage.jsx");
 const loadRegisterPage = () => import("./pages/RegisterPage.jsx");
 const loadStudentDashboardPage = () => import("./pages/StudentDashboardPage.jsx");
@@ -51,6 +52,7 @@ const TeacherDetails = lazy(loadTeacherDetails);
 const AboutPage = lazy(loadAboutPage);
 const ContactPage = lazy(loadContactPage);
 const StudentFeedbackPage = lazy(loadStudentFeedbackPage);
+const StudentSupportPage = lazy(loadStudentSupportPage);
 const LoginPage = lazy(loadLoginPage);
 const RegisterPage = lazy(loadRegisterPage);
 const StudentDashboardPage = lazy(loadStudentDashboardPage);
@@ -129,6 +131,7 @@ const preloadRoutes = [
   },
   { key: "student-live", test: (path) => path === "/student/live", load: loadLiveClass },
   { key: "student-feedback", test: (path) => path === "/student/feedback", load: loadStudentFeedbackPage },
+  { key: "student-support", test: (path) => path === "/student/support", load: loadStudentSupportPage },
   { key: "student-attendance", test: (path) => path === "/student/attendance", load: loadAttendance },
   { key: "student-schedule", test: (path) => path === "/student/schedule", load: loadSchedule },
   {
@@ -449,6 +452,14 @@ export default function App() {
             />
 
             {/* Protected Student Routes */}
+            <Route
+              path="/student/support"
+              element={
+                <ProtectedRoute isAuthenticated={isAuthenticated} language={language}>
+                  <StudentSupportPage language={language} />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/student/dashboard"
               element={

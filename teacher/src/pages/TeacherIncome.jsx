@@ -35,6 +35,7 @@ import {
 } from "../utils/teacherPageCache";
 import {
   formatDisplayCurrencyAmount,
+  formatUsdToLocalCalculation,
   getDisplayCurrency,
   getDisplayCurrencyAmount,
   replaceIranRialTextForDisplay,
@@ -123,18 +124,7 @@ const formatGatewayAmount = (amount, currency, language = "en") =>
   });
 
 const formatSourcePrice = (item = {}, language = "en") => {
-  if (item.sourcePriceAmount === null || item.sourcePriceAmount === undefined) {
-    return "";
-  }
-  const priceLabel = formatDisplayCurrencyAmount(
-    item.sourcePriceAmount,
-    item.sourcePriceCurrency || "USD",
-    language,
-  );
-  const currency = String(item.sourcePriceCurrency || "USD").toUpperCase();
-  const rate = Number(item.sourceExchangeRate || 0);
-  if (!(rate > 0) || currency === "USD") return priceLabel;
-  return `${priceLabel} • 1 USD = ${formatDisplayCurrencyAmount(rate, currency, language)}`;
+  return formatUsdToLocalCalculation(item, language);
 };
 
 const statusMap = {
@@ -875,8 +865,8 @@ export default function TeacherIncome() {
               title={language === "fa" ? "تراکنش‌های اخیر" : "Recent Payments"}
               subtitle={
                 language === "fa"
-                  ? "هر پرداخت با روش پرداخت، بازار و سهم مدرس در دالر."
-                  : "Each payment with payment method, market, and teacher share in USD."
+                  ? "هر پرداخت با محاسبه دقیق دالر × نرخ ذخیره‌شده روز پرداخت = افغانی/تومان."
+                  : "Each payment shows the exact USD × saved payment-day rate = AFN/TOMAN calculation."
               }
             >
               <div className="space-y-3 p-4 md:hidden">

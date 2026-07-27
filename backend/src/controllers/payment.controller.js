@@ -19,6 +19,7 @@ import {
   verifyDirectBscUsdtPayment,
 } from "../services/bscUsdt.service.js";
 import { getUsdRatesForCurrencies, quoteAfnFromUsdCents, quoteFromUsdCents } from "../services/exchangeRate.service.js";
+import { getNextExchangeRateRefreshAt } from "../utils/exchangeRateSchedule.js";
 import { completePayment } from "../services/paymentCompletion.service.js";
 import { formatUsdCents, normalizeUsdToCents, roundUpDecimalAmount } from "../utils/money.js";
 import {
@@ -70,24 +71,6 @@ const resolveStudentClientUrl = () => {
   if (explicit) return String(explicit).trim().replace(/\/+$/, "");
   const clientUrl = process.env.CLIENT_URL ? String(process.env.CLIENT_URL).trim().replace(/\/+$/, "") : "";
   return clientUrl || "http://localhost:5173";
-};
-
-const getNextKabulNoonIso = () => {
-  const offsetMinutes = 270;
-  const shiftedNow = new Date(Date.now() + offsetMinutes * 60 * 1000);
-  const year = shiftedNow.getUTCFullYear();
-  const month = shiftedNow.getUTCMonth();
-  const day = shiftedNow.getUTCDate();
-  const hour = shiftedNow.getUTCHours();
-  const minute = shiftedNow.getUTCMinutes();
-  const second = shiftedNow.getUTCSeconds();
-  const millisecond = shiftedNow.getUTCMilliseconds();
-  const useTomorrow =
-    hour > 12 ||
-    (hour === 12 && (minute > 0 || second > 0 || millisecond > 0));
-  const nextNoonMs =
-    Date.UTC(year, month, day + (useTomorrow ? 1 : 0), 12, 0, 0, 0) - offsetMinutes * 60 * 1000;
-  return new Date(nextNoonMs).toISOString();
 };
 
 const isCoursePurchasable = (course) => {
@@ -434,8 +417,10 @@ export const getUsdExchangeQuote = async (req, res) => {
 
 export const getUsdExchangeRates = async (req, res) => {
   try {
-    res.set("Cache-Control", "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400");
+    res.set("Cache-Control", "no-store");
     const rates = await getUsdRatesForCurrencies(["AFN", "IRR", "USDT"]);
+    const rawIrrRate = Number(rates?.IRR?.rate || 0);
+    const tomanPerUsd = rawIrrRate / 10;
 
     return apiSuccess(res, {
       base: "USD",
@@ -444,8 +429,28 @@ export const getUsdExchangeRates = async (req, res) => {
         IRR: Number(rates?.IRR?.rate || 0),
         USDT: Number(rates?.USDT?.rate || 0),
       },
-      source: rates?.AFN?.source || rates?.IRR?.source || rates?.USDT?.source || "cache",
-      nextRefreshAt: getNextKabulNoonIso(),
+      normalizedRates: {
+        TOMAN: tomanPerUsd,
+      },
+      units: {
+        AFN: "afghanis_per_usd",
+        IRR: "rials_per_usd",
+        TOMAN: "tomans_per_usd",
+        USDT: "usdt_per_usd",
+      },
+      sources: {
+        AFN: rates?.AFN?.source || "unknown",
+        IRR: rates?.IRR?.source || "unknown",
+        TOMAN: rates?.IRR?.source || "unknown",
+        USDT: rates?.USDT?.source || "unknown",
+      },
+      selectedFields: {
+        AFN: rates?.AFN?.selectedField || null,
+        IRR: rates?.IRR?.selectedField || null,
+        USDT: rates?.USDT?.selectedField || null,
+      },
+      source: rates?.IRR?.source || rates?.AFN?.source || rates?.USDT?.source || "cache",
+      nextRefreshAt: getNextExchangeRateRefreshAt().toISOString(),
     });
   } catch (error) {
     console.error("getUsdExchangeRates error:", error.message || error);

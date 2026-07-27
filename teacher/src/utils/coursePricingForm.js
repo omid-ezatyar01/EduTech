@@ -74,28 +74,17 @@ export const validateRegionalPricingForm = (
   const isFa = language === "fa";
   const minimumUsd = Math.max(0, Number(minimumPriceUsd) || 0);
   const errors = {};
-  const minimumError = ({ key, field, row, usdValue }) => {
+  const minimumError = ({ key, field, usdValue }) => {
     const regionLabel = REGION_DEFINITIONS.find((item) => item.key === key);
     const priceLabel =
       field === "discountedPrice"
         ? isFa ? "قیمت تخفیف‌خورده" : "Discounted price"
         : isFa ? "قیمت اصلی" : "Regular price";
     const regionName = isFa ? regionLabel?.labelFa : regionLabel?.labelEn;
-    const exchangeRate = Number(row.usdExchangeRate);
-    const currency = regionLabel?.currency || "USD";
-    const minimumLocal =
-      key !== "international" && exchangeRate > 0
-        ? Math.ceil(minimumUsd * exchangeRate)
-        : null;
-
     if (isFa) {
-      return minimumLocal
-        ? `${priceLabel} ${regionName} معادل ${Number(usdValue).toLocaleString("fa-AF", { maximumFractionDigits: 2 })} دالر است. حداقل سیستم ${minimumUsd.toLocaleString("fa-AF")} دالر است؛ مبلغ را حداقل ${minimumLocal.toLocaleString("fa-AF")} ${currency} وارد کنید.`
-        : `${priceLabel} ${regionName} باید حداقل ${minimumUsd.toLocaleString("fa-AF")} دالر باشد.`;
+      return `${priceLabel} ${regionName} معادل ${Number(usdValue).toLocaleString("fa-AF", { maximumFractionDigits: 2 })} دالر است. حداقل سیستم ${minimumUsd.toLocaleString("fa-AF")} دالر است.`;
     }
-    return minimumLocal
-      ? `${regionName} ${priceLabel.toLowerCase()} equals ${Number(usdValue).toLocaleString("en-US", { maximumFractionDigits: 2 })} USD. The system minimum is ${minimumUsd.toLocaleString("en-US")} USD; enter at least ${minimumLocal.toLocaleString("en-US")} ${currency}.`
-      : `${regionName} ${priceLabel.toLowerCase()} must be at least ${minimumUsd.toLocaleString("en-US")} USD.`;
+    return `${regionName} ${priceLabel.toLowerCase()} equals ${Number(usdValue).toLocaleString("en-US", { maximumFractionDigits: 2 })} USD. The system minimum is ${minimumUsd.toLocaleString("en-US")} USD.`;
   };
 
   for (const { key } of REGION_DEFINITIONS) {

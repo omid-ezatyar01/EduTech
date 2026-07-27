@@ -313,11 +313,12 @@ export default function ContactPage({ language = "fa" }) {
       setSubmitting(true);
       setSubmitState({ type: "info", text: data.form.submitMessages.sending });
 
-      const response = await fetch(`${getApiBase()}/contact/messages`, {
+      const response = await fetch(`${getApiBase()}/support/tickets`, {
         method: "POST",
         headers: buildAuthHeaders(),
         body: JSON.stringify({
           subject: activeSubject || data.form.subjects[0] || "General inquiry",
+          category: "other",
           message: resolvedMessage,
         }),
       });

@@ -127,6 +127,37 @@ test("regional validation requires International and rejects invalid discounts",
   );
 });
 
+test("regional USD snapshots may exceed the international course price", () => {
+  const result = validateRegionalPrices({
+    afghanistan: {
+      currency: "AFN",
+      regularPrice: 1470,
+      discountedPrice: 1120,
+      regularPriceUsd: 21,
+      discountedPriceUsd: 16,
+      usdExchangeRate: 70,
+      isFree: false,
+      useInternationalPrice: false,
+    },
+    iran: {
+      currency: "TOMAN",
+      regularPrice: 0,
+      discountedPrice: null,
+      isFree: false,
+      useInternationalPrice: true,
+    },
+    international: {
+      currency: "USD",
+      regularPrice: 20,
+      discountedPrice: 15,
+      isFree: false,
+    },
+  });
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.errors, {});
+});
+
 test("admin minimum applies to every active regional regular and discounted USD value", () => {
   const prices = {
     afghanistan: {

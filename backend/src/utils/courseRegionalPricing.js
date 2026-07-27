@@ -1,4 +1,9 @@
 import { getUsdRatesForCurrencies } from "../services/exchangeRate.service.js";
+import {
+  assertPositiveFiniteRate,
+  normalizeUsdRateInToman,
+  tomanToUsd,
+} from "./currencyConversion.js";
 
 export const COURSE_PRICING_TYPES = ["single", "regional"];
 export const COURSE_PRICING_REGIONS = ["afghanistan", "iran", "international"];
@@ -294,13 +299,19 @@ export const convertRegionalPriceToUsdCents = async (resolvedPrice) => {
 
   const quoteCurrency = currency === "TOMAN" ? "IRR" : currency;
   const rates = await getUsdRatesForCurrencies([quoteCurrency]);
-  const rate = Number(rates?.[quoteCurrency]?.rate || 0);
-  if (!(rate > 0)) {
+  let rate;
+  try {
+    rate = assertPositiveFiniteRate(
+      rates?.[quoteCurrency]?.rate,
+      `Unable to resolve ${quoteCurrency} exchange rate`,
+    );
+  } catch {
     throw new Error(`Unable to resolve ${quoteCurrency} exchange rate`);
   }
 
-  const amountInQuoteCurrency = currency === "TOMAN" ? amount * 10 : amount;
-  return Math.round((amountInQuoteCurrency / rate) * 100);
+  const usdAmount =
+    currency === "TOMAN" ? tomanToUsd(amount, rate) : amount / rate;
+  return Math.round(usdAmount * 100);
 };
 
 export const resolveCourseCheckoutPricing = async (course, requestedRegion) => {
@@ -384,11 +395,17 @@ export const buildRegionalDisplaySnapshot = ({
     };
   }
 
-  const rawRate = Number(rate || 0);
-  if (!(rawRate > 0)) {
+  let rawRate;
+  try {
+    rawRate = assertPositiveFiniteRate(
+      rate,
+      `Unable to resolve ${targetCurrency} display rate`,
+    );
+  } catch {
     throw new Error(`Unable to resolve ${targetCurrency} display rate`);
   }
-  const displayRate = targetCurrency === "TOMAN" ? rawRate / 10 : rawRate;
+  const displayRate =
+    targetCurrency === "TOMAN" ? normalizeUsdRateInToman(rawRate) : rawRate;
   return {
     amount: Math.round(baseUsd * displayRate),
     currency: targetCurrency,

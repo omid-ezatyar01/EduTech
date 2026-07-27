@@ -29,6 +29,7 @@ import {
 } from "../utils/adminPageCache.js";
 import {
   formatDisplayCurrencyAmount,
+  formatUsdToLocalCalculation,
   getDisplayCurrency,
   getDisplayCurrencyAmount,
   replaceIranRialTextForDisplay,
@@ -151,18 +152,7 @@ const formatGatewayAmount = (amount, currency, language = "en") => {
 };
 
 const formatSourcePrice = (item = {}, language = "en") => {
-  if (item.sourcePriceAmount === null || item.sourcePriceAmount === undefined) {
-    return "";
-  }
-  const priceLabel = formatDisplayCurrencyAmount(
-    item.sourcePriceAmount,
-    item.sourcePriceCurrency || "USD",
-    language,
-  );
-  const currency = String(item.sourcePriceCurrency || "USD").toUpperCase();
-  const rate = Number(item.sourceExchangeRate || 0);
-  if (!(rate > 0) || currency === "USD") return priceLabel;
-  return `${priceLabel} • 1 USD = ${formatDisplayCurrencyAmount(rate, currency, language)}`;
+  return formatUsdToLocalCalculation(item, language);
 };
 
 const formatDate = (value, language = "en") => {

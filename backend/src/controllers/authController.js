@@ -12,7 +12,9 @@ import { EmailSendError, sendOtpEmail } from "../utils/Email.js";
 import { generateOtp, hashOtp, getOtpExpiryDate } from "../utils/otp.js";
 import { blockTeacherIfContractExpired } from "../utils/teacherContract.js";
 import {
+  extractBankPaymentSubmission,
   getNormalizedBankPaymentDisplay,
+  hasUsableBankPaymentInfo,
   validateAndNormalizeBankPaymentInfo,
 } from "../utils/bankPaymentInfo.js";
 import { notifyAdminTeacherApplicationReview } from "../services/webPush.service.js";
@@ -235,13 +237,19 @@ const buildAvatarUrl = (req, avatar) => {
 const publicUserPayload = (req, user, includeToken = false) => {
   const approvedBankInfo = getNormalizedBankPaymentDisplay(user.bankPaymentInfo || {});
   const storedBankReviewStatus = String(user.bankPaymentReview?.status || "not_submitted");
+  const pendingBankInfo = getNormalizedBankPaymentDisplay(
+    user.bankPaymentReview?.pendingInfo || {},
+  );
   const hasLegacyApprovedBankInfo = Object.values(approvedBankInfo).some((value) =>
     String(value || "").trim(),
   );
   const effectiveBankReviewStatus =
-    storedBankReviewStatus === "not_submitted" && hasLegacyApprovedBankInfo
-      ? "approved"
-      : storedBankReviewStatus;
+    ["pending", "rejected"].includes(storedBankReviewStatus) &&
+    !hasUsableBankPaymentInfo(pendingBankInfo)
+      ? "not_submitted"
+      : storedBankReviewStatus === "not_submitted" && hasLegacyApprovedBankInfo
+        ? "approved"
+        : storedBankReviewStatus;
   const payload = {
     _id: user._id,
     name: user.name,
@@ -283,9 +291,7 @@ const publicUserPayload = (req, user, includeToken = false) => {
     bankPaymentInfo: approvedBankInfo,
     bankPaymentReview: {
       status: effectiveBankReviewStatus,
-      pendingInfo: getNormalizedBankPaymentDisplay(
-        user.bankPaymentReview?.pendingInfo || {},
-      ),
+      pendingInfo: pendingBankInfo,
       submittedAt: user.bankPaymentReview?.submittedAt || null,
       reviewedAt: user.bankPaymentReview?.reviewedAt || null,
       reviewedBy: user.bankPaymentReview?.reviewedBy || null,
@@ -1875,6 +1881,22 @@ export const getUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
+    const storedBankReviewStatus = String(user.bankPaymentReview?.status || "not_submitted");
+    if (
+      user.role === "teacher" &&
+      !bankPaymentSubmission.submitted &&
+      ["pending", "rejected"].includes(storedBankReviewStatus) &&
+      !hasUsableBankPaymentInfo(user.bankPaymentReview?.pendingInfo || {})
+    ) {
+      user.bankPaymentReview = {
+        status: "not_submitted",
+        pendingInfo: {},
+        submittedAt: null,
+        reviewedAt: null,
+        reviewedBy: null,
+        reviewNote: "",
+      };
+    }
 
     const didSetStudentId = await ensureStudentIdForUser(user);
     if (didSetStudentId) await user.save();
@@ -1924,35 +1946,13 @@ export const updateUserProfile = async (req, res) => {
       return res.status(400).json({ message: "Username cannot be changed" });
     }
 
+    const bankPaymentSubmission = extractBankPaymentSubmission(req.body);
     const rawBody = {
       ...req.body,
       socialLinks: parsePossiblyJson(req.body.socialLinks),
-      bankPaymentInfo: (() => {
-        const parsedBankPaymentInfo = parsePossiblyJson(req.body.bankPaymentInfo);
-        const flatBankPaymentInfo = {
-          country: req.body.bankCountry,
-          accountHolderName: req.body.bankAccountHolderName,
-          bankName: req.body.bankBankName,
-          accountNumber: req.body.bankAccountNumber,
-          cardNumber: req.body.bankCardNumber,
-          iban: req.body.bankIban,
-          swiftCode: req.body.bankSwiftCode,
-          currency: req.body.bankCurrency,
-          paymentNote: req.body.bankPaymentNote || req.body.bankNote,
-        };
-        const hasFlatBankFields = Object.values(flatBankPaymentInfo).some((item) =>
-          String(item || "").trim(),
-        );
-
-        if (parsedBankPaymentInfo && typeof parsedBankPaymentInfo === "object") {
-          return {
-            ...parsedBankPaymentInfo,
-            ...(hasFlatBankFields ? flatBankPaymentInfo : {}),
-          };
-        }
-
-        return hasFlatBankFields ? flatBankPaymentInfo : parsedBankPaymentInfo;
-      })(),
+      ...(bankPaymentSubmission.submitted
+        ? { bankPaymentInfo: bankPaymentSubmission.value }
+        : {}),
       teacherApplication: parsePossiblyJson(req.body.teacherApplication),
       notifications: parsePossiblyJson(req.body.notifications),
       removeAvatar:
@@ -1978,7 +1978,7 @@ export const updateUserProfile = async (req, res) => {
       user.teacherApplication?.status !== "submitted";
     const shouldNotifyBankPaymentReview =
       user.role === "teacher" &&
-      Object.prototype.hasOwnProperty.call(value, "bankPaymentInfo");
+      bankPaymentSubmission.submitted;
 
     if (value.email && value.email !== user.email) {
       const emailExists = await User.findOne({ email: value.email, _id: { $ne: user._id } });
@@ -2035,6 +2035,11 @@ export const updateUserProfile = async (req, res) => {
         });
       }
       const pendingInfo = validateAndNormalizeBankPaymentInfo(value.bankPaymentInfo);
+      if (!hasUsableBankPaymentInfo(pendingInfo)) {
+        return res.status(400).json({
+          message: "Complete valid bank/card details before submitting them for review",
+        });
+      }
       user.bankPaymentReview = {
         ...(user.bankPaymentReview?.toObject?.() || user.bankPaymentReview || {}),
         status: "pending",
