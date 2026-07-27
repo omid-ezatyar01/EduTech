@@ -1,0 +1,28 @@
+{
+  "id": "/support-team",
+  "name": "EduTech Support",
+  "short_name": "Support",
+  "description": "EduTech support team workspace",
+  "start_url": "/support-team",
+  "scope": "/",
+  "lang": "fa",
+  "dir": "auto",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#f0f2f5",
+  "theme_color": "#075e54",
+  "icons": [
+    {
+      "src": "/icons/web-app-manifest-192x192.png?v=2",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/web-app-manifest-512x512.png?v=2",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

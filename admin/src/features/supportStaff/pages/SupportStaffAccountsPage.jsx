@@ -6,7 +6,6 @@ import {
   Search,
   ShieldCheck,
   TicketCheck,
-  TriangleAlert,
   UserX,
   UsersRound,
 } from "lucide-react";
@@ -57,10 +56,6 @@ export default function SupportStaffAccountsPage() {
       blocked: staff.filter((row) => row.status === "blocked").length,
       tickets: staff.reduce(
         (sum, row) => sum + Number(row.activeTickets || 0),
-        0,
-      ),
-      urgent: staff.reduce(
-        (sum, row) => sum + Number(row.urgentTickets || 0),
         0,
       ),
     }),
@@ -184,7 +179,7 @@ export default function SupportStaffAccountsPage() {
       {error ? <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
       {notice ? <div className="rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-700">{notice}</div> : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-3">
         <SummaryCard
           icon={UsersRound}
           label={isFa ? "کارمندان فعال" : "Active staff"}
@@ -196,12 +191,6 @@ export default function SupportStaffAccountsPage() {
           label={isFa ? "تکت‌های در حال کار" : "Assigned active tickets"}
           value={summary.tickets}
           color="teal"
-        />
-        <SummaryCard
-          icon={TriangleAlert}
-          label={isFa ? "تکت‌های فوری" : "Urgent assignments"}
-          value={summary.urgent}
-          color="amber"
         />
         <SummaryCard
           icon={UserX}
@@ -296,7 +285,7 @@ export default function SupportStaffAccountsPage() {
                     </select>
                   </td>
                   <td className="px-4 py-3 font-semibold text-slate-600">{row.phone}</td>
-                  <td className="px-4 py-3"><p className="font-black text-slate-800">{Number(row.activeTickets || 0)} {isFa ? "فعال" : "active"}</p>{Number(row.urgentTickets || 0) > 0 ? <p className="text-xs font-black text-amber-700">{row.urgentTickets} {isFa ? "فوری" : "urgent"}</p> : <p className="text-xs font-semibold text-slate-400">{isFa ? "بدون تکت فوری" : "No urgent tickets"}</p>}</td>
+                  <td className="px-4 py-3"><p className="font-black text-slate-800">{Number(row.activeTickets || 0)} {isFa ? "فعال" : "active"}</p></td>
                   <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-black ${row.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{row.status === "active" ? (isFa ? "فعال" : "Active") : (isFa ? "مسدود" : "Blocked")}</span></td>
                   <td className="px-4 py-3 text-xs font-semibold text-slate-500">{new Date(row.createdAt).toLocaleDateString(isFa ? "fa-AF" : "en-US")}</td>
                   <td className="px-4 py-3"><div className="flex gap-2"><button type="button" disabled={busy} onClick={() => { setResetTarget(row); setNewPassword(""); setConfirmNewPassword(""); }} className="rounded-lg bg-blue-50 p-2 text-blue-700" title={isFa ? "تغییر رمز" : "Reset password"}><KeyRound size={16} /></button><button type="button" disabled={busy} onClick={() => toggleStatus(row)} className={`rounded-lg p-2 ${row.status === "active" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`} title={row.status === "active" ? (isFa ? "مسدود کردن" : "Block") : (isFa ? "فعال کردن" : "Activate")}>{row.status === "active" ? <UserX size={16} /> : <ShieldCheck size={16} />}</button></div></td>

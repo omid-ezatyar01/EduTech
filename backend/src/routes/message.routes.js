@@ -3,7 +3,6 @@ import { protect } from "../middlewares/authMiddleware.js";
 import authorizeRoles from "../middlewares/authorizeRoles.js";
 import requireApprovedTeacher from "../middlewares/requireApprovedTeacher.js";
 import validateRequest from "../middlewares/validateRequest.js";
-import ApiError from "../utils/ApiError.js";
 import {
   deleteStudentCourseGroupMessages,
   deleteTeacherCourseBroadcastMessages,
@@ -47,9 +46,6 @@ import {
 } from "../validators/message.validators.js";
 
 const router = express.Router();
-const chatDisabled = (_req, _res, next) =>
-  next(new ApiError(503, "Chat system is currently disabled."));
-
 router.get(
   "/teacher/messages/admin-conversation",
   protect,
@@ -74,9 +70,6 @@ router.patch(
   requireApprovedTeacher({ allowAdmin: false }),
   markTeacherAdminConversationRead,
 );
-
-router.use("/teacher/messages", chatDisabled);
-router.use("/student/messages", chatDisabled);
 
 router.get(
   "/teacher/messages/conversations",

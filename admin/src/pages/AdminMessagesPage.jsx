@@ -975,7 +975,7 @@ export default function AdminMessagesPage() {
             </div>
           </div>
 
-          <div className="max-h-[760px] overflow-y-auto">
+          <div className="chat-scrollbar-side edutech-scrollbar max-h-[760px] overflow-y-auto">
             {loadingConversations ? (
               <div className="p-5">
                 <AdminPageLoader
@@ -1082,7 +1082,7 @@ export default function AdminMessagesPage() {
                 </div>
               </header>
 
-              <div className="flex-1 overflow-y-auto bg-slate-50/50 p-5 lg:p-6">
+              <div className="chat-scrollbar-side edutech-scrollbar flex-1 overflow-y-auto bg-slate-50/50 p-5 lg:p-6">
                 {loadingThread ? (
                   <AdminPageLoader
                     label={pageTr("Loading conversations")}

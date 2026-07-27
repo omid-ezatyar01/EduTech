@@ -41,12 +41,6 @@ const supportTicketSchema = new mongoose.Schema(
       default: "other",
       index: true,
     },
-    priority: {
-      type: String,
-      enum: ["low", "normal", "high", "urgent"],
-      default: "normal",
-      index: true,
-    },
     status: {
       type: String,
       enum: ["open", "in_progress", "waiting_for_user", "resolved", "closed"],
@@ -89,7 +83,7 @@ const supportTicketSchema = new mongoose.Schema(
 );
 
 supportTicketSchema.index({ requester: 1, lastMessageAt: -1 });
-supportTicketSchema.index({ status: 1, priority: 1, lastMessageAt: -1 });
+supportTicketSchema.index({ status: 1, lastMessageAt: -1 });
 supportTicketSchema.index({
   ticketNumber: "text",
   subject: "text",

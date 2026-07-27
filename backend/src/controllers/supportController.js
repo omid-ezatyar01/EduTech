@@ -5,11 +5,6 @@ import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { emitSupportEvent } from "../services/supportRealtime.service.js";
-import SupportStaffProfile from "../modules/supportStaff/SupportStaffProfile.js";
-import {
-  normalizeSupportSpecialization,
-  SPECIALIZATION_CATEGORIES,
-} from "../modules/supportStaff/supportStaff.constants.js";
 import { notifySupportStaffForTicket } from "../services/webPush.service.js";
 
 const preview = (value) => String(value || "").trim().slice(0, 240);
@@ -19,10 +14,18 @@ const ticketNumber = () =>
 export const isSupportAgent = (user = {}) =>
   ["admin", "support"].includes(String(user?.role || ""));
 
-const mapUser = (user) =>
-  user && typeof user === "object"
-    ? { id: String(user._id || ""), name: user.name || "", email: user.email || "", avatar: user.avatar || "", role: user.role || "" }
-    : null;
+const mapUser = (user) => {
+  if (!user || typeof user !== "object") return null;
+  const role = user.role || "";
+  const isAdmin = role === "admin";
+  return {
+    id: String(user._id || ""),
+    name: isAdmin ? "Admin" : user.name || "",
+    email: isAdmin ? "" : user.email || "",
+    avatar: isAdmin ? "" : user.avatar || "",
+    role,
+  };
+};
 
 const mapTicket = (row) => ({
   id: String(row._id),
@@ -31,7 +34,6 @@ const mapTicket = (row) => ({
   requesterRole: row.requesterRole,
   subject: row.subject,
   category: row.category,
-  priority: row.priority,
   status: row.status,
   assignedTo: mapUser(row.assignedTo),
   claimedAt: row.claimedAt || null,
@@ -59,36 +61,26 @@ const mapMessage = (row) => ({
 const populatedTicket = (query) =>
   query.populate("requester", "name email avatar role").populate("assignedTo", "name email avatar role");
 
-const buildSupportAccessFilter = async (user) => {
-  const profile = await SupportStaffProfile.findOne({ user: user._id }).lean();
-  const specialization = normalizeSupportSpecialization(
-    profile?.specialization,
-  );
-  const preferredCategories =
-    SPECIALIZATION_CATEGORIES[specialization] || [];
-  const unassigned = { assignedTo: null };
-  if (preferredCategories.length) {
-    unassigned.category = { $in: preferredCategories };
-  }
-  return {
-    $or: [{ assignedTo: user._id }, unassigned],
-  };
-};
+export const buildSupportAccessFilter = async (user) => ({
+  $or: [{ assignedTo: user._id }, { assignedTo: null }],
+});
 
 export const buildAdminSupportTicketFilter = (
   {
     status = "all",
     category = "all",
-    priority = "all",
     requesterRole = "all",
     search = "",
   } = {},
   requesterIds = [],
 ) => {
   const filter = {};
-  if (status && status !== "all") filter.status = status;
+  if (status === "active") {
+    filter.status = { $in: ["open", "in_progress", "waiting_for_user"] };
+  } else if (status && status !== "all") {
+    filter.status = status;
+  }
   if (category && category !== "all") filter.category = category;
-  if (priority && priority !== "all") filter.priority = priority;
   if (requesterRole && requesterRole !== "all") {
     filter.requesterRole = requesterRole;
   }
@@ -273,17 +265,6 @@ export const markSupportTicketRead = asyncHandler(async (req, res) => {
   return res.json(new ApiResponse({ message: "Ticket marked as read", data: mapTicket(ticket) }));
 });
 
-export const updateOwnSupportTicket = asyncHandler(async (req, res) => {
-  const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
-  ticket.status = req.body.status;
-  ticket.closedAt = req.body.status === "closed" ? new Date() : null;
-  if (req.body.status === "open") ticket.resolvedAt = null;
-  await ticket.save();
-  const data = { ticket: mapTicket(ticket) };
-  emitSupportEvent({ ticket, event: "support:ticket-updated", data });
-  return res.json(new ApiResponse({ message: "Ticket updated", data }));
-});
-
 export const getAdminSupportTickets = asyncHandler(async (req, res) => {
   const query = req.validated?.query || req.query || {};
   const page = Math.max(1, Number(query.page) || 1);
@@ -379,7 +360,7 @@ export const updateAdminSupportTicket = asyncHandler(async (req, res) => {
         ? ""
         : currentOwnerId;
     if (
-      (changes.status !== undefined || changes.priority !== undefined) &&
+      changes.status !== undefined &&
       effectiveOwnerId !== actorId
     ) {
       throw new ApiError(403, "Claim this ticket before changing it");

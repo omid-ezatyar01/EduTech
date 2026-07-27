@@ -113,7 +113,7 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
 
   return (
     <section className="grid min-h-[68vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[340px_1fr]">
-      <aside className="max-h-[72vh] overflow-y-auto border-b border-slate-200 lg:border-b-0 lg:border-e">
+      <aside className="chat-scrollbar-side edutech-scrollbar max-h-[72vh] overflow-y-auto border-b border-slate-200 lg:border-b-0 lg:border-e">
         <div className="sticky top-0 z-10 border-b bg-white p-3">
           <label className="relative block">
             <Search className="absolute start-3 top-3 text-slate-400" size={16} />
@@ -169,7 +169,7 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
           </div>
         </header>
         {error ? <div className="m-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
-        <div className="flex-1 space-y-2 overflow-y-auto bg-[#efeae2] p-4">
+        <div className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-2 overflow-y-auto bg-[#efeae2] p-4">
           {loading ? (
             <p className="p-10 text-center font-bold text-slate-400">...</p>
           ) : messages.length ? (

@@ -109,7 +109,6 @@ export default function SupportTeamGuide() {
           <li>{isFa ? "پیش از بررسی یا پاسخ دادن، تکت را بگیرید." : "Claim a ticket before investigating or replying."}</li>
           <li>{isFa ? "تکت گرفته‌شده را بدون نوشتن دلیل انتقال به صف برنگردانید." : "Never return an owned ticket to the queue without recording a handoff reason."}</li>
           <li>{isFa ? "پاسخ‌های کاربر را واضح، محترمانه و بدون جزئیات داخلی بنویسید." : "Keep user-visible replies clear, respectful, and free of internal details."}</li>
-          <li>{isFa ? "مشکلات فوری پرداخت یا امنیت حساب را روی اولویت فوری قرار دهید." : "Move urgent payment or account-security incidents to Urgent priority."}</li>
           <li>{isFa ? "اگر مشکلی ممکن است کاربران دیگر را نیز تحت تأثیر قرار دهد، از گفتگوی عمومی تیم استفاده کنید." : "Use the team room when an issue may affect other users."}</li>
         </ul>
       </article>

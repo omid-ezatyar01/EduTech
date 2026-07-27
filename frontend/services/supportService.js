@@ -23,11 +23,6 @@ export const sendSupportMessage = (id, body) =>
   });
 export const markSupportTicketRead = (id) =>
   request(`/support/tickets/${encodeURIComponent(id)}/read`, { method: "PATCH" });
-export const setSupportTicketOpenState = (id, status) =>
-  request(`/support/tickets/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ status }),
-  });
 
 export const connectSupportSocket = () => {
   const origin = getApiBase().replace(/\/api\/v\d+$/i, "");

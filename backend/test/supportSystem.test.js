@@ -12,13 +12,13 @@ import {
 } from "../src/modules/supportStaff/supportStaff.constants.js";
 import {
   createSupportTicketSchema,
-  requesterTicketActionSchema,
   sendSupportMessageSchema,
   supportTicketListSchema,
   updateSupportTicketSchema,
 } from "../src/validators/support.validators.js";
 import {
   buildAdminSupportTicketFilter,
+  buildSupportAccessFilter,
   isSupportAgent,
 } from "../src/controllers/supportController.js";
 import {
@@ -31,7 +31,7 @@ import {
 
 const objectId = "507f1f77bcf86cd799439011";
 
-test("support tickets default to an open normal-priority conversation", () => {
+test("support tickets default to an open conversation without priority", () => {
   const ticket = new SupportTicket({
     ticketNumber: "SUP-TEST-100",
     requester: objectId,
@@ -42,7 +42,7 @@ test("support tickets default to an open normal-priority conversation", () => {
   });
 
   assert.equal(ticket.status, "open");
-  assert.equal(ticket.priority, "normal");
+  assert.equal(ticket.priority, undefined);
   assert.equal(ticket.unreadForSupport, 1);
   assert.equal(ticket.unreadForRequester, 0);
   assert.equal(ticket.claimedAt, null);
@@ -163,22 +163,15 @@ test("ticket creation accepts supported categories and rejects oversized message
   assert.ok(invalid.error);
 });
 
-test("requesters can only open or close their own ticket status", () => {
-  assert.equal(requesterTicketActionSchema.validate({ status: "closed" }).error, undefined);
-  assert.ok(requesterTicketActionSchema.validate({ status: "resolved" }).error);
-  assert.ok(requesterTicketActionSchema.validate({ priority: "urgent" }).error);
-});
-
-test("admin ticket updates validate status, priority, and assignment", () => {
+test("admin ticket updates validate status and assignment without priority", () => {
   assert.equal(
     updateSupportTicketSchema.validate({
       status: "waiting_for_user",
-      priority: "urgent",
       assignedTo: objectId,
     }).error,
     undefined,
   );
-  assert.ok(updateSupportTicketSchema.validate({ priority: "emergency" }).error);
+  assert.ok(updateSupportTicketSchema.validate({ priority: "urgent" }).error);
   assert.equal(
     updateSupportTicketSchema.validate({
       assignedTo: null,
@@ -201,6 +194,10 @@ test("support list filters receive safe pagination defaults and message limits a
   assert.equal(list.value.limit, 30);
   assert.equal(list.value.status, "all");
   assert.equal(list.value.category, "all");
+  assert.equal(
+    supportTicketListSchema.validate({ status: "active" }).error,
+    undefined,
+  );
 
   assert.ok(sendSupportMessageSchema.validate({ body: "" }).error);
   assert.ok(sendSupportMessageSchema.validate({ body: "x".repeat(4001) }).error);
@@ -213,7 +210,6 @@ test("admin support queue never filters every ticket with missing optional value
     buildAdminSupportTicketFilter({
       status: "all",
       category: undefined,
-      priority: "all",
       requesterRole: "all",
     }),
     {},
@@ -222,6 +218,16 @@ test("admin support queue never filters every ticket with missing optional value
     buildAdminSupportTicketFilter({ requesterRole: "teacher" }),
     { requesterRole: "teacher" },
   );
+  assert.deepEqual(
+    buildAdminSupportTicketFilter({ status: "active" }),
+    { status: { $in: ["open", "in_progress", "waiting_for_user"] } },
+  );
+});
+
+test("support staff can answer unassigned tickets outside their specialization", async () => {
+  assert.deepEqual(await buildSupportAccessFilter({ _id: objectId }), {
+    $or: [{ assignedTo: objectId }, { assignedTo: null }],
+  });
 });
 
 test("support team messages separate the shared room from direct conversations", async () => {

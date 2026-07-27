@@ -5,20 +5,29 @@ import {
   BookOpenCheck,
   Bell,
   BellRing,
+  Download,
   Headphones,
   Inbox,
   LogOut,
   MessageCircle,
   MessagesSquare,
+  MoreVertical,
   RefreshCw,
   Search,
   Send,
   StickyNote,
   Trash2,
+  UserRound,
   Wifi,
   WifiOff,
 } from "lucide-react";
 import { useNavigate } from "react-router";
+import { resolveAvatarUrl } from "../../../utils/avatar.js";
+import {
+  buildSupportCacheKey,
+  readSupportPageCache,
+  writeSupportPageCache,
+} from "../../../utils/supportPageCache.js";
 import {
   connectSupportStaffSocket,
   deleteSupportStaffTicket,
@@ -47,28 +56,21 @@ import {
 } from "../services/supportStaffAuth.js";
 
 const STATUSES = ["open", "in_progress", "waiting_for_user", "resolved", "closed"];
-const PRIORITIES = ["low", "normal", "high", "urgent"];
 const LABELS = {
+  workspace: "My active workspace",
   open: "Open",
   in_progress: "In progress",
   waiting_for_user: "Waiting for user",
   resolved: "Resolved",
   closed: "Closed",
-  low: "Low",
-  normal: "Normal",
-  high: "High",
-  urgent: "Urgent",
 };
 const FA_LABELS = {
+  workspace: "کارهای فعال من",
   open: "باز",
   in_progress: "در حال بررسی",
   waiting_for_user: "در انتظار کاربر",
   resolved: "حل شده",
   closed: "بسته",
-  low: "کم",
-  normal: "عادی",
-  high: "بالا",
-  urgent: "فوری",
 };
 
 export default function SupportStaffWorkspacePage() {
@@ -83,55 +85,135 @@ function SupportStaffWorkspaceContent() {
   const navigate = useNavigate();
   const { isFa } = useSupportStaffLanguage();
   const labels = isFa ? FA_LABELS : LABELS;
+  const initialRoute = useMemo(() => {
+    if (typeof window === "undefined") {
+      return { ticketId: "", conversationId: "" };
+    }
+    const params = new URLSearchParams(window.location.search);
+    return {
+      ticketId: params.get("ticket") || "",
+      conversationId: params.get("conversation") || "",
+    };
+  }, []);
   const agent = useMemo(() => getSupportStaffUser() || {}, []);
   const agentId = String(agent._id || agent.id || "");
-  const [tickets, setTickets] = useState([]);
-  const [team, setTeam] = useState([]);
-  const [generalUnread, setGeneralUnread] = useState(0);
+  const workspaceCacheKey = useMemo(
+    () => buildSupportCacheKey("support", agentId, "workspace"),
+    [agentId],
+  );
+  const teamCacheKey = useMemo(
+    () => buildSupportCacheKey("support", agentId, "team"),
+    [agentId],
+  );
+  const initialWorkspaceCache = useMemo(
+    () => readSupportPageCache(workspaceCacheKey),
+    [workspaceCacheKey],
+  );
+  const initialTeamCache = useMemo(
+    () => readSupportPageCache(teamCacheKey),
+    [teamCacheKey],
+  );
+  const [tickets, setTickets] = useState(
+    initialWorkspaceCache?.tickets || [],
+  );
+  const [team, setTeam] = useState(initialTeamCache?.members || []);
+  const [generalUnread, setGeneralUnread] = useState(
+    Number(initialTeamCache?.generalUnread) || 0,
+  );
   const [presence, setPresence] = useState({});
-  const [activeView, setActiveView] = useState("tickets");
-  const [mobileTicketOpen, setMobileTicketOpen] = useState(false);
-  const [mobileTeamChatOpen, setMobileTeamChatOpen] = useState(false);
+  const [activeView, setActiveView] = useState(
+    initialRoute.conversationId ? "team" : "tickets",
+  );
+  const [mobileTicketOpen, setMobileTicketOpen] = useState(
+    Boolean(initialRoute.ticketId),
+  );
+  const [mobileTeamChatOpen, setMobileTeamChatOpen] = useState(
+    Boolean(initialRoute.conversationId),
+  );
   const [desktopLayout] = useState(
     () =>
       typeof window !== "undefined" &&
       window.matchMedia("(min-width: 1024px)").matches,
   );
-  const [selectedConversation, setSelectedConversation] = useState("general");
-  const [selectedId, setSelectedId] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return new URLSearchParams(window.location.search).get("ticket") || "";
-  });
-  const [chat, setChat] = useState(null);
+  const [selectedConversation, setSelectedConversation] = useState(
+    initialRoute.conversationId || "general",
+  );
+  const initialTicketId =
+    initialRoute.ticketId ||
+    initialWorkspaceCache?.selectedId ||
+    initialWorkspaceCache?.tickets?.[0]?.id ||
+    "";
+  const [selectedId, setSelectedId] = useState(initialTicketId);
+  const [chat, setChat] = useState(() =>
+    initialTicketId
+      ? readSupportPageCache(
+          buildSupportCacheKey(
+            "support",
+            agentId,
+            `ticket:${initialTicketId}`,
+          ),
+        )
+      : null,
+  );
   const [filters, setFilters] = useState({
     search: "",
-    status: "open",
-    priority: "all",
+    status: "workspace",
   });
   const [draft, setDraft] = useState("");
   const [internalNote, setInternalNote] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(
+    !(initialWorkspaceCache && initialTeamCache),
+  );
+  const [refreshing, setRefreshing] = useState(false);
+  const [teamRefreshToken, setTeamRefreshToken] = useState(0);
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState(
     getSupportNotificationPermission,
   );
+  const [installPrompt, setInstallPrompt] = useState(
+    () => window.__edutechInstallPrompt || null,
+  );
+  const [installed, setInstalled] = useState(
+    () => window.matchMedia?.("(display-mode: standalone)")?.matches || false,
+  );
   const [error, setError] = useState("");
   const [handoffOpen, setHandoffOpen] = useState(false);
+  const [ticketActionsOpen, setTicketActionsOpen] = useState(false);
   const [handoffReason, setHandoffReason] = useState("");
   const bottomRef = useRef(null);
 
   const loadQueue = useCallback(async () => {
-    const data = await fetchSupportStaffQueue(filters);
-    const rows = Array.isArray(data.tickets) ? data.tickets : [];
+    const workspaceView = filters.status === "workspace";
+    const data = await fetchSupportStaffQueue({
+      ...filters,
+      status: workspaceView ? "all" : filters.status,
+    });
+    const fetchedRows = Array.isArray(data.tickets) ? data.tickets : [];
+    const rows = workspaceView
+      ? fetchedRows.filter(
+          (ticket) =>
+            ["open", "in_progress", "waiting_for_user"].includes(
+              ticket.status,
+            ) || ticket.assignedTo?.id === agentId,
+        )
+      : fetchedRows;
     setTickets(rows);
     setSelectedId((current) => current || rows[0]?.id || "");
-  }, [filters]);
+  }, [agentId, filters]);
 
   const loadChat = useCallback(async (ticketId) => {
     if (!ticketId) return;
+    const cacheKey = buildSupportCacheKey(
+      "support",
+      agentId,
+      `ticket:${ticketId}`,
+    );
+    const cached = readSupportPageCache(cacheKey);
+    if (cached) setChat(cached);
     const data = await fetchSupportStaffTicket(ticketId);
     setChat(data);
+    writeSupportPageCache(cacheKey, data);
     setTickets((current) =>
       current.map((ticket) =>
         ticket.id === ticketId
@@ -149,6 +231,48 @@ function SupportStaffWorkspaceContent() {
       markSupportStaffTicketRead(ticketId).catch(() => {});
     }
   }, [agentId]);
+
+  useEffect(() => {
+    const isDefaultWorkspace =
+      filters.status === "workspace" &&
+      !filters.search;
+    if (!isDefaultWorkspace || (loading && !initialWorkspaceCache)) return;
+    writeSupportPageCache(workspaceCacheKey, { tickets, selectedId });
+  }, [
+    filters.search,
+    filters.status,
+    initialWorkspaceCache,
+    loading,
+    selectedId,
+    tickets,
+    workspaceCacheKey,
+  ]);
+
+  useEffect(() => {
+    if (loading && !initialTeamCache) return;
+    writeSupportPageCache(teamCacheKey, {
+      members: team,
+      generalUnread,
+    });
+  }, [
+    generalUnread,
+    initialTeamCache,
+    loading,
+    team,
+    teamCacheKey,
+  ]);
+
+  useEffect(() => {
+    if (!chat?.ticket?.id) return;
+    writeSupportPageCache(
+      buildSupportCacheKey(
+        "support",
+        agentId,
+        `ticket:${chat.ticket.id}`,
+      ),
+      chat,
+    );
+  }, [agentId, chat]);
 
   const loadTeam = useCallback(async () => {
     const data = await fetchSupportTeamDirectory();
@@ -182,6 +306,26 @@ function SupportStaffWorkspaceContent() {
   }, [notificationPermission]);
 
   useEffect(() => {
+    navigator.serviceWorker?.register("/edutech-push-sw.js").catch(() => {});
+    const captureInstallPrompt = (event) => {
+      event.preventDefault();
+      window.__edutechInstallPrompt = event;
+      setInstallPrompt(event);
+    };
+    const markInstalled = () => {
+      window.__edutechInstallPrompt = null;
+      setInstallPrompt(null);
+      setInstalled(true);
+    };
+    window.addEventListener("beforeinstallprompt", captureInstallPrompt);
+    window.addEventListener("appinstalled", markInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", captureInstallPrompt);
+      window.removeEventListener("appinstalled", markInstalled);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selectedId || (!desktopLayout && !mobileTicketOpen)) return;
     const timer = window.setTimeout(() => {
       loadChat(selectedId).catch((err) => setError(err.message));
@@ -197,12 +341,34 @@ function SupportStaffWorkspaceContent() {
     const socket = connectSupportStaffSocket();
     socket.on("connect", () => setLive(true));
     socket.on("disconnect", () => setLive(false));
+    const mergeRealtimeMessage = (payload) => {
+      const eventTicket = payload?.ticket;
+      const eventMessage = payload?.message;
+      if (!eventTicket?.id) return;
+      setTickets((current) => {
+        const existing = current.find((ticket) => ticket.id === eventTicket.id);
+        if (!existing) return current;
+        return [
+          { ...existing, ...eventTicket },
+          ...current.filter((ticket) => ticket.id !== eventTicket.id),
+        ];
+      });
+      if (eventTicket.id !== selectedId || !eventMessage?.id) return;
+      setChat((current) => {
+        if (!current || current.ticket?.id !== eventTicket.id) return current;
+        const messages = current.messages.some((message) => message.id === eventMessage.id)
+          ? current.messages
+          : [...current.messages, eventMessage];
+        return { ...current, ticket: { ...current.ticket, ...eventTicket }, messages };
+      });
+      if (eventTicket.assignedTo?.id === agentId) {
+        markSupportStaffTicketRead(eventTicket.id).catch(() => {});
+      }
+    };
     const refresh = (payload) => {
+      mergeRealtimeMessage(payload);
       loadQueue().catch(() => {});
-      if (
-        payload?.ticket?.id === selectedId &&
-        (desktopLayout || mobileTicketOpen)
-      ) {
+      if (payload?.ticket?.id === selectedId && !payload?.message?.id) {
         loadChat(selectedId).catch(() => {});
       }
     };
@@ -240,12 +406,13 @@ function SupportStaffWorkspaceContent() {
       if (selectedId && (desktopLayout || mobileTicketOpen)) {
         loadChat(selectedId).catch(() => {});
       }
-    }, 30_000);
+    }, 5_000);
     return () => {
       clearInterval(timer);
       socket.disconnect();
     };
   }, [
+    agentId,
     desktopLayout,
     loadChat,
     loadQueue,
@@ -344,6 +511,42 @@ function SupportStaffWorkspaceContent() {
     }
   };
 
+  const installSupportApp = async () => {
+    const prompt = installPrompt || window.__edutechInstallPrompt;
+    if (!prompt) {
+      setError(
+        isFa
+          ? "از منوی مرورگر گزینه «نصب برنامه» یا «افزودن به صفحه اصلی» را انتخاب کنید."
+          : "Use your browser menu and choose “Install app” or “Add to Home screen”.",
+      );
+      return;
+    }
+    await prompt.prompt();
+    await prompt.userChoice;
+    window.__edutechInstallPrompt = null;
+    setInstallPrompt(null);
+  };
+
+  const refreshWorkspace = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setError("");
+    try {
+      const tasks = [loadQueue(), loadTeam()];
+      if (activeView === "tickets" && selectedId) {
+        tasks.push(loadChat(selectedId));
+      }
+      await Promise.all(tasks);
+      if (activeView === "team") {
+        setTeamRefreshToken((current) => current + 1);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const deleteCompletedTicket = async () => {
     if (!chat?.ticket?.id) return;
     const confirmed = window.confirm(
@@ -383,18 +586,21 @@ function SupportStaffWorkspaceContent() {
     (activeView === "team" && mobileTeamChatOpen);
 
   return (
-    <div className="min-h-[100dvh] bg-[#f0f2f5] text-slate-950" dir={isFa ? "rtl" : "ltr"}>
-      <header className={`border-b border-slate-200 bg-white px-3 py-2.5 shadow-sm sm:px-4 sm:py-3 ${mobileDetailOpen ? "hidden lg:block" : ""}`}>
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-[#0B4FD8] to-[#00B8A9] text-white sm:h-11 sm:w-11 sm:rounded-xl">
+    <div
+      className={`${mobileDetailOpen ? "h-[100dvh] overflow-hidden lg:h-auto lg:min-h-[100dvh] lg:overflow-visible" : "min-h-[100dvh]"} bg-[#f0f2f5] text-slate-950`}
+      dir={isFa ? "rtl" : "ltr"}
+    >
+      <header className={`border-b border-slate-200 bg-[#f0f2f5] px-3 py-2.5 shadow-sm sm:px-4 sm:py-3 ${mobileDetailOpen ? "hidden lg:block" : ""}`}>
+        <div className="mx-auto flex max-w-[1500px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-[#00a884] text-white sm:h-11 sm:w-11">
               <Headphones size={22} />
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h1 className="truncate text-sm font-black sm:text-base">
                 {isFa ? "محیط کاری پشتیبانی EduTech" : "EduTech Support Workspace"}
               </h1>
-              <p className="max-w-48 truncate text-[11px] font-semibold text-slate-500 sm:max-w-none sm:text-xs">
+              <p className="truncate text-[10px] font-semibold text-slate-500 sm:text-xs">
                 {agent.name} · {supportStaffRoleLabel(
                   team.find(
                     (member) => member.id === (agent._id || agent.id),
@@ -403,17 +609,35 @@ function SupportStaffWorkspaceContent() {
                 )} · {agent.email}
               </p>
             </div>
+            <button
+              onClick={logout}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-red-700 shadow-sm sm:hidden"
+              aria-label={isFa ? "خروج" : "Logout"}
+            >
+              <LogOut size={17} />
+            </button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 sm:justify-end">
             <SupportStaffLanguageToggle compact />
+            {!installed ? (
+              <button
+                type="button"
+                onClick={installSupportApp}
+                className="grid h-10 w-10 place-items-center rounded-full bg-white text-slate-600 shadow-sm"
+                aria-label={isFa ? "نصب برنامه پشتیبانی" : "Install support app"}
+                title={isFa ? "نصب برنامه پشتیبانی" : "Install support app"}
+              >
+                <Download size={18} />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={enableNotifications}
               disabled={notificationPermission === "granted"}
-              className={`grid h-10 w-10 place-items-center rounded-xl border text-slate-600 ${
+              className={`grid h-10 w-10 place-items-center rounded-full text-slate-600 shadow-sm ${
                 notificationPermission === "granted"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-slate-200 bg-white"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-white"
               }`}
               aria-label={
                 notificationPermission === "granted"
@@ -428,7 +652,7 @@ function SupportStaffWorkspaceContent() {
             >
               {notificationPermission === "granted" ? <BellRing size={18} /> : <Bell size={18} />}
             </button>
-            <span className={`hidden items-center gap-1 rounded-full px-3 py-1.5 text-xs font-black sm:inline-flex ${live ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-2 text-[10px] font-black sm:px-3 sm:py-1.5 sm:text-xs ${live ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
               {live ? <Wifi size={14} /> : <WifiOff size={14} />}
               {live
                 ? isFa
@@ -438,17 +662,24 @@ function SupportStaffWorkspaceContent() {
                   ? "اتصال دوباره"
                   : "Reconnecting"}
             </span>
-            <button onClick={() => Promise.all([loadQueue(), loadTeam()])} className="hidden rounded-xl border border-slate-200 p-2.5 text-slate-600 sm:block" aria-label={isFa ? "تازه‌سازی" : "Refresh"}>
-              <RefreshCw size={18} />
+            <button
+              type="button"
+              onClick={refreshWorkspace}
+              disabled={refreshing}
+              className="grid h-10 w-10 place-items-center rounded-full bg-white text-slate-600 shadow-sm disabled:opacity-60"
+              aria-label={isFa ? "تازه‌سازی" : "Refresh"}
+              title={isFa ? "تازه‌سازی همه اطلاعات" : "Refresh all workspace data"}
+            >
+              <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
             </button>
-            <button onClick={logout} className="inline-flex items-center gap-2 rounded-xl bg-red-50 p-2.5 text-sm font-black text-red-700 sm:px-3">
+            <button onClick={logout} className="hidden items-center gap-2 rounded-full bg-red-50 p-2.5 text-sm font-black text-red-700 sm:inline-flex sm:px-3">
               <LogOut size={17} /> <span className="hidden sm:inline">{isFa ? "خروج" : "Logout"}</span>
             </button>
           </div>
         </div>
       </header>
 
-      <main className={`mx-auto max-w-[1500px] ${mobileDetailOpen ? "p-0 lg:p-4" : "p-2 pb-24 sm:p-4 lg:pb-4"}`}>
+      <main className={`mx-auto max-w-[1500px] ${mobileDetailOpen ? "h-full min-h-0 p-0 lg:h-auto lg:p-4" : "p-2 pb-24 sm:p-4 lg:pb-4"}`}>
         <nav className="mb-4 hidden flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm lg:flex">
           <WorkspaceTab
             active={activeView === "tickets"}
@@ -475,13 +706,12 @@ function SupportStaffWorkspaceContent() {
           />
         </nav>
 
-        {activeView === "tickets" ? <div className={`mb-2 grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm md:grid-cols-[1fr_190px_170px] lg:mb-4 lg:p-3 ${mobileTicketOpen ? "hidden lg:grid" : "grid"}`}>
-          <label className="relative col-span-2 md:col-span-1">
+        {activeView === "tickets" ? <div className={`mb-2 grid-cols-[minmax(0,1fr)_minmax(0,170px)] gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm lg:mb-4 lg:p-3 ${mobileTicketOpen ? "hidden lg:grid" : "grid"}`}>
+          <label className="relative">
             <Search className="absolute start-3 top-3 text-slate-400" size={17} />
             <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder={isFa ? "جستجوی تکت، کاربر یا ایمیل" : "Search ticket, user, or email"} className="w-full rounded-xl border border-slate-200 py-2.5 ps-10 pe-3 text-sm outline-none focus:border-blue-500" />
           </label>
-          <FilterSelect value={filters.status} onChange={(status) => setFilters({ ...filters, status })} values={STATUSES} allLabel={isFa ? "همه وضعیت‌ها" : "All statuses"} labels={labels} />
-          <FilterSelect value={filters.priority} onChange={(priority) => setFilters({ ...filters, priority })} values={PRIORITIES} allLabel={isFa ? "همه اولویت‌ها" : "All priorities"} labels={labels} />
+          <FilterSelect value={filters.status} onChange={(status) => setFilters({ ...filters, status })} values={["workspace", ...STATUSES]} allLabel={isFa ? "همه وضعیت‌ها" : "All statuses"} labels={labels} />
         </div> : null}
         {error ? <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
 
@@ -495,14 +725,15 @@ function SupportStaffWorkspaceContent() {
             onSelectConversation={setSelectedConversation}
             onConversationRead={markConversationReadLocally}
             refreshTeam={loadTeam}
+            refreshToken={teamRefreshToken}
             onMobileDetailChange={setMobileTeamChatOpen}
           />
         ) : null}
 
         {activeView === "guide" ? <SupportTeamGuide /> : null}
 
-        {activeView === "tickets" ? <section className={`grid overflow-hidden bg-white shadow-sm lg:h-auto lg:min-h-[72vh] lg:grid-cols-[380px_1fr] lg:rounded-3xl lg:border lg:border-slate-200 ${mobileTicketOpen ? "h-[100dvh] min-h-0 rounded-none border-0" : "h-[calc(100dvh-14rem)] min-h-[28rem] rounded-2xl border border-slate-200"}`}>
-          <aside className={`h-full overflow-y-auto border-b border-slate-200 lg:block lg:max-h-[76vh] lg:border-b-0 lg:border-e ${mobileTicketOpen ? "hidden" : "block"}`}>
+        {activeView === "tickets" ? <section className={`grid w-full min-w-0 max-w-full overflow-hidden bg-white shadow-sm lg:h-[clamp(520px,calc(100dvh-10.5rem),720px)] lg:min-h-0 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:rounded-3xl lg:border lg:border-slate-200 ${mobileTicketOpen ? "h-full min-h-0 rounded-none border-0" : "h-[calc(100dvh-14rem)] min-h-[28rem] rounded-2xl border border-slate-200"}`}>
+          <aside className={`chat-scrollbar-side edutech-scrollbar h-full min-h-0 overflow-y-auto border-b border-slate-200 lg:block lg:border-b-0 lg:border-e ${mobileTicketOpen ? "hidden" : "block"}`}>
             {loading ? (
               <p className="p-10 text-center font-bold text-slate-400">{isFa ? "در حال بارگذاری…" : "Loading…"}</p>
             ) : tickets.length === 0 ? (
@@ -510,10 +741,8 @@ function SupportStaffWorkspaceContent() {
             ) : (
               <div className="divide-y divide-slate-100">
                 {tickets.map((ticket) => (
-                  <button key={ticket.id} onClick={() => { setChat(null); setSelectedId(ticket.id); setMobileTicketOpen(true); }} className={`flex w-full items-center gap-3 p-3 text-start transition sm:p-4 ${selectedId === ticket.id ? "bg-emerald-50 lg:bg-blue-50" : "hover:bg-slate-50"}`}>
-                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-slate-200 to-slate-100 text-base font-black text-slate-600">
-                      {String(ticket.requester?.name || "?").slice(0, 1).toUpperCase()}
-                    </span>
+                  <button key={ticket.id} onClick={() => { setChat(null); setTicketActionsOpen(false); setSelectedId(ticket.id); setMobileTicketOpen(true); }} className={`flex w-full items-center gap-3 p-3 text-start transition sm:p-4 ${selectedId === ticket.id ? "bg-[#f0f2f5]" : "hover:bg-slate-50"}`}>
+                    <RequesterAvatar requester={ticket.requester} />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
                         <strong className="min-w-0 flex-1 truncate text-sm">{ticket.subject}</strong>
@@ -531,34 +760,41 @@ function SupportStaffWorkspaceContent() {
             )}
           </aside>
 
-          <div className={`${mobileTicketOpen ? "flex" : "hidden"} h-full min-h-0 flex-col lg:flex lg:min-h-[620px]`}>
+          <div className={`${mobileTicketOpen ? "flex" : "hidden"} h-full min-h-0 min-w-0 flex-col overflow-hidden lg:flex`}>
             {!chat ? (
               <div className="grid flex-1 place-items-center text-center text-slate-400">
                 <div><MessageCircle className="mx-auto" size={48} /><p className="mt-3 font-bold">{mobileTicketOpen ? (isFa ? "در حال بارگذاری گفتگو…" : "Loading conversation…") : (isFa ? "یک گفتگو را انتخاب کنید" : "Select a conversation")}</p></div>
               </div>
             ) : (
               <>
-                <header className="sticky top-0 z-20 border-b border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                <header className="sticky top-0 z-20 bg-[#f0f2f5] p-2.5 shadow-sm sm:p-4">
+                  <div className="relative flex items-center justify-between gap-2">
                     <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <button type="button" onClick={() => setMobileTicketOpen(false)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-600 hover:bg-slate-100 lg:hidden" aria-label={isFa ? "بازگشت" : "Back"}>
+                      <button type="button" onClick={() => { setTicketActionsOpen(false); setMobileTicketOpen(false); }} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-600 hover:bg-slate-100 lg:hidden" aria-label={isFa ? "بازگشت" : "Back"}>
                         {isFa ? <ChevronRight size={23} /> : <ChevronLeft size={23} />}
                       </button>
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-100 font-black text-slate-600">
-                        {String(chat.ticket.requester?.name || "?").slice(0, 1).toUpperCase()}
-                      </span>
+                      <RequesterAvatar requester={chat.ticket.requester} size="sm" />
                       <div className="min-w-0">
                         <h2 className="truncate text-sm font-black sm:text-base">{chat.ticket.subject}</h2>
-                        <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[10px] font-semibold text-slate-500 sm:mt-1 sm:text-xs">
+                        <p className="mt-0.5 flex min-w-0 items-center gap-x-1 truncate text-[10px] font-semibold text-slate-500 sm:mt-1 sm:text-xs">
                           <span className="max-w-28 truncate sm:max-w-none">{chat.ticket.requester?.name}</span>
                           <span aria-hidden="true">·</span>
-                          <span className="max-w-40 truncate" dir="ltr">{chat.ticket.requester?.email}</span>
-                          <span aria-hidden="true">·</span>
+                          <span className="hidden max-w-40 truncate sm:inline" dir="ltr">{chat.ticket.requester?.email}</span>
+                          <span className="hidden sm:inline" aria-hidden="true">·</span>
                           <span className="whitespace-nowrap" dir="ltr">{chat.ticket.ticketNumber}</span>
                         </p>
                       </div>
                     </div>
-                    <div className="grid w-full grid-cols-2 gap-2 sm:ps-0 lg:w-auto lg:min-w-[650px] lg:grid-cols-5">
+                    <button
+                      type="button"
+                      onClick={() => setTicketActionsOpen((current) => !current)}
+                      className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-600 hover:bg-slate-200"
+                      aria-label={isFa ? "مدیریت تکت" : "Ticket actions"}
+                      aria-expanded={ticketActionsOpen}
+                    >
+                      <MoreVertical size={22} />
+                    </button>
+                    <div className={`${ticketActionsOpen ? "grid" : "hidden"} absolute end-0 top-[calc(100%+0.65rem)] z-30 w-[min(34rem,calc(100vw-1.25rem))] grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl sm:grid-cols-3`}>
                         <button
                           disabled={
                             busy ||
@@ -566,11 +802,14 @@ function SupportStaffWorkspaceContent() {
                               chat.ticket.assignedTo.id !==
                                 agentId)
                           }
-                          onClick={() =>
-                            chat.ticket.assignedTo?.id === agentId
-                              ? setHandoffOpen(true)
-                              : updateTicket({ assignedTo: agentId })
-                          }
+                          onClick={() => {
+                            setTicketActionsOpen(false);
+                            if (chat.ticket.assignedTo?.id === agentId) {
+                              setHandoffOpen(true);
+                            } else {
+                              updateTicket({ assignedTo: agentId });
+                            }
+                          }}
                           className="h-10 min-w-0 truncate rounded-xl bg-slate-100 px-3 text-[11px] font-black text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {!chat.ticket.assignedTo?.id
@@ -593,11 +832,13 @@ function SupportStaffWorkspaceContent() {
                               : isFa ? "بدون مسئول" : "Unassigned"}
                           </span>
                         </div>
-                        <TicketSelect value={chat.ticket.priority} values={PRIORITIES} disabled={busy || chat.ticket.assignedTo?.id !== agentId} onChange={(priority) => updateTicket({ priority })} labels={labels} ariaLabel={isFa ? "اولویت" : "Priority"} />
-                        <TicketSelect value={chat.ticket.status} values={STATUSES} disabled={busy || chat.ticket.assignedTo?.id !== agentId} onChange={(status) => updateTicket({ status })} labels={labels} ariaLabel={isFa ? "وضعیت" : "Status"} />
+                        <TicketSelect value={chat.ticket.status} values={STATUSES} disabled={busy || chat.ticket.assignedTo?.id !== agentId} onChange={(status) => { setTicketActionsOpen(false); updateTicket({ status }); }} labels={labels} ariaLabel={isFa ? "وضعیت" : "Status"} />
                         <button
                           type="button"
-                          onClick={deleteCompletedTicket}
+                          onClick={() => {
+                            setTicketActionsOpen(false);
+                            deleteCompletedTicket();
+                          }}
                           disabled={
                             busy ||
                             chat.ticket.assignedTo?.id !== agentId ||
@@ -616,13 +857,13 @@ function SupportStaffWorkspaceContent() {
                   </div>
                   </div>
                 </header>
-                <div className="flex-1 space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.32)_0,rgba(255,255,255,0.32)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:space-y-3 sm:p-4">
+                <div className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-1.5 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.32)_0,rgba(255,255,255,0.32)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:p-5">
                   {chat.messages.map((message) => (
                     <MessageBubble key={message.id} message={message} isFa={isFa} />
                   ))}
                   <div ref={bottomRef} />
                 </div>
-                <form onSubmit={send} className="border-t bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
+                <form onSubmit={send} className="bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
                   {chat.ticket.assignedTo?.id !== agentId ? (
                     <p className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
                       {chat.ticket.assignedTo?.id
@@ -635,8 +876,8 @@ function SupportStaffWorkspaceContent() {
                     <ModeButton disabled={chat.ticket.assignedTo?.id !== agentId} active={internalNote} note onClick={() => setInternalNote(true)}>{isFa ? "یادداشت داخلی" : "Internal note"}</ModeButton>
                   </div>
                   <div className="flex gap-2">
-                    <textarea disabled={chat.ticket.assignedTo?.id !== agentId} value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={4000} rows={1} placeholder={internalNote ? (isFa ? "یادداشت خصوصی که فقط تیم پشتیبانی می‌بیند" : "Private note visible only to support staff") : (isFa ? "پاسخ خود را برای کاربر بنویسید" : "Write a reply to the user")} className={`min-h-11 max-h-28 flex-1 resize-none rounded-3xl border px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 ${internalNote ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white focus:border-emerald-500"}`} />
-                    <button disabled={busy || !draft.trim() || chat.ticket.assignedTo?.id !== agentId} className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-sm disabled:opacity-40 ${internalNote ? "bg-amber-600" : "bg-emerald-600"}`}><Send size={19} /></button>
+                    <textarea disabled={chat.ticket.assignedTo?.id !== agentId} value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={4000} rows={1} placeholder={internalNote ? (isFa ? "یادداشت خصوصی که فقط تیم پشتیبانی می‌بیند" : "Private note visible only to support staff") : (isFa ? "پاسخ خود را برای کاربر بنویسید" : "Write a reply to the user")} className={`min-h-11 max-h-28 flex-1 resize-none rounded-3xl border-0 px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 ${internalNote ? "bg-amber-50" : "bg-white"}`} />
+                    <button disabled={busy || !draft.trim() || chat.ticket.assignedTo?.id !== agentId} className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-sm disabled:opacity-40 ${internalNote ? "bg-amber-600" : "bg-[#00a884]"}`}><Send size={19} /></button>
                   </div>
                 </form>
               </>
@@ -677,7 +918,7 @@ function WorkspaceTab({ active, icon: Icon, label, badge = 0, onClick }) {
       onClick={onClick}
       className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${
         active
-          ? "bg-[#0B4FD8] text-white shadow-md"
+          ? "bg-[#00a884] text-white shadow-md"
           : "text-slate-600 hover:bg-slate-100"
       }`}
     >
@@ -746,14 +987,45 @@ function ModeButton({ active, note = false, disabled = false, onClick, children 
 
 function MessageBubble({ message, isFa }) {
   const own = ["admin", "support"].includes(message.senderRole);
+  const senderLabel =
+    message.senderRole === "admin"
+      ? isFa
+        ? "ادمین"
+        : "Admin"
+      : message.sender?.name;
   return (
     <div className={`flex ${own ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[88%] rounded-xl px-3 py-2 shadow-sm sm:max-w-[82%] sm:px-4 sm:py-3 ${message.internalNote ? "border border-amber-300 bg-amber-50" : own ? "bg-[#d9fdd3] text-slate-900" : "bg-white text-slate-900"}`}>
+      <div className={`relative max-w-[86%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[72%] ${message.internalNote ? "border border-amber-300 bg-amber-50" : own ? "bg-[#d9fdd3] text-slate-900" : "bg-white text-slate-900"}`}>
         {message.internalNote ? <p className="mb-1 flex items-center gap-1 text-[10px] font-black uppercase"><StickyNote size={12} /> {isFa ? "یادداشت داخلی" : "Internal note"}</p> : null}
-        <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p>
-        <p className="mt-1 text-[10px] font-bold text-slate-400">{message.sender?.name} · {new Date(message.createdAt).toLocaleString(isFa ? "fa-IR" : "en-US")}</p>
+        <p className="mb-0.5 text-[10px] font-black text-[#00a884]">{senderLabel}</p>
+        <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">{message.body}</p>
+        <p className="mt-1 text-end text-[9px] font-semibold text-slate-500">{new Date(message.createdAt).toLocaleTimeString(isFa ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })}</p>
       </div>
     </div>
+  );
+}
+
+function RequesterAvatar({ requester, size = "lg" }) {
+  const avatar = resolveAvatarUrl(requester?.avatar || "");
+  const sizeClass = size === "sm" ? "h-10 w-10" : "h-12 w-12";
+
+  return (
+    <span
+      className={`relative grid ${sizeClass} shrink-0 place-items-center overflow-hidden rounded-full bg-slate-100 text-slate-500`}
+      aria-label={requester?.name || "User"}
+    >
+      <UserRound size={size === "sm" ? 19 : 22} />
+      {avatar ? (
+        <img
+          src={avatar}
+          alt={requester?.name || ""}
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      ) : null}
+    </span>
   );
 }
 

@@ -1,3 +1,8 @@
+self.addEventListener("fetch", () => {
+  // Keep navigation and API requests network-first while making the support
+  // workspace eligible for installation as a standalone web app.
+});
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {
@@ -14,6 +19,7 @@ self.addEventListener("push", (event) => {
     teacher_created: "/teachers",
     support_ticket_created: "/support-team",
     support_ticket_message: "/support-team",
+    support_team_message: "/support-team",
   };
 
   const resolveTargetUrl = () => {
@@ -57,8 +63,14 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       const target = new URL(targetUrl, self.location.origin).href;
-      const existingClient = clients.find((client) => client.url === target);
-      if (existingClient) return existingClient.focus();
+      const targetPath = new URL(target).pathname;
+      const existingClient = clients.find((client) => {
+        const clientUrl = new URL(client.url);
+        return clientUrl.href === target || clientUrl.pathname === targetPath;
+      });
+      if (existingClient) {
+        return existingClient.navigate(target).then(() => existingClient.focus());
+      }
       return self.clients.openWindow(targetUrl);
     }),
   );

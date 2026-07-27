@@ -10,11 +10,9 @@ import {
   markSupportTicketRead,
   sendSupportMessage,
   updateAdminSupportTicket,
-  updateOwnSupportTicket,
 } from "../controllers/supportController.js";
 import {
   createSupportTicketSchema,
-  requesterTicketActionSchema,
   sendSupportMessageSchema,
   supportTicketIdSchema,
   supportTicketListSchema,
@@ -84,12 +82,4 @@ router.patch(
   validateRequest(supportTicketIdSchema, "params"),
   markSupportTicketRead,
 );
-router.patch(
-  "/support/tickets/:ticketId",
-  authorizeRoles("student", "teacher"),
-  validateRequest(supportTicketIdSchema, "params"),
-  validateRequest(requesterTicketActionSchema),
-  updateOwnSupportTicket,
-);
-
 export default router;

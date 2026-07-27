@@ -14,7 +14,6 @@ const categories = [
   "complaint",
   "other",
 ];
-const priorities = ["low", "normal", "high", "urgent"];
 const statuses = ["open", "in_progress", "waiting_for_user", "resolved", "closed"];
 
 export const createSupportTicketSchema = Joi.object({
@@ -35,20 +34,14 @@ export const sendSupportMessageSchema = Joi.object({
 export const supportTicketListSchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(30),
-  status: Joi.string().valid("all", ...statuses).default("all"),
+  status: Joi.string().valid("all", "active", ...statuses).default("all"),
   category: Joi.string().valid("all", ...categories).default("all"),
-  priority: Joi.string().valid("all", ...priorities).default("all"),
   requesterRole: Joi.string().valid("all", "student", "teacher").default("all"),
   search: Joi.string().trim().max(120).allow("").default(""),
 });
 
 export const updateSupportTicketSchema = Joi.object({
   status: Joi.string().valid(...statuses),
-  priority: Joi.string().valid(...priorities),
   assignedTo: Joi.alternatives().try(objectId, Joi.valid(null)),
   handoffReason: Joi.string().trim().min(5).max(500),
 }).min(1);
-
-export const requesterTicketActionSchema = Joi.object({
-  status: Joi.string().valid("open", "closed").required(),
-});

@@ -47,7 +47,21 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Vazirmatn:wght@400;500;600;700;800;900&display=swap"
     />
     <link rel="preload" as="image" href="/hero-student.webp" type="image/webp" fetchpriority="high" />
-    <link rel="manifest" href="/icons/site.webmanifest?v=2" />
+    <script>
+      (function configureInstallableApp() {
+        var isSupportApp = window.location.pathname.indexOf("/support") === 0;
+        var manifest = document.createElement("link");
+        manifest.rel = "manifest";
+        manifest.href = isSupportApp
+          ? "/support.webmanifest?v=1"
+          : "/icons/site.webmanifest?v=2";
+        document.head.appendChild(manifest);
+        window.addEventListener("beforeinstallprompt", function (event) {
+          event.preventDefault();
+          window.__edutechInstallPrompt = event;
+        });
+      })();
+    </script>
     <link rel="canonical" href="https://edutech.study/" />
     <meta
       name="description"

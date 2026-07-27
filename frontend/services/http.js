@@ -204,6 +204,12 @@ export const getLocalizedRequestErrorMessage = (
       : "Request timed out. Please try again.";
   }
 
+  if (normalized.includes("chat system is currently disabled")) {
+    return isFa
+      ? "سیستم گفتگو در حال حاضر غیرفعال است."
+      : "Chat system is currently disabled.";
+  }
+
   if (raw && normalized !== "request failed") {
     return raw;
   }

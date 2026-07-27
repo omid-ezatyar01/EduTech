@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Languages } from "lucide-react";
 import {
   SupportStaffLanguageContext,
@@ -17,6 +17,16 @@ const initialLanguage = () => {
 
 export function SupportStaffLanguageProvider({ children }) {
   const [language, setLanguageState] = useState(initialLanguage);
+
+  useEffect(() => {
+    const previousDirection = document.documentElement.dir;
+    document.documentElement.dir = language === "fa" ? "rtl" : "ltr";
+
+    return () => {
+      document.documentElement.dir = previousDirection;
+    };
+  }, [language]);
+
   const value = useMemo(() => {
     const setLanguage = (nextLanguage) => {
       const normalized = nextLanguage === "fa" ? "fa" : "en";

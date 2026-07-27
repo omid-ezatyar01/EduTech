@@ -14,6 +14,7 @@ import {
   emitSupportTeamMessage,
   getSupportPresenceSnapshot,
 } from "../../services/supportRealtime.service.js";
+import { notifySupportTeamChatMessage } from "../../services/webPush.service.js";
 
 const escapeRegex = (value) =>
   String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -41,18 +42,26 @@ const mapTeamMessage = (message) => ({
   sender: message.sender
     ? {
         id: String(message.sender._id),
-        name: message.sender.name,
-        email: message.sender.email,
-        avatar: message.sender.avatar || "",
+        name: message.sender.role === "admin" ? "Admin" : message.sender.name,
+        email: message.sender.role === "admin" ? "" : message.sender.email,
+        avatar:
+          message.sender.role === "admin" ? "" : message.sender.avatar || "",
         role: message.sender.role || "",
       }
     : null,
   recipient: message.recipient
     ? {
         id: String(message.recipient._id),
-        name: message.recipient.name,
-        email: message.recipient.email,
-        avatar: message.recipient.avatar || "",
+        name:
+          message.recipient.role === "admin"
+            ? "Admin"
+            : message.recipient.name,
+        email:
+          message.recipient.role === "admin" ? "" : message.recipient.email,
+        avatar:
+          message.recipient.role === "admin"
+            ? ""
+            : message.recipient.avatar || "",
         role: message.recipient.role || "",
       }
     : null,
@@ -125,9 +134,6 @@ export const listSupportStaff = asyncHandler(async (req, res) => {
           $group: {
             _id: "$assignedTo",
             activeTickets: { $sum: 1 },
-            urgentTickets: {
-              $sum: { $cond: [{ $eq: ["$priority", "urgent"] }, 1, 0] },
-            },
           },
         },
       ])
@@ -144,8 +150,6 @@ export const listSupportStaff = asyncHandler(async (req, res) => {
           ...mapStaff(row, profileByUser.get(String(row._id))),
           activeTickets:
             Number(workload.get(String(row._id))?.activeTickets) || 0,
-          urgentTickets:
-            Number(workload.get(String(row._id))?.urgentTickets) || 0,
         })),
         meta: {
           page,
@@ -277,9 +281,6 @@ export const getSupportTeamDirectory = asyncHandler(async (req, res) => {
             $group: {
               _id: "$assignedTo",
               activeTickets: { $sum: 1 },
-              urgentTickets: {
-                $sum: { $cond: [{ $eq: ["$priority", "urgent"] }, 1, 0] },
-              },
             },
           },
         ])
@@ -317,8 +318,8 @@ export const getSupportTeamDirectory = asyncHandler(async (req, res) => {
       data: {
         members: members.map((member) => ({
           id: String(member._id),
-          name: member.name,
-          email: member.email,
+          name: member.role === "admin" ? "Admin" : member.name,
+          email: member.role === "admin" ? "" : member.email,
           phone: member.phone,
           avatar: member.avatar || "",
           role: member.role,
@@ -341,8 +342,6 @@ export const getSupportTeamDirectory = asyncHandler(async (req, res) => {
             presence.lastSeenById[String(member._id)] || null,
           activeTickets:
             Number(workloadById.get(String(member._id))?.activeTickets) || 0,
-          urgentTickets:
-            Number(workloadById.get(String(member._id))?.urgentTickets) || 0,
           unreadMessages: unreadById.get(String(member._id)) || 0,
         })),
         generalUnread: Number(generalUnread) || 0,
@@ -421,6 +420,14 @@ export const sendSupportTeamMessage = asyncHandler(async (req, res) => {
   emitSupportTeamMessage({
     recipientId: recipient ? String(recipient._id) : "",
     data,
+  });
+  notifySupportTeamChatMessage({
+    senderId: req.user._id,
+    senderName: req.user.role === "admin" ? "Admin" : req.user.name,
+    recipientId: recipient ? recipient._id : "",
+    body: data.message.body,
+  }).catch((error) => {
+    console.warn(`Failed to send support team push notification: ${error.message}`);
   });
 
   return res.status(201).json(

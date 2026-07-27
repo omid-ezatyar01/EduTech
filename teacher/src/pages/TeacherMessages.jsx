@@ -642,7 +642,7 @@ export default function TeacherMessages() {
               />
             ) : (
               <>
-                <div className="max-h-[360px] min-h-[220px] space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-3 sm:p-4">
+                <div className="chat-scrollbar-side edutech-scrollbar max-h-[360px] min-h-[220px] space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-3 sm:p-4">
                   {adminMessages.length ? (
                     adminMessages.map((message) => {
                       const isMine = message?.senderRole === "teacher";
@@ -764,7 +764,7 @@ export default function TeacherMessages() {
             </label>
             </div>
 
-            <div className="max-h-[70dvh] overflow-y-auto xl:max-h-[730px]">
+            <div className="chat-scrollbar-side edutech-scrollbar max-h-[70dvh] overflow-y-auto xl:max-h-[730px]">
               <div>
                 <p className="px-4 pb-2 pt-4 text-[11px] font-black uppercase tracking-wide text-slate-500">
                   {isFa ? "گروه‌های صنف" : "Class Groups"}
@@ -913,7 +913,7 @@ export default function TeacherMessages() {
                   </div>
                 </header>
 
-                <div className="flex-1 space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-3 sm:p-4">
+                <div className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-3 sm:p-4">
                   {loadingGroupChatMessages ? (
                     <TeacherPageLoader
                       label={isFa ? "در حال بارگذاری تاریخچه صنف" : "Loading class history"}

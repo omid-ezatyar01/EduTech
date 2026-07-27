@@ -6,7 +6,7 @@ import {
   Search,
   Send,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import {
   fetchStudentGroupConversations,
@@ -28,6 +28,16 @@ const formatDateTime = (value, language) => {
   return date.toLocaleString(language === "fa" ? "fa-IR" : "en-US", {
     month: "short",
     day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const formatMessageTime = (value, language) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString(language === "fa" ? "fa-IR" : "en-US", {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -87,7 +97,7 @@ export default function Messages({ language = "fa" }) {
       setSelectedCourseId((current) =>
         (preferCourseId && rows.some((row) => row.courseId === preferCourseId) && preferCourseId) ||
         (current && rows.some((row) => row.courseId === current) && current) ||
-        (rows[0]?.courseId || ""),
+        (!isMobileViewport ? rows[0]?.courseId || "" : ""),
       );
     } catch (err) {
       if (isUnauthorizedError(err)) {
@@ -115,7 +125,7 @@ export default function Messages({ language = "fa" }) {
         setLoadingConversations(false);
       }
     }
-  }, [language, navigate, searchQuery, showUnreadOnly]);
+  }, [isMobileViewport, language, navigate, searchQuery, showUnreadOnly]);
 
   const loadMessages = useCallback(async (courseId, options = {}) => {
     const silent = Boolean(options?.silent);
@@ -168,7 +178,7 @@ export default function Messages({ language = "fa" }) {
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-    const media = window.matchMedia("(max-width: 767px)");
+    const media = window.matchMedia("(max-width: 1023px)");
     const sync = () => setIsMobileViewport(media.matches);
     sync();
     media.addEventListener("change", sync);
@@ -197,7 +207,7 @@ export default function Messages({ language = "fa" }) {
 
     const interval = setInterval(
       refreshData,
-      isConstrainedConnection() ? 60000 : 30000,
+      isConstrainedConnection() ? 15000 : 5000,
     );
     const triggerRefresh = () => {
       refreshData();
@@ -305,248 +315,354 @@ export default function Messages({ language = "fa" }) {
 
   return (
     <StudentLayout language={language}>
-      <div className="mb-6 hidden flex-wrap items-center gap-2 px-1 text-sm font-semibold text-slate-500 md:flex sm:px-0">
-        <Link className="transition hover:text-primary-700" to="/student/dashboard">
-          {isFa ? "داشبورد" : "Dashboard"}
-        </Link>
-        <span>/</span>
-        <span className="text-slate-900">{isFa ? "پیام‌های صنف" : "Class Messages"}</span>
-      </div>
-
-      <div className="mb-6 hidden flex-wrap items-end justify-between gap-3 md:flex">
-        <div>
-          <h1 className="text-3xl font-black text-slate-950">{isFa ? "چت گروهی صنف‌ها" : "Class Group Chats"}</h1>
-          <p className="mt-2 text-sm font-semibold text-slate-600">
-            {isFa
-              ? "پیام‌های استاد را در چت گروهی هر صنف ببینید و پاسخ دهید."
-              : "See teacher messages in each class group and reply."}
-          </p>
-          <p className="mt-1 text-xs font-semibold text-rose-600">
-            {isFa
-              ? "تمام پیام‌های هر گروه صنف پس از ۷۲ ساعت برای همیشه حذف می‌شود."
-              : "All messages in each class group are permanently deleted after 72 hours."}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-primary-50 px-3 py-1.5 text-xs font-black text-primary-700">
-            {isFa ? `خوانده‌نشده: ${conversationStats.totalUnreadMessages || 0}` : `Unread: ${conversationStats.totalUnreadMessages || 0}`}
-          </span>
-          <button
-            type="button"
-            onClick={handleMarkAllRead}
-            disabled={markingAllRead}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-          >
-            <CheckCheck size={16} />
-            {markingAllRead
-              ? "..."
-              : isFa
-                ? "علامت‌گذاری همه به‌عنوان خوانده‌شده"
-                : "Mark all as read"}
-          </button>
-        </div>
-      </div>
-
-      {error ? (
-        <div className="mb-4 rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-          {error}
-        </div>
-      ) : null}
-
-      {toast ? (
-        <div className="mb-4 rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-          {toast}
-        </div>
-      ) : null}
-
-      <div className="relative -m-4 grid h-[calc(100dvh-72px)] gap-0 overflow-hidden bg-white shadow-sm sm:-m-6 md:m-0 md:h-[720px] md:grid-cols-[320px_1fr] md:rounded-[28px] md:border md:border-slate-200 lg:grid-cols-[380px_1fr]">
-        {showConversationList ? (
-        <aside className="flex h-full min-h-[320px] flex-col border-e border-slate-200 bg-white">
-          <div className="border-b border-slate-200 bg-[#f0f2f5] p-3">
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3">
-            <Search size={16} className="text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder={isFa ? "جستجوی صنف یا پیام..." : "Search class or message..."}
-              className="h-10 w-full bg-transparent text-sm font-semibold text-slate-800 outline-none"
-            />
+      <div className="mx-auto max-w-[1450px]">
+        <header className="mb-3 hidden items-center justify-between gap-3 lg:flex">
+          <div>
+            <h1 className="flex items-center gap-2 text-2xl font-black text-slate-950">
+              <MessageCircle className="text-emerald-600" />
+              {isFa ? "پیام‌های صنف" : "Class Messages"}
+            </h1>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              {isFa
+                ? "پیام‌های استاد را در چت گروهی هر صنف ببینید و پاسخ دهید."
+                : "See teacher messages in each class group and reply."}
+            </p>
+            <p className="mt-1 text-[11px] font-bold text-rose-600">
+              {isFa
+                ? "پیام‌های هر گروه صنف پس از ۷۲ ساعت حذف می‌شود."
+                : "Messages in each class group are deleted after 72 hours."}
+            </p>
           </div>
-
-          <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-700">
-            <input
-              type="checkbox"
-              checked={showUnreadOnly}
-              onChange={(event) => setShowUnreadOnly(event.target.checked)}
-            />
-            {isFa ? "فقط خوانده‌نشده" : "Unread only"}
-          </label>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">
+              {isFa
+                ? `خوانده‌نشده: ${conversationStats.totalUnreadMessages || 0}`
+                : `Unread: ${conversationStats.totalUnreadMessages || 0}`}
+            </span>
+            <button
+              type="button"
+              onClick={handleMarkAllRead}
+              disabled={markingAllRead}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#00a884] px-4 py-2.5 text-sm font-black text-white shadow-sm disabled:opacity-50"
+            >
+              <CheckCheck size={17} />
+              {markingAllRead
+                ? "..."
+                : isFa
+                  ? "خواندن همه"
+                  : "Mark all read"}
+            </button>
           </div>
+        </header>
 
-          <div className="flex-1 overflow-y-auto">
-            {loadingConversations ? (
-              <div className="rounded-xl bg-white p-6 text-center text-xs font-bold text-slate-500">
-                {isFa ? "در حال بارگذاری گفتگوهای صنف" : "Loading class conversations"}
-              </div>
-            ) : conversations.length ? (
-              conversations.map((conversation) => {
-                const isActive = selectedConversation?.courseId === conversation.courseId;
-                return (
-                  <button
-                    key={conversation.courseId}
-                    type="button"
-                    onClick={() => setSelectedCourseId(conversation.courseId)}
-                    className={`w-full border-b border-slate-100 p-4 text-start transition ${
-                      isActive
-                        ? "bg-[#e7f3ff]"
-                        : "bg-white hover:bg-slate-50"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-slate-900">{conversation.courseTitle}</p>
-                        <p className="truncate text-[11px] font-semibold text-slate-500">
-                          {conversation.teacherName || (isFa ? "استاد" : "Teacher")}
-                        </p>
-                      </div>
-                      <p className="shrink-0 text-[11px] font-bold text-slate-400">
-                        {formatDateTime(conversation.lastMessageAt, language)}
-                      </p>
-                    </div>
-                    <p className="mt-1 truncate text-xs font-semibold text-slate-600">
-                      {conversation.lastMessage || (isFa ? "هنوز پیامی ثبت نشده است." : "No messages yet.")}
-                    </p>
-                    <div className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className={`text-[10px] font-bold ${conversation.canSendMessages ? "text-emerald-700" : "text-amber-700"}`}>
-                        {conversation.canSendMessages
-                          ? (isFa ? "امکان پاسخ فعال" : "Reply enabled")
-                          : (isFa ? "امکان پاسخ غیرفعال" : "Reply disabled")}
-                      </span>
-                      {Number(conversation.unreadCount || 0) > 0 ? (
-                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[10px] font-black text-white">
-                          {conversation.unreadCount}
-                        </span>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="rounded-xl bg-white p-6 text-center text-xs font-bold text-slate-500">
-                {isFa ? "گفتگویی پیدا نشد." : "No conversation found."}
-              </div>
-            )}
+        {error ? (
+          <div className="mb-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">
+            {error}
           </div>
-        </aside>
         ) : null}
 
-        {showChatPanel ? (
-        <section className="flex h-full min-h-[320px] flex-col overflow-hidden bg-white">
-          {selectedConversation ? (
-            <>
-              <div className="flex min-h-[64px] items-center justify-between border-b border-slate-200 bg-[#f0f2f5] p-3">
+        {toast ? (
+          <div className="mb-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-700">
+            {toast}
+          </div>
+        ) : null}
+
+        <section className="grid h-[calc(100dvh-8.5rem)] min-h-[560px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:h-[calc(100dvh-10.5rem)] lg:grid-cols-[380px_1fr] lg:rounded-3xl">
+          {showConversationList ? (
+            <aside className="flex min-h-0 flex-col border-e border-slate-200 bg-white">
+              <div className="flex items-center justify-between bg-[#f0f2f5] px-3 py-2.5">
                 <div className="flex min-w-0 items-center gap-3">
-                  {isMobileViewport ? (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCourseId("")}
-                      className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-600 hover:bg-slate-200"
-                      aria-label={isFa ? "بازگشت به گفتگوها" : "Back to chats"}
-                    >
-                      <ChevronLeft size={14} className={isRTL ? "rotate-180" : ""} />
-                    </button>
-                  ) : null}
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-emerald-600 font-black text-white">
-                    {String(selectedConversation.courseTitle || "?").slice(0, 1).toUpperCase()}
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#00a884] text-white">
+                    <MessageCircle size={20} />
                   </span>
                   <div className="min-w-0">
-                  <h2 className="truncate text-sm font-black text-slate-900">{selectedConversation.courseTitle}</h2>
-                  <p className="text-xs font-semibold text-slate-500">
-                    {selectedConversation.teacherName || (isFa ? "استاد" : "Teacher")}
-                  </p>
+                    <h1 className="truncate text-sm font-black">
+                      {isFa ? "پیام‌های صنف" : "Class Messages"}
+                    </h1>
+                    <span className="text-[11px] font-bold text-emerald-700">
+                      {isFa
+                        ? `${conversationStats.totalUnreadMessages || 0} پیام خوانده‌نشده`
+                        : `${conversationStats.totalUnreadMessages || 0} unread`}
+                    </span>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleMarkAllRead}
+                  disabled={markingAllRead}
+                  className="grid h-10 w-10 place-items-center rounded-full text-slate-600 transition hover:bg-slate-200 disabled:opacity-40"
+                  aria-label={isFa ? "خواندن همه پیام‌ها" : "Mark all messages as read"}
+                >
+                  <CheckCheck size={21} />
+                </button>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-3 sm:p-4">
-                {loadingMessages ? (
-                  <div className="py-8 text-center text-sm font-semibold text-slate-500">
-                    {isFa ? "در حال بارگذاری پیام‌ها" : "Loading messages"}
-                  </div>
-                ) : messages.length ? (
-                  messages.map((message) => {
-                    const isStudent = message.senderRole === "student";
+              <div className="border-b border-slate-100 p-2">
+                <label className="relative block">
+                  <Search
+                    size={17}
+                    className="absolute start-4 top-2.5 text-slate-400"
+                  />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder={isFa ? "جستجوی صنف یا پیام..." : "Search class or message..."}
+                    className="w-full rounded-xl bg-[#f0f2f5] py-2 ps-11 pe-4 text-sm outline-none"
+                  />
+                </label>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 px-2 text-[11px] font-bold text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={showUnreadOnly}
+                    onChange={(event) => setShowUnreadOnly(event.target.checked)}
+                    className="accent-[#00a884]"
+                  />
+                  {isFa ? "فقط خوانده‌نشده" : "Unread only"}
+                </label>
+              </div>
+
+              <div className="chat-scrollbar-side edutech-scrollbar min-h-0 flex-1 overflow-y-auto">
+                {loadingConversations ? (
+                  <p className="p-10 text-center font-bold text-slate-400">…</p>
+                ) : conversations.length ? (
+                  conversations.map((conversation) => {
+                    const isActive = selectedConversation?.courseId === conversation.courseId;
                     return (
-                      <div key={message.id} className={`flex ${isStudent ? "justify-end" : "justify-start"}`}>
-                        <div
-                          className={`max-w-[88%] rounded-xl px-3 py-2 text-sm font-semibold leading-6 shadow-sm sm:max-w-[82%] ${
-                            isStudent
-                              ? "bg-[#d9fdd3] text-slate-900"
-                              : "bg-white text-slate-800"
-                          }`}
-                        >
-                          <p className={`mb-1 text-[10px] font-bold ${isStudent ? "text-emerald-700" : "text-primary-700"}`}>
-                            {isStudent ? (isFa ? "شما" : "You") : (message.senderName || (isFa ? "استاد" : "Teacher"))}
-                          </p>
-                          <p>{message.body}</p>
-                          <p className="mt-1 text-[10px] font-bold text-slate-400">
-                            {formatDateTime(message.createdAt, language)}
-                          </p>
-                        </div>
-                      </div>
+                      <button
+                        key={conversation.courseId}
+                        type="button"
+                        onClick={() => setSelectedCourseId(conversation.courseId)}
+                        className={`flex w-full items-center gap-3 border-b border-slate-100 px-3 py-3 text-start transition ${
+                          isActive ? "bg-[#f0f2f5]" : "hover:bg-slate-50"
+                        }`}
+                      >
+                        {conversation.teacherAvatar ? (
+                          <img
+                            src={conversation.teacherAvatar}
+                            alt=""
+                            className="h-12 w-12 shrink-0 rounded-full object-cover"
+                          />
+                        ) : (
+                          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 font-black text-white">
+                            {String(conversation.courseTitle || "?").slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <strong className="min-w-0 flex-1 truncate text-sm text-slate-900">
+                              {conversation.courseTitle}
+                            </strong>
+                            <span
+                              className={`text-[10px] font-semibold ${
+                                Number(conversation.unreadCount || 0) > 0
+                                  ? "text-[#00a884]"
+                                  : "text-slate-400"
+                              }`}
+                            >
+                              {formatDateTime(conversation.lastMessageAt, language)}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-500">
+                            {conversation.teacherName || (isFa ? "استاد" : "Teacher")}
+                          </span>
+                          <span className="mt-1 flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-500">
+                              {conversation.lastMessage ||
+                                (isFa ? "هنوز پیامی ثبت نشده است." : "No messages yet.")}
+                            </span>
+                            {Number(conversation.unreadCount || 0) > 0 ? (
+                              <span className="grid min-w-5 place-items-center rounded-full bg-[#25d366] px-1.5 py-0.5 text-[10px] font-black text-white">
+                                {conversation.unreadCount}
+                              </span>
+                            ) : null}
+                          </span>
+                          <span
+                            className={`mt-1 block text-[10px] font-bold ${
+                              conversation.canSendMessages
+                                ? "text-emerald-700"
+                                : "text-amber-700"
+                            }`}
+                          >
+                            {conversation.canSendMessages
+                              ? isFa
+                                ? "امکان پاسخ فعال"
+                                : "Reply enabled"
+                              : isFa
+                                ? "امکان پاسخ غیرفعال"
+                                : "Reply disabled"}
+                          </span>
+                        </span>
+                      </button>
                     );
                   })
                 ) : (
-                  <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">
-                    {isFa ? "پیامی در این صنف وجود ندارد." : "No messages in this class yet."}
+                  <div className="grid h-full min-h-64 place-items-center p-8 text-center text-slate-400">
+                    <div>
+                      <MessageCircle className="mx-auto" size={44} />
+                      <p className="mt-3 text-sm font-bold">
+                        {isFa ? "گفتگویی پیدا نشد." : "No conversation found."}
+                      </p>
+                    </div>
                   </div>
                 )}
-                <div ref={bottomRef} />
               </div>
+            </aside>
+          ) : null}
 
-              <div className="border-t border-slate-200 bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
-                <div className="flex items-end gap-2">
-                  <textarea
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    placeholder={
-                      canSendToSelectedGroup
-                        ? isFa
-                          ? "پیام خود را بنویسید..."
-                          : "Write your message..."
-                        : isFa
-                          ? "ارسال پیام برای این صنف غیرفعال است."
-                          : "Messaging is disabled for this class."
-                    }
-                    rows={1}
-                    disabled={!canSendToSelectedGroup}
-                    className="max-h-28 min-h-[44px] flex-1 resize-none rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSend}
-                    disabled={sending || !String(draft || "").trim() || !canSendToSelectedGroup}
-                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
-                    aria-label={isFa ? "ارسال پیام" : "Send message"}
-                  >
-                    <Send size={18} />
-                  </button>
+          {showChatPanel ? (
+            <div className="flex min-h-0 flex-col bg-[#efeae2]">
+              {!selectedConversation ? (
+                <div className="grid flex-1 place-items-center text-center text-slate-500">
+                  <div>
+                    <MessageCircle className="mx-auto" size={58} />
+                    <p className="mt-4 font-bold">
+                      {isFa ? "یک گفتگوی صنف را انتخاب کنید." : "Select a class conversation."}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-              <MessageCircle size={30} className="text-slate-300" />
-              <p className="text-sm font-black text-slate-700">
-                {isFa ? "گفتگوی صنف انتخاب نشده است." : "No class conversation selected."}
-              </p>
+              ) : (
+                <>
+                  <header className="z-10 flex items-center justify-between gap-3 bg-[#f0f2f5] px-2.5 py-2 shadow-sm sm:px-4">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {isMobileViewport ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCourseId("")}
+                          className="grid h-9 w-9 place-items-center rounded-full text-slate-600"
+                          aria-label={isFa ? "بازگشت به گفتگوها" : "Back to chats"}
+                        >
+                          <ChevronLeft
+                            size={22}
+                            className={isRTL ? "rotate-180" : ""}
+                          />
+                        </button>
+                      ) : null}
+                      {selectedConversation.teacherAvatar ? (
+                        <img
+                          src={selectedConversation.teacherAvatar}
+                          alt=""
+                          className="h-10 w-10 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#00a884] font-black text-white">
+                          {String(selectedConversation.courseTitle || "?").slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <h2 className="truncate text-sm font-black text-slate-950">
+                          {selectedConversation.courseTitle}
+                        </h2>
+                        <p className="text-[11px] font-semibold text-slate-500">
+                          {selectedConversation.teacherName || (isFa ? "استاد" : "Teacher")}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full bg-white px-3 py-1.5 text-[10px] font-black ${
+                        canSendToSelectedGroup ? "text-emerald-700" : "text-amber-700"
+                      }`}
+                    >
+                      {canSendToSelectedGroup
+                        ? isFa
+                          ? "فعال"
+                          : "Active"
+                        : isFa
+                          ? "فقط خواندنی"
+                          : "Read only"}
+                    </span>
+                  </header>
+
+                  <div className="chat-scrollbar-side edutech-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:p-5">
+                    {loadingMessages ? (
+                      <div className="py-8 text-center text-sm font-semibold text-slate-500">
+                        {isFa ? "در حال بارگذاری پیام‌ها" : "Loading messages"}
+                      </div>
+                    ) : messages.length ? (
+                      messages.map((message) => {
+                        const isStudent = message.senderRole === "student";
+                        return (
+                          <div
+                            key={message.id}
+                            className={`flex ${isStudent ? "justify-end" : "justify-start"}`}
+                          >
+                            <div
+                              className={`relative max-w-[86%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[72%] ${
+                                isStudent
+                                  ? "bg-[#d9fdd3] text-slate-900"
+                                  : "bg-white text-slate-900"
+                              }`}
+                            >
+                              {!isStudent ? (
+                                <p className="mb-0.5 text-[10px] font-bold text-[#00a884]">
+                                  {message.senderName || (isFa ? "استاد" : "Teacher")}
+                                </p>
+                              ) : null}
+                              <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">
+                                {message.body}
+                              </p>
+                              <span className="mt-1 flex items-center justify-end gap-1 ps-8 text-[9px] font-semibold text-slate-500">
+                                {formatMessageTime(message.createdAt, language)}
+                                {isStudent ? (
+                                  <CheckCheck size={14} className="text-sky-500" />
+                                ) : null}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="grid h-full place-items-center text-center text-sm font-semibold text-slate-500">
+                        {isFa ? "پیامی در این صنف وجود ندارد." : "No messages in this class yet."}
+                      </div>
+                    )}
+                    <div ref={bottomRef} />
+                  </div>
+
+                  <div className="flex items-end gap-2 bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
+                    <textarea
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "Enter" &&
+                          !event.shiftKey &&
+                          !event.nativeEvent.isComposing
+                        ) {
+                          event.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      placeholder={
+                        canSendToSelectedGroup
+                          ? isFa
+                            ? "پیام خود را بنویسید..."
+                            : "Write your message..."
+                          : isFa
+                            ? "ارسال پیام برای این صنف غیرفعال است."
+                            : "Messaging is disabled for this class."
+                      }
+                      rows={1}
+                      maxLength={4000}
+                      disabled={!canSendToSelectedGroup}
+                      className="max-h-28 min-h-11 flex-1 resize-none rounded-3xl border-0 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSend}
+                      disabled={sending || !String(draft || "").trim() || !canSendToSelectedGroup}
+                      className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#00a884] text-white shadow-sm disabled:opacity-40"
+                      aria-label={isFa ? "ارسال پیام" : "Send message"}
+                    >
+                      <Send size={19} />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
-          )}
+          ) : null}
         </section>
-        ) : null}
       </div>
-      <div className="h-8" aria-hidden="true" />
     </StudentLayout>
   );
 }

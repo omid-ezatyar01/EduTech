@@ -33,7 +33,6 @@ export const fetchSupportStaffQueue = (query = {}) => {
     limit: "100",
     status: "all",
     category: "all",
-    priority: "all",
     requesterRole: "all",
     ...query,
   });

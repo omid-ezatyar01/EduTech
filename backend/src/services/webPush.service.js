@@ -231,6 +231,54 @@ export const notifySupportStaffForTicket = async ({
   return { sent, failed };
 };
 
+export const notifySupportTeamChatMessage = async ({
+  senderId,
+  senderName = "Support team",
+  recipientId = "",
+  body = "",
+} = {}) => {
+  if (!configureWebPush()) {
+    return { skipped: true, reason: "web_push_not_configured" };
+  }
+
+  const userFilter = {
+    role: "support",
+    status: "active",
+    _id: recipientId
+      ? recipientId
+      : { $ne: senderId },
+  };
+  const users = await User.find(userFilter).select("_id").lean();
+  const userIds = users.map((user) => user._id);
+  if (!userIds.length) return { sent: 0, failed: 0 };
+
+  const recipients = await PushSubscription.find({
+    role: "support",
+    app: "support",
+    userId: { $in: userIds },
+  }).lean();
+  const conversation = recipientId ? String(senderId || "") : "general";
+  const payload = {
+    type: "support_team_message",
+    title: `Support team · ${senderName}`,
+    body: compactTextForPush(body, 140),
+    icon: "/icons/web-app-manifest-192x192.png",
+    badge: "/icons/favicon-96x96.png",
+    url: `/support-team?conversation=${encodeURIComponent(conversation)}`,
+  };
+
+  let sent = 0;
+  let failed = 0;
+  for (let index = 0; index < recipients.length; index += 50) {
+    const results = await Promise.all(
+      recipients.slice(index, index + 50).map((row) => sendToSubscription(row, payload)),
+    );
+    sent += results.filter((result) => result.ok).length;
+    failed += results.filter((result) => !result.ok).length;
+  }
+  return { sent, failed };
+};
+
 const sendCourseEventToUsers = async ({
   userIds = [],
   role,
