@@ -158,7 +158,11 @@ export default function TeacherSupport() {
     socket.on("support:ticket-updated", refresh);
     socket.on("support:ticket-created", refresh);
     socket.on("support:ticket-deleted", refresh);
-    const timer = setInterval(() => { loadList().catch(() => {}); if (selectedId) loadChat(selectedId).catch(() => {}); }, 5_000);
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      loadList().catch(() => {});
+      if (selectedId) loadChat(selectedId).catch(() => {});
+    }, 15_000);
     return () => { clearInterval(timer); socket.disconnect(); };
   }, [selectedId, loadChat, loadList]);
 

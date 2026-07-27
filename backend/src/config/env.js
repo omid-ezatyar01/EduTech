@@ -17,6 +17,7 @@ const envSchema = Joi.object({
   COURSE_PUBLIC_ORIGIN: Joi.string().uri().allow("").default(""),
   API_RATE_LIMIT_WINDOW_MS: Joi.number().integer().min(1000).default(15 * 60 * 1000),
   API_RATE_LIMIT_MAX: Joi.number().integer().min(1).default(300),
+  API_AUTH_RATE_LIMIT_MAX: Joi.number().integer().min(1).default(3000),
   JSON_BODY_LIMIT: Joi.string().trim().default("1mb"),
   URL_ENCODED_LIMIT: Joi.string().trim().default("1mb"),
   URL_ENCODED_PARAMETER_LIMIT: Joi.number().integer().min(1).max(10000).default(100),

@@ -330,9 +330,32 @@ What is included:
 - `JWT_SECRET` should be a long random value.
 - `CLIENT_ORIGIN` should list only your real frontend origins in production.
 - `COURSE_PUBLIC_ORIGIN` is required in production for public share links and web-push URLs.
+- Public requests are limited per IP with `API_RATE_LIMIT_MAX` (default `300` per window).
+- Requests with a valid login token are limited per account with
+  `API_AUTH_RATE_LIMIT_MAX` (default `3000` per window), so student, teacher,
+  admin, and support users behind one network do not block each other.
 - Request body limits are configurable with:
   - `JSON_BODY_LIMIT`
   - `URL_ENCODED_LIMIT`
   - `URL_ENCODED_PARAMETER_LIMIT`
 - Health check endpoint:
   - `GET /api/v1/health`
+
+Recommended production rate-limit values:
+
+```env
+API_RATE_LIMIT_WINDOW_MS=900000
+API_RATE_LIMIT_MAX=300
+API_AUTH_RATE_LIMIT_MAX=3000
+TRUST_PROXY=1
+```
+
+Run exactly one API process because the exchange-rate and course workers are
+singleton schedulers:
+
+```bash
+cd /var/www/edutech
+pm2 delete edutech-api
+pm2 start ecosystem.config.cjs --only edutech-api
+pm2 save
+```

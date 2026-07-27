@@ -207,7 +207,7 @@ export default function Messages({ language = "fa" }) {
 
     const interval = setInterval(
       refreshData,
-      isConstrainedConnection() ? 15000 : 5000,
+      isConstrainedConnection() ? 30000 : 15000,
     );
     const triggerRefresh = () => {
       refreshData();

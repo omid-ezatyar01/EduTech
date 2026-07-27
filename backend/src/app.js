@@ -10,6 +10,10 @@ import { fileURLToPath } from "url";
 import apiRouter from "./routes/index.js";
 import errorHandler from "./middlewares/errorHandler.js";
 import { handleResendWebhook } from "./controllers/resendWebhookController.js";
+import {
+  apiRateLimitKey,
+  resolveApiRateLimitIdentity,
+} from "./middlewares/apiRateLimitIdentity.js";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -77,10 +81,17 @@ const apiLimiter = rateLimit({
     process.env.API_RATE_LIMIT_WINDOW_MS,
     15 * 60 * 1000,
   ),
-  max: parsePositiveInt(
-    process.env.API_RATE_LIMIT_MAX,
-    isProduction ? 300 : 5000,
-  ),
+  limit: (req) =>
+    resolveApiRateLimitIdentity(req).authenticated
+      ? parsePositiveInt(
+          process.env.API_AUTH_RATE_LIMIT_MAX,
+          isProduction ? 3000 : 10000,
+        )
+      : parsePositiveInt(
+          process.env.API_RATE_LIMIT_MAX,
+          isProduction ? 300 : 5000,
+        ),
+  keyGenerator: apiRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

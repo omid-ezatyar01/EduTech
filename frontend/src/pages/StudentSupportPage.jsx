@@ -286,9 +286,10 @@ export default function StudentSupportPage({ language = "fa" }) {
     socket.on("support:ticket-deleted", refreshTicket);
 
     const timer = window.setInterval(() => {
+      if (document.hidden) return;
       loadTickets().catch(() => {});
       if (selectedId) loadConversation(selectedId).catch(() => {});
-    }, 5_000);
+    }, 15_000);
 
     return () => {
       window.clearInterval(timer);

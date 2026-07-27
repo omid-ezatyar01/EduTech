@@ -401,12 +401,13 @@ function SupportStaffWorkspaceContent() {
     });
     if (selectedId) socket.emit("support:join", selectedId);
     const timer = setInterval(() => {
+      if (document.hidden) return;
       loadQueue().catch(() => {});
       loadTeam().catch(() => {});
       if (selectedId && (desktopLayout || mobileTicketOpen)) {
         loadChat(selectedId).catch(() => {});
       }
-    }, 5_000);
+    }, 15_000);
     return () => {
       clearInterval(timer);
       socket.disconnect();

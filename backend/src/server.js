@@ -12,10 +12,23 @@ const PORT = process.env.PORT || 5000;
 connectDB().then(() => {
   const server = http.createServer(app);
   initializeSupportRealtime(server);
+
+  server.on("error", (error) => {
+    if (error?.code === "EADDRINUSE") {
+      console.error(
+        `[startup] Port ${PORT} is already in use. Stop the duplicate PM2 process before starting edutech-api.`,
+      );
+      process.exit(1);
+      return;
+    }
+    console.error("[startup] HTTP server error:", error);
+  });
+
   server.listen(PORT, () => {
     console.log(`EduTech API running on port ${PORT}`);
+    // Only the process that successfully owns the API port may run scheduled jobs.
+    startCourseAutoStartScheduler();
+    startStudentCalendarSyncWorker();
+    startExchangeRateScheduler();
   });
-  startCourseAutoStartScheduler();
-  startStudentCalendarSyncWorker();
-  startExchangeRateScheduler();
 });
