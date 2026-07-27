@@ -221,14 +221,23 @@ const resolveTeacherSubject = (teacher = {}) => {
   );
 };
 
-const resolveCourseDescription = (course = {}) =>
+const resolveCourseDescription = (course = {}, maxLength = 850) =>
   compactText(
     normalizeReadableText(
       course?.description ||
         `Join ${course?.title || "this course"} on EduTech Online Academy and start learning with expert guidance.`,
     ),
-    850,
+    maxLength,
   );
+
+const resolveCourseImage = (course = {}) =>
+  String(
+    course?.thumbnail ||
+      course?.thumbnailUrl ||
+      course?.coverImage ||
+      course?.image ||
+      "",
+  ).trim();
 
 const resolveTeacherDescription = (teacher = {}) => {
   const application = teacher?.teacherApplication || {};
@@ -396,9 +405,13 @@ const sendTelegramPhotoMessage = async ({
       timeout: 20000,
     });
   } else {
+    const remotePhoto = resolvePublicAssetUrl(photo);
+    if (!remotePhoto || !/^https?:\/\//i.test(remotePhoto)) {
+      throw new Error("Telegram course image is not available locally or from a public URL");
+    }
     response = await axios.post(`${TELEGRAM_API_BASE}/bot${token}/sendPhoto`, {
       chat_id: channelId,
-      photo,
+      photo: remotePhoto,
       caption,
       parse_mode: "HTML",
       reply_markup: buttonText && buttonUrl
@@ -792,11 +805,11 @@ export const postNewCourse = async (course = {}, options = {}) => {
           `⏰ <b>Learning Time:</b> ${escapeHtml(resolveCourseLearningTime(course))}`,
           `📅 <b>Sessions / Week:</b> ${escapeHtml(sessionsPerWeek > 0 ? String(sessionsPerWeek) : "TBA")}`,
           "",
-          `📝 <b>About:</b> ${escapeHtml(resolveCourseDescription(course))}`,
+          `📝 <b>About:</b> ${escapeHtml(resolveCourseDescription(course, 420))}`,
         ]),
         buttonText: "View Course",
         buttonUrl: courseUrl,
-        imageUrl: course?.thumbnail || "",
+        imageUrl: resolveCourseImage(course),
       };
     },
   });

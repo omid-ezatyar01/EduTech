@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCheck, ChevronLeft, MessageCircle, Search, Send } from "lucide-react";
 import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPageLoader from "../components/common/TeacherPageLoader";
@@ -70,6 +70,8 @@ export default function TeacherMessages() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const adminBottomRef = useRef(null);
+  const groupBottomRef = useRef(null);
 
   const teacher = useMemo(() => {
     const user = getAuthUser();
@@ -118,6 +120,14 @@ export default function TeacherMessages() {
   }), [groupConversations]);
 
   const adminUnreadCount = Number(adminConversation?.unreadCount || 0);
+
+  useEffect(() => {
+    adminBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [adminMessages.length]);
+
+  useEffect(() => {
+    groupBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [groupChatMessages.length]);
 
   const loadAdminConversation = useCallback(async (options = {}) => {
     const silent = Boolean(options?.silent);
@@ -523,7 +533,7 @@ export default function TeacherMessages() {
 
   return (
     <TeacherLayout teacher={teacher} language={language} onLanguageChange={setLanguage}>
-      <section className={`space-y-5 ${isRTL ? "text-right" : "text-left"}`}>
+      <section className={`space-y-4 ${isRTL ? "text-right" : "text-left"}`}>
         <header className="rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -601,8 +611,8 @@ export default function TeacherMessages() {
           </div>
         ) : null}
 
-        <section className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <section className="overflow-hidden rounded-3xl border border-[#E2E8F0] bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-slate-200 bg-[#f0f2f5] p-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h3 className="text-sm font-black text-slate-900">
                 {isFa ? "گفتگوی مستقیم با ادمین" : "Direct Admin Conversation"}
@@ -623,7 +633,7 @@ export default function TeacherMessages() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+          <div>
             {adminConversationLoading ? (
               <TeacherPageLoader
                 label={isFa ? "در حال بارگذاری گفتگوی ادمین" : "Loading admin conversation"}
@@ -632,7 +642,7 @@ export default function TeacherMessages() {
               />
             ) : (
               <>
-                <div className="max-h-[280px] space-y-3 overflow-y-auto pr-1">
+                <div className="max-h-[360px] min-h-[220px] space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-3 sm:p-4">
                   {adminMessages.length ? (
                     adminMessages.map((message) => {
                       const isMine = message?.senderRole === "teacher";
@@ -642,14 +652,14 @@ export default function TeacherMessages() {
                           className={`flex ${isMine ? "justify-end" : "justify-start"}`}
                         >
                           <div
-                            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                            className={`max-w-[88%] rounded-xl px-3 py-2 text-sm shadow-sm sm:max-w-[82%] ${
                               isMine
-                                ? "bg-[#0B4FD8] text-white"
-                                : "border border-[#E2E8F0] bg-white text-slate-700"
+                                ? "bg-[#d9fdd3] text-slate-900"
+                                : "bg-white text-slate-700"
                             }`}
                           >
                             <p className="whitespace-pre-wrap leading-6">{message.body}</p>
-                            <p className={`mt-2 text-[11px] font-semibold ${isMine ? "text-white/80" : "text-slate-400"}`}>
+                            <p className="mt-1 text-[10px] font-semibold text-slate-400">
                               {formatDateTime(message.createdAt, language)}
                             </p>
                           </div>
@@ -669,23 +679,24 @@ export default function TeacherMessages() {
                       </div>
                     </div>
                   )}
+                  <div ref={adminBottomRef} />
                 </div>
 
-                <div className="mt-3 flex flex-col gap-2 md:flex-row">
-                  <input
+                <div className="flex items-end gap-2 border-t border-slate-200 bg-[#f0f2f5] p-3">
+                  <textarea
                     value={adminDraft}
                     onChange={(event) => setAdminDraft(event.target.value)}
                     placeholder={isFa ? "پیام خود به ادمین را بنویسید..." : "Write your message to admin..."}
-                    className="h-11 flex-1 rounded-xl border border-[#E2E8F0] bg-white px-3 text-sm outline-none focus:border-[#0B4FD8]"
+                    rows={1}
+                    className="min-h-11 max-h-28 flex-1 resize-none rounded-3xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500"
                   />
                   <button
                     type="button"
                     disabled={adminSending || !String(adminDraft || "").trim()}
                     onClick={handleSendAdminMessage}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#0B4FD8] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Send size={15} />
-                    {adminSending ? (isFa ? "درحال ارسال" : "Sending") : isFa ? "ارسال به ادمین" : "Send to Admin"}
                   </button>
                 </div>
               </>
@@ -730,9 +741,10 @@ export default function TeacherMessages() {
           </div>
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
+        <section className="grid gap-0 overflow-hidden rounded-3xl border border-[#E2E8F0] bg-white shadow-sm xl:grid-cols-[360px_1fr]">
           {showConversationList ? (
-          <aside className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
+          <aside className="border-e border-[#E2E8F0] bg-white">
+            <div className="border-b border-slate-200 bg-[#f0f2f5] p-3">
             <div className="flex items-center gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3">
               <Search size={16} className="text-slate-400" />
               <input
@@ -750,19 +762,20 @@ export default function TeacherMessages() {
               />
               {isFa ? "فقط گفتگوهای خوانده‌نشده" : "Only unread conversations"}
             </label>
+            </div>
 
-            <div className="mt-3 max-h-[60dvh] space-y-4 overflow-y-auto pr-1 xl:max-h-[620px]">
+            <div className="max-h-[70dvh] overflow-y-auto xl:max-h-[730px]">
               <div>
-                <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500">
+                <p className="px-4 pb-2 pt-4 text-[11px] font-black uppercase tracking-wide text-slate-500">
                   {isFa ? "گروه‌های صنف" : "Class Groups"}
                 </p>
-                <p className="mb-2 text-[10px] font-semibold text-rose-600">
+                <p className="px-4 pb-2 text-[10px] font-semibold text-rose-600">
                   {isFa
                     ? "تمام پیام‌های این گروه پس از ۷۲ ساعت برای همیشه حذف می‌شود."
                     : "All messages in this group are permanently deleted after 72 hours."}
                 </p>
                 {filteredGroupConversations.length ? (
-                  <div className="space-y-2">
+                  <div>
                     {filteredGroupConversations.map((row) => {
                       const isActive = selectedCourseChatId === row.courseId;
                       return (
@@ -772,10 +785,10 @@ export default function TeacherMessages() {
                           onClick={() => {
                             setSelectedCourseChatId(row.courseId);
                           }}
-                          className={`w-full rounded-xl border p-3 text-right transition ${
+                          className={`w-full border-b border-slate-100 p-4 text-start transition ${
                             isActive
-                              ? "border-[#BFDBFE] bg-[#EFF6FF]"
-                              : "border-[#E2E8F0] bg-white hover:border-[#BFDBFE]"
+                              ? "bg-[#e7f3ff]"
+                              : "bg-white hover:bg-slate-50"
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -813,20 +826,20 @@ export default function TeacherMessages() {
           ) : null}
 
           {showChatPanel ? (
-          <article className="rounded-2xl border border-[#E2E8F0] bg-white shadow-sm">
+          <article className="bg-white">
             {selectedCourseChatId && selectedGroupConversation ? (
               <div className="flex h-[70dvh] min-h-[420px] flex-col md:h-[730px]">
-                <header className="border-b border-[#E2E8F0] px-4 py-3">
+                <header className="border-b border-[#E2E8F0] bg-[#f0f2f5] px-4 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       {isMobileViewport ? (
                         <button
                           type="button"
                           onClick={() => setSelectedCourseChatId("")}
-                          className="mb-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-700"
-                        >
-                          <ChevronLeft size={14} className={isRTL ? "rotate-180" : ""} />
-                          {isFa ? "بازگشت به گفتگوها" : "Back to chats"}
+                            className="me-2 inline-grid h-9 w-9 place-items-center rounded-full text-slate-600 hover:bg-slate-200"
+                            aria-label={isFa ? "بازگشت به گفتگوها" : "Back to chats"}
+                          >
+                            <ChevronLeft size={14} className={isRTL ? "rotate-180" : ""} />
                         </button>
                       ) : null}
                       <h2 className="text-sm font-black text-slate-900">{selectedCourseChat?.title || selectedGroupConversation.courseTitle}</h2>
@@ -900,7 +913,7 @@ export default function TeacherMessages() {
                   </div>
                 </header>
 
-                <div className="flex-1 space-y-3 overflow-y-auto bg-[#F8FAFC] p-4">
+                <div className="flex-1 space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-3 sm:p-4">
                   {loadingGroupChatMessages ? (
                     <TeacherPageLoader
                       label={isFa ? "در حال بارگذاری تاریخچه صنف" : "Loading class history"}
@@ -924,19 +937,19 @@ export default function TeacherMessages() {
                             </label>
                           ) : null}
                           <div
-                            className={`max-w-[82%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+                            className={`max-w-[88%] rounded-xl px-3 py-2 text-sm shadow-sm sm:max-w-[82%] ${
                               isMine
-                                ? "rounded-br-md bg-[#0B4FD8] text-white"
-                                : "rounded-bl-md border border-[#E2E8F0] bg-white text-slate-800"
+                                ? "bg-[#d9fdd3] text-slate-900"
+                                : "bg-white text-slate-800"
                             }`}
                           >
-                            <p className={`mb-1 text-[10px] font-bold ${isMine ? "text-blue-100" : "text-[#0B4FD8]"}`}>
+                            <p className={`mb-1 text-[10px] font-bold ${isMine ? "text-emerald-700" : "text-[#0B4FD8]"}`}>
                               {isMine
                                 ? (isFa ? "استاد" : "Teacher")
                                 : (msg.senderName || (isFa ? "شاگرد" : "Student"))}
                             </p>
                             <p className="whitespace-pre-wrap">{msg.body}</p>
-                            <p className={`mt-1 text-[10px] font-semibold ${isMine ? "text-blue-100" : "text-slate-400"}`}>
+                            <p className="mt-1 text-[10px] font-semibold text-slate-400">
                               {formatDateTime(msg.createdAt, language)}
                               {isMine && Number(msg.sentCount || 0) > 0
                                 ? isFa
@@ -955,22 +968,23 @@ export default function TeacherMessages() {
                       </p>
                     </div>
                   )}
+                  <div ref={groupBottomRef} />
                 </div>
 
-                <footer className="border-t border-[#E2E8F0] p-3">
+                <footer className="border-t border-[#E2E8F0] bg-[#f0f2f5] p-3">
                   <div className="flex items-end gap-2">
                     <textarea
                       value={groupChatDraft}
                       onChange={(event) => setGroupChatDraft(event.target.value)}
                       placeholder={isFa ? "پیام گروهی جدید برای این صنف..." : "New group message for this class..."}
-                      rows={2}
-                      className="max-h-32 min-h-[46px] flex-1 resize-y rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#0B4FD8]"
+                      rows={1}
+                      className="max-h-32 min-h-[46px] flex-1 resize-none rounded-3xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm outline-none transition focus:border-emerald-500"
                     />
                     <button
                       type="button"
                       disabled={groupSending || !String(groupChatDraft || "").trim()}
                       onClick={handleSendGroupChatMessage}
-                      className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#0B4FD8] text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Send size={17} />
                     </button>

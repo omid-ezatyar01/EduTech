@@ -4,7 +4,7 @@ import { objectId, paginationQuerySchema } from "./common.validators.js";
 const CONTACT_MESSAGE_MAX_LENGTH = 1000;
 
 export const createContactMessageSchema = Joi.object({
-  subject: Joi.string().trim().min(2).max(200).required(),
+  subject: Joi.string().trim().min(2).max(160).required(),
   message: Joi.string().trim().min(5).max(CONTACT_MESSAGE_MAX_LENGTH).required(),
 });
 

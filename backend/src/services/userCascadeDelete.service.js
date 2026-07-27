@@ -16,6 +16,8 @@ import TeacherNotification from "../models/TeacherNotification.js";
 import TeacherFollow from "../models/TeacherFollow.js";
 import SupportTicket from "../models/SupportTicket.js";
 import SupportMessage from "../models/SupportMessage.js";
+import SupportStaffProfile from "../modules/supportStaff/SupportStaffProfile.js";
+import SupportTeamMessage from "../modules/supportStaff/SupportTeamMessage.js";
 import { deleteCoursesWithRelationsByFilter } from "./courseCascadeDelete.service.js";
 
 const userIdOf = (user) => user?._id || user;
@@ -131,6 +133,14 @@ export const deleteUserRelatedData = async (user) => {
     SupportMessage.deleteMany({ ticket: { $in: supportTicketIds } }),
     SupportTicket.deleteMany({ requester: userId }),
     SupportTicket.updateMany({ assignedTo: userId }, { $set: { assignedTo: null } }),
+    SupportStaffProfile.deleteOne({ user: userId }),
+    SupportTeamMessage.deleteMany({
+      $or: [{ sender: userId }, { recipient: userId }],
+    }),
+    SupportTeamMessage.updateMany(
+      { readBy: userId },
+      { $pull: { readBy: userId } },
+    ),
   ]);
 
   return { deletedCourses, preservedHistoricalCourses };

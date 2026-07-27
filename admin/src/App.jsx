@@ -31,6 +31,8 @@ const loadAdminReportsPage = () => import("./pages/AdminReportsPage");
 const loadAdminSettingsPage = () => import("./pages/AdminSettingsPage");
 const loadAdminFeedbackPage = () => import("./pages/AdminFeedbackPage");
 const loadAdminSupportPage = () => import("./pages/AdminSupportPage");
+const loadSupportStaffAccountsPage = () =>
+  import("./features/supportStaff/pages/SupportStaffAccountsPage");
 
 const AdminLoginPage = lazy(loadAdminLoginPage);
 const AdminDashboardPage = lazy(loadAdminDashboardPage);
@@ -50,6 +52,7 @@ const AdminReportsPage = lazy(loadAdminReportsPage);
 const AdminSettingsPage = lazy(loadAdminSettingsPage);
 const AdminFeedbackPage = lazy(loadAdminFeedbackPage);
 const AdminSupportPage = lazy(loadAdminSupportPage);
+const SupportStaffAccountsPage = lazy(loadSupportStaffAccountsPage);
 
 const preloadRoutes = [
   { key: "login", test: (path) => path === "/login", load: loadAdminLoginPage },
@@ -70,6 +73,7 @@ const preloadRoutes = [
   { key: "reports", test: (path) => path === "/reports", load: loadAdminReportsPage },
   { key: "feedback", test: (path) => path === "/feedback", load: loadAdminFeedbackPage },
   { key: "support", test: (path) => path === "/support", load: loadAdminSupportPage },
+  { key: "support-staff", test: (path) => path === "/support-staff", load: loadSupportStaffAccountsPage },
   { key: "settings", test: (path) => path === "/settings", load: loadAdminSettingsPage },
   { key: "telegram-redirect", test: (path) => path === "/telegram", load: loadAdminSettingsPage },
 ];
@@ -107,6 +111,7 @@ const KNOWN_ADMIN_ROUTE_SUFFIXES = [
   "/reports",
   "/feedback",
   "/support",
+  "/support-staff",
   "/telegram",
   "/settings",
 ];
@@ -317,6 +322,7 @@ function AppContent() {
             <Route path="/reports" element={<AdminReportsPage />} />
             <Route path="/feedback" element={<AdminFeedbackPage />} />
             <Route path="/support" element={<AdminSupportPage />} />
+            <Route path="/support-staff" element={<SupportStaffAccountsPage />} />
             <Route path="/telegram" element={<Navigate to="/settings" replace />} />
             <Route path="/settings" element={<AdminSettingsPage />} />
           </Route>

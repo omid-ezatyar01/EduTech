@@ -16,6 +16,7 @@ import { enableEduTechPushNotifications } from "../services/pushNotifications.js
 import useSeo from "./seo/useSeo.js";
 import { RegionalPricingProvider } from "./context/RegionalPricingContext.jsx";
 import FrontendPageLoader from "./components/common/FrontendPageLoader.jsx";
+import SupportContactButton from "./components/SupportContactButton.jsx";
 
 // Pages
 const loadHomePage = () => import("./pages/HomePage.jsx");
@@ -42,6 +43,12 @@ const loadBlogArticlePage = () => import("./pages/BlogArticlePage.jsx");
 const loadRoadmapsPage = () => import("./pages/BlogPage.jsx");
 const loadEnglishRoadmapPage = () => import("./pages/EnglishRoadmapPage.jsx");
 const loadVideosPage = () => import("./pages/VideosPage.jsx");
+const loadSupportStaffLoginPage = () =>
+  import("./features/supportStaff/pages/SupportStaffLoginPage.jsx");
+const loadSupportStaffWorkspacePage = () =>
+  import("./features/supportStaff/pages/SupportStaffWorkspacePage.jsx");
+const loadSupportStaffGuard = () =>
+  import("./features/supportStaff/components/SupportStaffGuard.jsx");
 
 const HomePage = lazy(loadHomePage);
 const LiveCoursesPage = lazy(loadLiveCoursesPage);
@@ -67,6 +74,9 @@ const BlogArticlePage = lazy(loadBlogArticlePage);
 const RoadmapsPage = lazy(loadRoadmapsPage);
 const EnglishRoadmapPage = lazy(loadEnglishRoadmapPage);
 const VideosPage = lazy(loadVideosPage);
+const SupportStaffLoginPage = lazy(loadSupportStaffLoginPage);
+const SupportStaffWorkspacePage = lazy(loadSupportStaffWorkspacePage);
+const SupportStaffGuard = lazy(loadSupportStaffGuard);
 
 // Student Dashboard Components
 const loadMyCourses = () => import("./components/MyCourses.jsx");
@@ -80,6 +90,7 @@ const loadAssignments = () => import("./components/Assignments.jsx");
 const loadResources = () => import("./components/Resources.jsx");
 const loadProfile = () => import("./components/Profile.jsx");
 const loadSettings = () => import("./components/Settings.jsx");
+const loadMessages = () => import("./components/Messages.jsx");
 const loadStudentCourseWorkspace = () => import("./components/StudentCourseWorkspace.jsx");
 
 const MyCourses = lazy(loadMyCourses);
@@ -93,6 +104,7 @@ const Assignments = lazy(loadAssignments);
 const Resources = lazy(loadResources);
 const Profile = lazy(loadProfile);
 const Settings = lazy(loadSettings);
+const Messages = lazy(loadMessages);
 const StudentCourseWorkspace = lazy(loadStudentCourseWorkspace);
 
 const preloadRoutes = [
@@ -157,9 +169,12 @@ const preloadRoutes = [
   },
   { key: "student-profile", test: (path) => path === "/student/profile", load: loadProfile },
   { key: "student-settings", test: (path) => path === "/student/settings", load: loadSettings },
+  { key: "student-messages", test: (path) => path === "/student/messages", load: loadMessages },
   { key: "payment-success", test: (path) => path === "/payment/success", load: loadPaymentSuccessPage },
   { key: "payment-failure", test: (path) => path === "/payment/failure", load: loadPaymentFailurePage },
   { key: "payment-crypto", test: (path) => path === "/payment/crypto", load: loadNowPaymentsPage },
+  { key: "support-staff-login", test: (path) => path === "/support/login", load: loadSupportStaffLoginPage },
+  { key: "support-staff-workspace", test: (path) => path === "/support-team", load: loadSupportStaffWorkspacePage },
 ];
 
 function getInitialLanguage() {
@@ -355,7 +370,16 @@ export default function App() {
   const isAuthPage = path === "/login" || path === "/register";
   const isStudentPage = path.startsWith("/student/");
   const isLegalPage = path === "/privacy-policy" || path === "/terms";
-  const hideGlobalLayout = isAuthPage || isStudentPage || isLegalPage;
+  const isSupportStaffPage =
+    path.startsWith("/support-team") || path.startsWith("/support/");
+  const hideGlobalLayout =
+    isAuthPage || isStudentPage || isLegalPage || isSupportStaffPage;
+  const showSupportContactButton =
+    !isAuthPage &&
+    !isLegalPage &&
+    !isSupportStaffPage &&
+    path !== "/contact" &&
+    path !== "/student/support";
 
   let activeHref = "/";
   if (path.startsWith("/teachers") || path.startsWith("/teacher/"))
@@ -446,6 +470,18 @@ export default function App() {
             />
             <Route path="/payment/success" element={<PaymentSuccessPage />} />
             <Route path="/payment/failure" element={<PaymentFailurePage />} />
+            <Route
+              path="/support/login"
+              element={<SupportStaffLoginPage />}
+            />
+            <Route
+              path="/support-team"
+              element={
+                <SupportStaffGuard>
+                  <SupportStaffWorkspacePage />
+                </SupportStaffGuard>
+              }
+            />
             <Route
               path="/payment/crypto"
               element={<NowPaymentsPage language={language} />}
@@ -572,7 +608,14 @@ export default function App() {
             />
             <Route
               path="/student/messages"
-              element={<Navigate to="/student/dashboard" replace />}
+              element={
+                <ProtectedRoute
+                  isAuthenticated={isAuthenticated}
+                  language={language}
+                >
+                  <Messages language={language} />
+                </ProtectedRoute>
+              }
             />
             <Route
               path="/student/notifications"
@@ -625,6 +668,12 @@ export default function App() {
             </Routes>
           </Suspense>
         </main>
+        {showSupportContactButton ? (
+          <SupportContactButton
+            language={language}
+            isAuthenticated={isAuthenticated}
+          />
+        ) : null}
         {!hideGlobalLayout && <Footer t={t} />}
       </div>
     </RegionalPricingProvider>

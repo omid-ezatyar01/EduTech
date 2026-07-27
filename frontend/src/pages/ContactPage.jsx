@@ -29,7 +29,7 @@ const pageData = {
       title: "برای ما پیام بفرستید",
       subtitle:
         "پیام خود را ارسال کنید، ما در اولین فرصت با شما تماس می‌گیریم.",
-      registeredEmailNote: "برای پاسخ‌گویی، از نام و ایمیل ثبت‌شده حساب شاگردی شما استفاده می‌شود.",
+      registeredEmailNote: "تیم پشتیبانی پیام شما را دریافت می‌کند و پاسخ در بخش پشتیبانی حساب شما نمایش داده می‌شود.",
       fields: {
         subject: "موضوع",
         message: "پیام شما",
@@ -40,7 +40,7 @@ const pageData = {
         invalidEmail: "لطفاً یک ایمیل معتبر وارد کنید.",
         tooLong: `پیام شما نباید بیشتر از ${CONTACT_MESSAGE_MAX_LENGTH} کاراکتر باشد.`,
         sending: "در حال ارسال",
-        success: "پیام شما با موفقیت ارسال شد.",
+        success: "پیام شما به تیم پشتیبانی ارسال شد. پاسخ را در بخش پشتیبانی حساب خود ببینید.",
         error: "ارسال پیام موفق نبود. لطفا دوباره تلاش کنید.",
         loginRequired: "برای ارسال پیام، لطفاً ابتدا به عنوان شاگرد وارد حساب خود شوید.",
         dailyLimit: "شما فقط یک بار در روز می‌توانید پیام ارسال کنید. لطفاً فردا دوباره تلاش کنید.",
@@ -98,7 +98,7 @@ const pageData = {
     map: { title: "موقعیت ما روی نقشه", text: "کابل، افغانستان" },
     modal: {
       title: "تایید اطلاعات",
-      text: "پاسخ پیام به ایمیل ثبت‌شده حساب شاگردی شما فرستاده می‌شود. لطفاً پیش از ارسال، موضوع و متن پیام را بررسی کنید.",
+      text: "این پیام مستقیماً به تیم پشتیبانی فرستاده می‌شود و پاسخ در بخش پشتیبانی حساب شما نمایش داده خواهد شد. لطفاً موضوع و متن را بررسی کنید.",
       submit: "تایید و ارسال",
       edit: "بازگشت و ویرایش",
     },
@@ -114,7 +114,7 @@ const pageData = {
       title: "Send Us a Message",
       subtitle:
         "Send your message and we will contact you as soon as possible.",
-      registeredEmailNote: "We will use your registered student account name and email to reply.",
+      registeredEmailNote: "The support team will receive your message and reply inside your account’s Support section.",
       fields: {
         subject: "Subject",
         message: "Your Message",
@@ -125,7 +125,7 @@ const pageData = {
         invalidEmail: "Please enter a valid email address.",
         tooLong: `Your message must be ${CONTACT_MESSAGE_MAX_LENGTH} characters or less.`,
         sending: "Sending",
-        success: "Your message was sent successfully.",
+        success: "Your message was sent to the support team. Follow the reply in your account’s Support section.",
         error: "Failed to send your message. Please try again.",
         loginRequired: "Please log in as a student before sending a message.",
         dailyLimit: "You can send only one message per day. Please try again tomorrow.",
@@ -183,7 +183,7 @@ const pageData = {
     map: { title: "Our Location on Map", text: "Kabul, Afghanistan" },
     modal: {
       title: "Confirm Information",
-      text: "Our reply will be sent to the email registered with your student account. Please review the subject and message before sending.",
+      text: "This message goes directly to the support team, and their reply will appear in your account’s Support section. Please review it before sending.",
       submit: "Confirm & Submit",
       edit: "Back and edit",
     },

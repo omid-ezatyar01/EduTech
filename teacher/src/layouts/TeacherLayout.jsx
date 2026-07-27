@@ -1,6 +1,7 @@
 import { useState } from "react";
 import TeacherSidebar from "../components/common/TeacherSidebar";
 import TeacherTopbar from "../components/common/TeacherTopbar";
+import TeacherSupportContactButton from "../components/common/TeacherSupportContactButton";
 import { PORTAL_CONFIG, clearAuth } from "../../services/portal.js";
 
 export default function TeacherLayout({ teacher, language, onLanguageChange, children }) {
@@ -82,6 +83,7 @@ export default function TeacherLayout({ teacher, language, onLanguageChange, chi
           </div>
         </div>
       </div>
+      <TeacherSupportContactButton language={language} />
     </div>
   );
 }

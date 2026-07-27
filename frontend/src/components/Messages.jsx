@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   CheckCheck,
@@ -52,6 +52,7 @@ export default function Messages({ language = "fa" }) {
   const [toast, setToast] = useState("");
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const bottomRef = useRef(null);
   const navigate = useNavigate();
 
   const selectedConversation = useMemo(
@@ -63,7 +64,7 @@ export default function Messages({ language = "fa" }) {
 
   const canSendToSelectedGroup = selectedCourse?.canSendMessages ?? selectedConversation?.canSendMessages ?? false;
 
-  const loadConversations = async (preferCourseId = "", options = {}) => {
+  const loadConversations = useCallback(async (preferCourseId = "", options = {}) => {
     const silent = Boolean(options?.silent);
 
     try {
@@ -83,11 +84,11 @@ export default function Messages({ language = "fa" }) {
       setConversations(rows);
       setConversationStats(data?.stats || {});
 
-      const nextId =
+      setSelectedCourseId((current) =>
         (preferCourseId && rows.some((row) => row.courseId === preferCourseId) && preferCourseId) ||
-        (selectedCourseId && rows.some((row) => row.courseId === selectedCourseId) && selectedCourseId) ||
-        (rows[0]?.courseId || "");
-      setSelectedCourseId(nextId);
+        (current && rows.some((row) => row.courseId === current) && current) ||
+        (rows[0]?.courseId || ""),
+      );
     } catch (err) {
       if (isUnauthorizedError(err)) {
         setAuthNotice("Not authorized for this resource");
@@ -114,9 +115,9 @@ export default function Messages({ language = "fa" }) {
         setLoadingConversations(false);
       }
     }
-  };
+  }, [language, navigate, searchQuery, showUnreadOnly]);
 
-  const loadMessages = async (courseId, options = {}) => {
+  const loadMessages = useCallback(async (courseId, options = {}) => {
     const silent = Boolean(options?.silent);
     if (!courseId) {
       setMessages([]);
@@ -134,12 +135,10 @@ export default function Messages({ language = "fa" }) {
       setMessages(Array.isArray(data?.messages) ? data.messages : []);
       setSelectedCourse(data?.course || null);
 
-      if (Number(selectedConversation?.unreadCount || 0) > 0) {
-        await markStudentGroupAsRead(courseId).catch(() => {});
-        setConversations((prev) =>
-          prev.map((row) => (row.courseId === courseId ? { ...row, unreadCount: 0 } : row)),
-        );
-      }
+      await markStudentGroupAsRead(courseId).catch(() => {});
+      setConversations((prev) =>
+        prev.map((row) => (row.courseId === courseId ? { ...row, unreadCount: 0 } : row)),
+      );
     } catch (err) {
       if (isUnauthorizedError(err)) {
         setAuthNotice("Not authorized for this resource");
@@ -165,7 +164,7 @@ export default function Messages({ language = "fa" }) {
         setLoadingMessages(false);
       }
     }
-  };
+  }, [language, navigate]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -177,13 +176,15 @@ export default function Messages({ language = "fa" }) {
   }, []);
 
   useEffect(() => {
-    loadConversations();
-  }, [searchQuery, showUnreadOnly]);
+    const timer = window.setTimeout(() => loadConversations(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadConversations]);
 
   useEffect(() => {
-    if (!selectedCourseId) return;
-    loadMessages(selectedCourseId);
-  }, [selectedCourseId]);
+    if (!selectedCourseId) return undefined;
+    const timer = window.setTimeout(() => loadMessages(selectedCourseId), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadMessages, selectedCourseId]);
 
   useEffect(() => {
     const refreshData = async () => {
@@ -209,13 +210,17 @@ export default function Messages({ language = "fa" }) {
       window.removeEventListener("auth_change", triggerRefresh);
       window.removeEventListener("edutech_data_changed", triggerRefresh);
     };
-  }, [selectedCourseId, searchQuery, showUnreadOnly]);
+  }, [loadConversations, loadMessages, selectedCourseId]);
 
   useEffect(() => {
     if (!toast) return undefined;
     const timer = setTimeout(() => setToast(""), 2200);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length]);
 
   const handleSend = async () => {
     const body = String(draft || "").trim();
@@ -300,7 +305,7 @@ export default function Messages({ language = "fa" }) {
 
   return (
     <StudentLayout language={language}>
-      <div className="mb-6 px-1 sm:px-0 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-500">
+      <div className="mb-6 hidden flex-wrap items-center gap-2 px-1 text-sm font-semibold text-slate-500 md:flex sm:px-0">
         <Link className="transition hover:text-primary-700" to="/student/dashboard">
           {isFa ? "داشبورد" : "Dashboard"}
         </Link>
@@ -308,7 +313,7 @@ export default function Messages({ language = "fa" }) {
         <span className="text-slate-900">{isFa ? "پیام‌های صنف" : "Class Messages"}</span>
       </div>
 
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-6 hidden flex-wrap items-end justify-between gap-3 md:flex">
         <div>
           <h1 className="text-3xl font-black text-slate-950">{isFa ? "چت گروهی صنف‌ها" : "Class Group Chats"}</h1>
           <p className="mt-2 text-sm font-semibold text-slate-600">
@@ -354,9 +359,10 @@ export default function Messages({ language = "fa" }) {
         </div>
       ) : null}
 
-      <div className="relative grid gap-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm md:h-[720px] md:grid-cols-[320px_1fr] lg:grid-cols-[380px_1fr] lg:p-5">
+      <div className="relative -m-4 grid h-[calc(100dvh-72px)] gap-0 overflow-hidden bg-white shadow-sm sm:-m-6 md:m-0 md:h-[720px] md:grid-cols-[320px_1fr] md:rounded-[28px] md:border md:border-slate-200 lg:grid-cols-[380px_1fr]">
         {showConversationList ? (
-        <aside className="flex h-full min-h-[320px] flex-col rounded-2xl border border-slate-200 bg-slate-50/40 p-3">
+        <aside className="flex h-full min-h-[320px] flex-col border-e border-slate-200 bg-white">
+          <div className="border-b border-slate-200 bg-[#f0f2f5] p-3">
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3">
             <Search size={16} className="text-slate-400" />
             <input
@@ -368,7 +374,7 @@ export default function Messages({ language = "fa" }) {
             />
           </div>
 
-          <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-700">
+          <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-700">
             <input
               type="checkbox"
               checked={showUnreadOnly}
@@ -376,8 +382,9 @@ export default function Messages({ language = "fa" }) {
             />
             {isFa ? "فقط خوانده‌نشده" : "Unread only"}
           </label>
+          </div>
 
-          <div className="mt-3 flex-1 space-y-2 overflow-y-auto pr-1">
+          <div className="flex-1 overflow-y-auto">
             {loadingConversations ? (
               <div className="rounded-xl bg-white p-6 text-center text-xs font-bold text-slate-500">
                 {isFa ? "در حال بارگذاری گفتگوهای صنف" : "Loading class conversations"}
@@ -390,10 +397,10 @@ export default function Messages({ language = "fa" }) {
                     key={conversation.courseId}
                     type="button"
                     onClick={() => setSelectedCourseId(conversation.courseId)}
-                    className={`w-full rounded-xl border p-3 text-right transition ${
+                    className={`w-full border-b border-slate-100 p-4 text-start transition ${
                       isActive
-                        ? "border-primary-200 bg-primary-50/50"
-                        : "border-transparent bg-white hover:border-slate-200"
+                        ? "bg-[#e7f3ff]"
+                        : "bg-white hover:bg-slate-50"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -407,13 +414,10 @@ export default function Messages({ language = "fa" }) {
                         {formatDateTime(conversation.lastMessageAt, language)}
                       </p>
                     </div>
-                    <p className="mt-2 truncate text-xs font-semibold text-slate-600">
+                    <p className="mt-1 truncate text-xs font-semibold text-slate-600">
                       {conversation.lastMessage || (isFa ? "هنوز پیامی ثبت نشده است." : "No messages yet.")}
                     </p>
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-semibold text-rose-600">
-                        {isFa ? "حذف خودکار ۷۲ ساعته" : "72h auto-delete"}
-                      </span>
+                    <div className="mt-1.5 flex items-center justify-between gap-2">
                       <span className={`text-[10px] font-bold ${conversation.canSendMessages ? "text-emerald-700" : "text-amber-700"}`}>
                         {conversation.canSendMessages
                           ? (isFa ? "امکان پاسخ فعال" : "Reply enabled")
@@ -438,34 +442,34 @@ export default function Messages({ language = "fa" }) {
         ) : null}
 
         {showChatPanel ? (
-        <section className="flex h-full min-h-[320px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white">
+        <section className="flex h-full min-h-[320px] flex-col overflow-hidden bg-white">
           {selectedConversation ? (
             <>
-              <div className="flex items-center justify-between border-b border-slate-100 p-4">
-                <div>
+              <div className="flex min-h-[64px] items-center justify-between border-b border-slate-200 bg-[#f0f2f5] p-3">
+                <div className="flex min-w-0 items-center gap-3">
                   {isMobileViewport ? (
                     <button
                       type="button"
                       onClick={() => setSelectedCourseId("")}
-                      className="mb-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-700"
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-600 hover:bg-slate-200"
+                      aria-label={isFa ? "بازگشت به گفتگوها" : "Back to chats"}
                     >
                       <ChevronLeft size={14} className={isRTL ? "rotate-180" : ""} />
-                      {isFa ? "بازگشت به گفتگوها" : "Back to chats"}
                     </button>
                   ) : null}
-                  <h2 className="text-sm font-black text-slate-900">{selectedConversation.courseTitle}</h2>
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-emerald-600 font-black text-white">
+                    {String(selectedConversation.courseTitle || "?").slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                  <h2 className="truncate text-sm font-black text-slate-900">{selectedConversation.courseTitle}</h2>
                   <p className="text-xs font-semibold text-slate-500">
                     {selectedConversation.teacherName || (isFa ? "استاد" : "Teacher")}
                   </p>
-                  <p className="mt-1 text-[10px] font-semibold text-rose-600">
-                    {isFa
-                      ? "حذف خودکار: همه پیام‌ها بعد از ۷۲ ساعت پاک می‌شود."
-                      : "Auto-delete: all messages are removed after 72 hours."}
-                  </p>
+                  </div>
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/40 p-4">
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-3 sm:p-4">
                 {loadingMessages ? (
                   <div className="py-8 text-center text-sm font-semibold text-slate-500">
                     {isFa ? "در حال بارگذاری پیام‌ها" : "Loading messages"}
@@ -476,17 +480,17 @@ export default function Messages({ language = "fa" }) {
                     return (
                       <div key={message.id} className={`flex ${isStudent ? "justify-end" : "justify-start"}`}>
                         <div
-                          className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm font-semibold leading-7 shadow-sm ${
+                          className={`max-w-[88%] rounded-xl px-3 py-2 text-sm font-semibold leading-6 shadow-sm sm:max-w-[82%] ${
                             isStudent
-                              ? "rounded-br-md bg-primary-600 text-white"
-                              : "rounded-bl-md border border-slate-200 bg-white text-slate-800"
+                              ? "bg-[#d9fdd3] text-slate-900"
+                              : "bg-white text-slate-800"
                           }`}
                         >
-                          <p className={`mb-1 text-[10px] font-bold ${isStudent ? "text-primary-100" : "text-primary-700"}`}>
+                          <p className={`mb-1 text-[10px] font-bold ${isStudent ? "text-emerald-700" : "text-primary-700"}`}>
                             {isStudent ? (isFa ? "شما" : "You") : (message.senderName || (isFa ? "استاد" : "Teacher"))}
                           </p>
                           <p>{message.body}</p>
-                          <p className={`mt-1 text-[10px] font-bold ${isStudent ? "text-primary-100" : "text-slate-400"}`}>
+                          <p className="mt-1 text-[10px] font-bold text-slate-400">
                             {formatDateTime(message.createdAt, language)}
                           </p>
                         </div>
@@ -498,9 +502,10 @@ export default function Messages({ language = "fa" }) {
                     {isFa ? "پیامی در این صنف وجود ندارد." : "No messages in this class yet."}
                   </div>
                 )}
+                <div ref={bottomRef} />
               </div>
 
-              <div className="border-t border-slate-100 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <div className="border-t border-slate-200 bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
                 <div className="flex items-end gap-2">
                   <textarea
                     value={draft}
@@ -514,15 +519,15 @@ export default function Messages({ language = "fa" }) {
                           ? "ارسال پیام برای این صنف غیرفعال است."
                           : "Messaging is disabled for this class."
                     }
-                    rows={2}
+                    rows={1}
                     disabled={!canSendToSelectedGroup}
-                    className="max-h-28 min-h-[44px] flex-1 resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none transition focus:border-primary-300 focus:ring-2 focus:ring-primary-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                    className="max-h-28 min-h-[44px] flex-1 resize-none rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                   />
                   <button
                     type="button"
                     onClick={handleSend}
                     disabled={sending || !String(draft || "").trim() || !canSendToSelectedGroup}
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-primary-600 text-white transition hover:bg-primary-700 disabled:opacity-50"
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
                     aria-label={isFa ? "ارسال پیام" : "Send message"}
                   >
                     <Send size={18} />

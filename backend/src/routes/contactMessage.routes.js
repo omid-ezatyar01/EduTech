@@ -3,7 +3,6 @@ import { protect } from "../middlewares/authMiddleware.js";
 import authorizeRoles from "../middlewares/authorizeRoles.js";
 import validateRequest from "../middlewares/validateRequest.js";
 import {
-  createPublicContactMessage,
   getAdminMessages,
   replyAdminMessage,
   sendAdminEmailToUser,
@@ -17,6 +16,7 @@ import {
   sendAdminEmailSchema,
   updateMessageStatusSchema,
 } from "../validators/contactMessage.validators.js";
+import { createSupportTicket } from "../controllers/supportController.js";
 
 const router = express.Router();
 
@@ -25,7 +25,7 @@ router.post(
   protect,
   authorizeRoles("student"),
   validateRequest(createContactMessageSchema),
-  createPublicContactMessage,
+  createSupportTicket,
 );
 
 router.get(

@@ -253,6 +253,30 @@ function getSeoConfig(pathname, language) {
       shouldIndex: false,
     },
     {
+      match: /^\/support\/login\/?$/,
+      title: isFa
+        ? "ورود تیم پشتیبانی | ایجوتک"
+        : "Support Team Login | EduTech",
+      description: isFa
+        ? "ورود اختصاصی اعضای تیم پشتیبانی ایجوتک."
+        : "Private sign-in page for EduTech support team members.",
+      keywords: ["support login", "ورود پشتیبانی"],
+      robots: "noindex, nofollow",
+      shouldIndex: false,
+    },
+    {
+      match: /^\/support-team\/?$/,
+      title: isFa
+        ? "محیط کاری تیم پشتیبانی | ایجوتک"
+        : "Support Team Workspace | EduTech",
+      description: isFa
+        ? "محیط اختصاصی مدیریت تکت‌ها و ارتباطات تیم پشتیبانی ایجوتک."
+        : "Private workspace for EduTech support tickets and team communication.",
+      keywords: ["support workspace", "محیط پشتیبانی"],
+      robots: "noindex, nofollow",
+      shouldIndex: false,
+    },
+    {
       match: /^\/student\/.+/,
       title: isFa ? "پنل محصل | ایجوتک" : "Student Portal | EduTech",
       description: isFa

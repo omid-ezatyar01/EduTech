@@ -10,13 +10,13 @@ const pushSubscriptionSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["student", "teacher", "admin"],
+      enum: ["student", "teacher", "admin", "support"],
       required: true,
       index: true,
     },
     app: {
       type: String,
-      enum: ["student", "teacher", "admin"],
+      enum: ["student", "teacher", "admin", "support"],
       required: true,
       index: true,
     },

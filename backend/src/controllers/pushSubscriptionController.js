@@ -4,7 +4,7 @@ import ApiResponse from "../utils/ApiResponse.js";
 import { getWebPushPublicKey, isWebPushConfigured } from "../services/webPush.service.js";
 
 const subscriptionSchema = Joi.object({
-  app: Joi.string().valid("student", "teacher", "admin").required(),
+  app: Joi.string().valid("student", "teacher", "admin", "support").required(),
   subscription: Joi.object({
     endpoint: Joi.string().uri().required(),
     expirationTime: Joi.any().allow(null),
@@ -37,7 +37,7 @@ export const savePushSubscription = async (req, res) => {
     return res.status(400).json({ message: error.details[0].message });
   }
 
-  if (!["student", "teacher", "admin"].includes(req.user.role)) {
+  if (!["student", "teacher", "admin", "support"].includes(req.user.role)) {
     return res.status(403).json({ message: "Push notifications are not available for this account" });
   }
 

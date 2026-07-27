@@ -1,8 +1,18 @@
 {
   "version": 3,
-  "ratesBySymbol": {},
-  "normalizedRates": {},
-  "savedAtBySymbol": {},
-  "sourceBySymbol": {},
-  "lastKnownGoodBySymbol": {}
+  "ratesBySymbol": {
+    "AFN": 70
+  },
+  "normalizedRates": {
+    "TOMAN": null
+  },
+  "savedAtBySymbol": {
+    "AFN": 1785149703581
+  },
+  "sourceBySymbol": {
+    "AFN": "currencyfreaks"
+  },
+  "lastKnownGoodBySymbol": {
+    "AFN": 70
+  }
 }

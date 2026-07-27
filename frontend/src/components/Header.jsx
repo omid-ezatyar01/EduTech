@@ -1,16 +1,11 @@
 import {
-  BookOpen,
-  Calendar,
   ChevronDown,
-  CreditCard,
-  Home,
-  LayoutDashboard,
   LogOut,
   Menu,
   X,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { clearAuth } from "../../services/portal";
 
 function LanguageSwitcher({ language, onLanguageChange, t }) {
@@ -79,7 +74,6 @@ export default function Header({
     localStorage.getItem("edutech_auth") === "true",
   );
   const headerRef = useRef(null);
-  const location = useLocation();
   const navigate = useNavigate();
   const logoSrc = "/logo.png";
 
@@ -143,19 +137,9 @@ export default function Header({
   const uT = userT[language] || userT.fa;
   const nextLanguage = language === "fa" ? "en" : "fa";
   const isRtl = language === "fa" || t.meta.dir === "rtl";
-  const currentPath = activeHref || location.pathname || "/";
-  const isStudentPortalPath = currentPath.startsWith("/student");
   const controlsOrderClass = "order-1 md:order-none";
   const mobileMenuOrderClass = "order-1";
   const mobileActionsOrderClass = "order-2";
-
-  const navLinks = [
-    ...(isStudentPortalPath ? [{ href: "/", icon: Home, label: uT.home }] : []),
-    { href: "/student/dashboard", icon: LayoutDashboard, label: uT.dashboard },
-    { href: "/student/courses", icon: BookOpen, label: uT.courses },
-    { href: "/student/schedule", icon: Calendar, label: uT.schedule },
-    { href: "/student/payments", icon: CreditCard, label: uT.payments },
-  ];
 
   return (
     <>

@@ -15,19 +15,19 @@ const COPY = {
   en: {
     title: "Help & Support", subtitle: "Chat directly with the EduTech support team.",
     newTicket: "New ticket", noTickets: "No support conversations yet.",
-    subject: "Subject", category: "Category", message: "How can we help?",
+    category: "Request type", message: "How can we help?",
     create: "Start conversation", send: "Send", close: "Close ticket", reopen: "Reopen",
     connected: "Live", reconnecting: "Reconnecting", select: "Select a conversation",
-    categories: { account: "Account", course: "Course", payment: "Payment", technical: "Technical", teaching: "Teaching", certificate: "Certificate", other: "Other" },
+    categories: { consultation: "Consultation", registration: "Registration", account: "Account", course: "Course", payment: "Payment", technical: "Technical", teaching: "Teaching", certificate: "Certificate", feedback: "Feedback & suggestion", complaint: "Complaint", other: "Other" },
     statuses: { open: "Open", in_progress: "In progress", waiting_for_user: "Waiting for you", resolved: "Resolved", closed: "Closed" },
   },
   fa: {
     title: "کمک و پشتیبانی", subtitle: "مستقیماً با تیم پشتیبانی EduTech گفتگو کنید.",
     newTicket: "تکت جدید", noTickets: "هنوز گفتگوی پشتیبانی ندارید.",
-    subject: "موضوع", category: "دسته‌بندی", message: "چگونه می‌توانیم کمک کنیم؟",
+    category: "نوع درخواست", message: "چگونه می‌توانیم کمک کنیم؟",
     create: "شروع گفتگو", send: "ارسال", close: "بستن تکت", reopen: "بازکردن دوباره",
     connected: "زنده", reconnecting: "در حال اتصال", select: "یک گفتگو را انتخاب کنید",
-    categories: { account: "حساب", course: "کورس", payment: "پرداخت", technical: "مشکل فنی", teaching: "آموزش", certificate: "سرتیفیکیت", other: "سایر" },
+    categories: { consultation: "مشوره", registration: "ثبت‌نام", account: "حساب", course: "کورس", payment: "پرداخت", technical: "مشکل فنی", teaching: "آموزش", certificate: "سرتیفیکیت", feedback: "بازخورد و پیشنهاد", complaint: "شکایت", other: "سایر" },
     statuses: { open: "باز", in_progress: "در حال بررسی", waiting_for_user: "منتظر پاسخ شما", resolved: "حل‌شده", closed: "بسته" },
   },
 };
@@ -41,7 +41,7 @@ export default function StudentSupportPage({ language = "fa" }) {
   const [selectedId, setSelectedId] = useState("");
   const [conversation, setConversation] = useState(null);
   const [draft, setDraft] = useState("");
-  const [form, setForm] = useState({ subject: "", category: "technical", message: "" });
+  const [form, setForm] = useState({ category: "consultation", message: "" });
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -89,6 +89,7 @@ export default function StudentSupportPage({ language = "fa" }) {
     socket.on("support:message", refresh);
     socket.on("support:ticket-updated", refresh);
     socket.on("support:ticket-created", refresh);
+    socket.on("support:ticket-deleted", refresh);
     if (selectedId) socket.emit("support:join", selectedId);
     const timer = window.setInterval(() => {
       loadTickets().catch(() => {});
@@ -103,8 +104,11 @@ export default function StudentSupportPage({ language = "fa" }) {
     event.preventDefault();
     setBusy(true); setError("");
     try {
-      const data = await createSupportTicket(form);
-      setForm({ subject: "", category: "technical", message: "" });
+      const data = await createSupportTicket({
+        ...form,
+        subject: text.categories[form.category],
+      });
+      setForm({ category: "consultation", message: "" });
       setShowCreate(false);
       await loadTickets();
       setSelectedId(data.ticket.id);
@@ -168,7 +172,7 @@ export default function StudentSupportPage({ language = "fa" }) {
           </div>
         </section>
       </div>
-      {showCreate && <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/55 p-4"><form onSubmit={create} className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-xl font-black">{text.newTicket}</h2><button type="button" onClick={() => setShowCreate(false)} className="rounded-lg p-2 hover:bg-slate-100"><X/></button></div><label className="mt-5 block text-sm font-black">{text.subject}<input required minLength={3} maxLength={160} value={form.subject} onChange={(e) => setForm({...form, subject:e.target.value})} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"/></label><label className="mt-4 block text-sm font-black">{text.category}<select value={form.category} onChange={(e) => setForm({...form, category:e.target.value})} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3">{Object.entries(text.categories).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="mt-4 block text-sm font-black">{text.message}<textarea required minLength={2} maxLength={4000} rows={5} value={form.message} onChange={(e) => setForm({...form, message:e.target.value})} className="mt-2 w-full resize-none rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"/></label><button disabled={busy} className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-50">{text.create}</button></form></div>}
+      {showCreate && <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/55 p-4"><form onSubmit={create} className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-xl font-black">{text.newTicket}</h2><button type="button" onClick={() => setShowCreate(false)} className="rounded-lg p-2 hover:bg-slate-100"><X/></button></div><label className="mt-5 block text-sm font-black">{text.category}<select value={form.category} onChange={(e) => setForm({...form, category:e.target.value})} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3">{Object.entries(text.categories).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="mt-4 block text-sm font-black">{text.message}<textarea required minLength={2} maxLength={4000} rows={5} value={form.message} onChange={(e) => setForm({...form, message:e.target.value})} className="mt-2 w-full resize-none rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"/></label><button disabled={busy} className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-50">{text.create}</button></form></div>}
     </StudentLayout>
   );
 }

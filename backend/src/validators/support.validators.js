@@ -1,7 +1,19 @@
 import Joi from "joi";
 import { objectId } from "./common.validators.js";
 
-const categories = ["account", "course", "payment", "technical", "teaching", "certificate", "other"];
+const categories = [
+  "account",
+  "course",
+  "payment",
+  "technical",
+  "teaching",
+  "certificate",
+  "consultation",
+  "registration",
+  "feedback",
+  "complaint",
+  "other",
+];
 const priorities = ["low", "normal", "high", "urgent"];
 const statuses = ["open", "in_progress", "waiting_for_user", "resolved", "closed"];
 
@@ -34,6 +46,7 @@ export const updateSupportTicketSchema = Joi.object({
   status: Joi.string().valid(...statuses),
   priority: Joi.string().valid(...priorities),
   assignedTo: Joi.alternatives().try(objectId, Joi.valid(null)),
+  handoffReason: Joi.string().trim().min(5).max(500),
 }).min(1);
 
 export const requesterTicketActionSchema = Joi.object({

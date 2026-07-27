@@ -97,6 +97,7 @@ router.post("/student/google/exchange", exchangeStudentGoogleAuth);
 router.post("/student/login", loginLimiter, loginAs("student"), loginUser);
 router.post("/teacher/login", loginLimiter, loginAs("teacher"), loginUser);
 router.post("/admin/login", loginLimiter, loginAs("admin"), loginUser);
+router.post("/support/login", loginLimiter, loginAs("support"), loginUser);
 router.post(
   "/teacher/password-reset/request",
   passwordResetRequestLimiter,

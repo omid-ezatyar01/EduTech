@@ -1,0 +1,777 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  BookOpenCheck,
+  Bell,
+  BellRing,
+  Headphones,
+  Inbox,
+  LogOut,
+  MessageCircle,
+  MessagesSquare,
+  RefreshCw,
+  Search,
+  Send,
+  StickyNote,
+  Trash2,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
+import { useNavigate } from "react-router";
+import {
+  connectSupportStaffSocket,
+  deleteSupportStaffTicket,
+  fetchSupportTeamDirectory,
+  fetchSupportStaffQueue,
+  fetchSupportStaffTicket,
+  markSupportStaffTicketRead,
+  sendSupportStaffMessage,
+  updateSupportStaffTicket,
+} from "../services/supportStaffApi.js";
+import {
+  enableSupportStaffNotifications,
+  getSupportNotificationPermission,
+} from "../services/supportStaffNotifications.js";
+import SupportTeamChat from "../components/SupportTeamChat.jsx";
+import SupportTeamGuide from "../components/SupportTeamGuide.jsx";
+import {
+  SupportStaffLanguageProvider,
+  SupportStaffLanguageToggle,
+} from "../components/SupportStaffLanguage.jsx";
+import { useSupportStaffLanguage } from "../services/supportStaffLanguageContext.js";
+import { supportStaffRoleLabel } from "../services/supportStaffRoles.js";
+import {
+  clearSupportStaffAuth,
+  getSupportStaffUser,
+} from "../services/supportStaffAuth.js";
+
+const STATUSES = ["open", "in_progress", "waiting_for_user", "resolved", "closed"];
+const PRIORITIES = ["low", "normal", "high", "urgent"];
+const LABELS = {
+  open: "Open",
+  in_progress: "In progress",
+  waiting_for_user: "Waiting for user",
+  resolved: "Resolved",
+  closed: "Closed",
+  low: "Low",
+  normal: "Normal",
+  high: "High",
+  urgent: "Urgent",
+};
+const FA_LABELS = {
+  open: "باز",
+  in_progress: "در حال بررسی",
+  waiting_for_user: "در انتظار کاربر",
+  resolved: "حل شده",
+  closed: "بسته",
+  low: "کم",
+  normal: "عادی",
+  high: "بالا",
+  urgent: "فوری",
+};
+
+export default function SupportStaffWorkspacePage() {
+  return (
+    <SupportStaffLanguageProvider>
+      <SupportStaffWorkspaceContent />
+    </SupportStaffLanguageProvider>
+  );
+}
+
+function SupportStaffWorkspaceContent() {
+  const navigate = useNavigate();
+  const { isFa } = useSupportStaffLanguage();
+  const labels = isFa ? FA_LABELS : LABELS;
+  const agent = useMemo(() => getSupportStaffUser() || {}, []);
+  const agentId = String(agent._id || agent.id || "");
+  const [tickets, setTickets] = useState([]);
+  const [team, setTeam] = useState([]);
+  const [generalUnread, setGeneralUnread] = useState(0);
+  const [presence, setPresence] = useState({});
+  const [activeView, setActiveView] = useState("tickets");
+  const [mobileTicketOpen, setMobileTicketOpen] = useState(false);
+  const [mobileTeamChatOpen, setMobileTeamChatOpen] = useState(false);
+  const [desktopLayout] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(min-width: 1024px)").matches,
+  );
+  const [selectedConversation, setSelectedConversation] = useState("general");
+  const [selectedId, setSelectedId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("ticket") || "";
+  });
+  const [chat, setChat] = useState(null);
+  const [filters, setFilters] = useState({
+    search: "",
+    status: "open",
+    priority: "all",
+  });
+  const [draft, setDraft] = useState("");
+  const [internalNote, setInternalNote] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [live, setLive] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(
+    getSupportNotificationPermission,
+  );
+  const [error, setError] = useState("");
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoffReason, setHandoffReason] = useState("");
+  const bottomRef = useRef(null);
+
+  const loadQueue = useCallback(async () => {
+    const data = await fetchSupportStaffQueue(filters);
+    const rows = Array.isArray(data.tickets) ? data.tickets : [];
+    setTickets(rows);
+    setSelectedId((current) => current || rows[0]?.id || "");
+  }, [filters]);
+
+  const loadChat = useCallback(async (ticketId) => {
+    if (!ticketId) return;
+    const data = await fetchSupportStaffTicket(ticketId);
+    setChat(data);
+    setTickets((current) =>
+      current.map((ticket) =>
+        ticket.id === ticketId
+          ? {
+              ...ticket,
+              unreadForSupport:
+                data.ticket?.assignedTo?.id === agentId
+                  ? 0
+                  : ticket.unreadForSupport,
+            }
+          : ticket,
+      ),
+    );
+    if (data.ticket?.assignedTo?.id === agentId) {
+      markSupportStaffTicketRead(ticketId).catch(() => {});
+    }
+  }, [agentId]);
+
+  const loadTeam = useCallback(async () => {
+    const data = await fetchSupportTeamDirectory();
+    const members = Array.isArray(data.members) ? data.members : [];
+    setTeam(members);
+    setGeneralUnread(Number(data.generalUnread) || 0);
+    setPresence((current) => {
+      const next = { ...current };
+      members.forEach((member) => {
+        next[member.id] = {
+          online: member.online,
+          lastSeenAt: member.lastSeenAt,
+        };
+      });
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      Promise.all([loadQueue(), loadTeam()])
+        .catch((err) => setError(err.message))
+        .finally(() => setLoading(false));
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [loadQueue, loadTeam]);
+
+  useEffect(() => {
+    if (notificationPermission !== "granted") return;
+    enableSupportStaffNotifications().catch(() => {});
+  }, [notificationPermission]);
+
+  useEffect(() => {
+    if (!selectedId || (!desktopLayout && !mobileTicketOpen)) return;
+    const timer = window.setTimeout(() => {
+      loadChat(selectedId).catch((err) => setError(err.message));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [desktopLayout, loadChat, mobileTicketOpen, selectedId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chat?.messages?.length]);
+
+  useEffect(() => {
+    const socket = connectSupportStaffSocket();
+    socket.on("connect", () => setLive(true));
+    socket.on("disconnect", () => setLive(false));
+    const refresh = (payload) => {
+      loadQueue().catch(() => {});
+      if (
+        payload?.ticket?.id === selectedId &&
+        (desktopLayout || mobileTicketOpen)
+      ) {
+        loadChat(selectedId).catch(() => {});
+      }
+    };
+    [
+      "support:ticket-created",
+      "support:message",
+      "support:internal-note",
+      "support:ticket-updated",
+      "support:ticket-deleted",
+    ].forEach((event) => socket.on(event, refresh));
+    socket.on("support:team-presence", (payload) => {
+      if (!payload?.userId) return;
+      setPresence((current) => ({
+        ...current,
+        [payload.userId]: {
+          online: Boolean(payload.online),
+          lastSeenAt: payload.lastSeenAt || null,
+        },
+      }));
+    });
+    socket.on("support:team-message", (payload) => {
+      if (payload?.message) {
+        window.dispatchEvent(
+          new CustomEvent("edutech-support-team-message", {
+            detail: payload.message,
+          }),
+        );
+      }
+      loadTeam().catch(() => {});
+    });
+    if (selectedId) socket.emit("support:join", selectedId);
+    const timer = setInterval(() => {
+      loadQueue().catch(() => {});
+      loadTeam().catch(() => {});
+      if (selectedId && (desktopLayout || mobileTicketOpen)) {
+        loadChat(selectedId).catch(() => {});
+      }
+    }, 30_000);
+    return () => {
+      clearInterval(timer);
+      socket.disconnect();
+    };
+  }, [
+    desktopLayout,
+    loadChat,
+    loadQueue,
+    loadTeam,
+    mobileTicketOpen,
+    selectedId,
+  ]);
+
+  const teamUnread =
+    generalUnread +
+    team.reduce(
+      (total, member) => total + Number(member.unreadMessages || 0),
+      0,
+    );
+
+  const markConversationReadLocally = useCallback((conversationId) => {
+    if (conversationId === "general") {
+      setGeneralUnread(0);
+      return;
+    }
+    setTeam((current) =>
+      current.map((member) =>
+        member.id === conversationId
+          ? { ...member, unreadMessages: 0 }
+          : member,
+      ),
+    );
+  }, []);
+
+  const updateTicket = async (changes, { reloadConversation = true } = {}) => {
+    setBusy(true);
+    setError("");
+    try {
+      await updateSupportStaffTicket(selectedId, changes);
+      if (reloadConversation) {
+        await Promise.all([loadQueue(), loadChat(selectedId)]);
+      } else {
+        setSelectedId("");
+        setChat(null);
+        setMobileTicketOpen(false);
+        await loadQueue();
+      }
+      return true;
+    } catch (err) {
+      setError(err.message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const send = async (event) => {
+    event.preventDefault();
+    const body = draft.trim();
+    if (!body) return;
+    setBusy(true);
+    setDraft("");
+    try {
+      await sendSupportStaffMessage(selectedId, body, internalNote);
+      await Promise.all([loadQueue(), loadChat(selectedId)]);
+    } catch (err) {
+      setDraft(body);
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handoffTicket = async (event) => {
+    event.preventDefault();
+    const reason = handoffReason.trim();
+    if (reason.length < 5) return;
+    const completed = await updateTicket(
+      { assignedTo: null, handoffReason: reason },
+      { reloadConversation: false },
+    );
+    if (!completed) return;
+    setHandoffReason("");
+    setHandoffOpen(false);
+  };
+
+  const enableNotifications = async () => {
+    setError("");
+    try {
+      const enabled = await enableSupportStaffNotifications();
+      setNotificationPermission(getSupportNotificationPermission());
+      if (!enabled) {
+        setError(
+          isFa
+            ? "اعلان‌های مرورگر فعال نشد. اجازه اعلان را در تنظیمات مرورگر بررسی کنید."
+            : "Browser notifications were not enabled. Check this site's notification permission.",
+        );
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const deleteCompletedTicket = async () => {
+    if (!chat?.ticket?.id) return;
+    const confirmed = window.confirm(
+      isFa
+        ? "این گفتگوی تکمیل‌شده از صندوق پشتیبانی حذف شود؟"
+        : "Delete this completed conversation from the support inbox?",
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError("");
+    try {
+      await deleteSupportStaffTicket(chat.ticket.id);
+      setSelectedId("");
+      setChat(null);
+      setMobileTicketOpen(false);
+      await loadQueue();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const logout = () => {
+    clearSupportStaffAuth();
+    navigate("/support/login", { replace: true });
+  };
+
+  const changeView = (view) => {
+    setActiveView(view);
+    setMobileTicketOpen(false);
+    setMobileTeamChatOpen(false);
+  };
+
+  const mobileDetailOpen =
+    (activeView === "tickets" && mobileTicketOpen) ||
+    (activeView === "team" && mobileTeamChatOpen);
+
+  return (
+    <div className="min-h-[100dvh] bg-[#f0f2f5] text-slate-950" dir={isFa ? "rtl" : "ltr"}>
+      <header className={`border-b border-slate-200 bg-white px-3 py-2.5 shadow-sm sm:px-4 sm:py-3 ${mobileDetailOpen ? "hidden lg:block" : ""}`}>
+        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-[#0B4FD8] to-[#00B8A9] text-white sm:h-11 sm:w-11 sm:rounded-xl">
+              <Headphones size={22} />
+            </span>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-black sm:text-base">
+                {isFa ? "محیط کاری پشتیبانی EduTech" : "EduTech Support Workspace"}
+              </h1>
+              <p className="max-w-48 truncate text-[11px] font-semibold text-slate-500 sm:max-w-none sm:text-xs">
+                {agent.name} · {supportStaffRoleLabel(
+                  team.find(
+                    (member) => member.id === (agent._id || agent.id),
+                  )?.specialization,
+                  isFa,
+                )} · {agent.email}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <SupportStaffLanguageToggle compact />
+            <button
+              type="button"
+              onClick={enableNotifications}
+              disabled={notificationPermission === "granted"}
+              className={`grid h-10 w-10 place-items-center rounded-xl border text-slate-600 ${
+                notificationPermission === "granted"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-slate-200 bg-white"
+              }`}
+              aria-label={
+                notificationPermission === "granted"
+                  ? isFa ? "اعلان‌ها فعال است" : "Notifications enabled"
+                  : isFa ? "فعال‌کردن اعلان‌ها" : "Enable notifications"
+              }
+              title={
+                notificationPermission === "granted"
+                  ? isFa ? "اعلان‌ها فعال است" : "Notifications enabled"
+                  : isFa ? "فعال‌کردن اعلان‌ها" : "Enable notifications"
+              }
+            >
+              {notificationPermission === "granted" ? <BellRing size={18} /> : <Bell size={18} />}
+            </button>
+            <span className={`hidden items-center gap-1 rounded-full px-3 py-1.5 text-xs font-black sm:inline-flex ${live ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+              {live ? <Wifi size={14} /> : <WifiOff size={14} />}
+              {live
+                ? isFa
+                  ? "متصل"
+                  : "Live"
+                : isFa
+                  ? "اتصال دوباره"
+                  : "Reconnecting"}
+            </span>
+            <button onClick={() => Promise.all([loadQueue(), loadTeam()])} className="hidden rounded-xl border border-slate-200 p-2.5 text-slate-600 sm:block" aria-label={isFa ? "تازه‌سازی" : "Refresh"}>
+              <RefreshCw size={18} />
+            </button>
+            <button onClick={logout} className="inline-flex items-center gap-2 rounded-xl bg-red-50 p-2.5 text-sm font-black text-red-700 sm:px-3">
+              <LogOut size={17} /> <span className="hidden sm:inline">{isFa ? "خروج" : "Logout"}</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className={`mx-auto max-w-[1500px] ${mobileDetailOpen ? "p-0 lg:p-4" : "p-2 pb-24 sm:p-4 lg:pb-4"}`}>
+        <nav className="mb-4 hidden flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm lg:flex">
+          <WorkspaceTab
+            active={activeView === "tickets"}
+            icon={Inbox}
+            label={isFa ? "صندوق تکت‌ها" : "Ticket inbox"}
+            badge={tickets.reduce(
+              (sum, ticket) => sum + Number(ticket.unreadForSupport || 0),
+              0,
+            )}
+            onClick={() => changeView("tickets")}
+          />
+          <WorkspaceTab
+            active={activeView === "team"}
+            icon={MessagesSquare}
+            label={isFa ? "تیم و گفتگو" : "Team & chat"}
+            badge={teamUnread}
+            onClick={() => changeView("team")}
+          />
+          <WorkspaceTab
+            active={activeView === "guide"}
+            icon={BookOpenCheck}
+            label={isFa ? "راهنمای کار" : "How it works"}
+            onClick={() => changeView("guide")}
+          />
+        </nav>
+
+        {activeView === "tickets" ? <div className={`mb-2 grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm md:grid-cols-[1fr_190px_170px] lg:mb-4 lg:p-3 ${mobileTicketOpen ? "hidden lg:grid" : "grid"}`}>
+          <label className="relative col-span-2 md:col-span-1">
+            <Search className="absolute start-3 top-3 text-slate-400" size={17} />
+            <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder={isFa ? "جستجوی تکت، کاربر یا ایمیل" : "Search ticket, user, or email"} className="w-full rounded-xl border border-slate-200 py-2.5 ps-10 pe-3 text-sm outline-none focus:border-blue-500" />
+          </label>
+          <FilterSelect value={filters.status} onChange={(status) => setFilters({ ...filters, status })} values={STATUSES} allLabel={isFa ? "همه وضعیت‌ها" : "All statuses"} labels={labels} />
+          <FilterSelect value={filters.priority} onChange={(priority) => setFilters({ ...filters, priority })} values={PRIORITIES} allLabel={isFa ? "همه اولویت‌ها" : "All priorities"} labels={labels} />
+        </div> : null}
+        {error ? <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
+
+        {activeView === "team" ? (
+          <SupportTeamChat
+            agent={agent}
+            members={team}
+            generalUnread={generalUnread}
+            presence={presence}
+            selectedConversation={selectedConversation}
+            onSelectConversation={setSelectedConversation}
+            onConversationRead={markConversationReadLocally}
+            refreshTeam={loadTeam}
+            onMobileDetailChange={setMobileTeamChatOpen}
+          />
+        ) : null}
+
+        {activeView === "guide" ? <SupportTeamGuide /> : null}
+
+        {activeView === "tickets" ? <section className={`grid overflow-hidden bg-white shadow-sm lg:h-auto lg:min-h-[72vh] lg:grid-cols-[380px_1fr] lg:rounded-3xl lg:border lg:border-slate-200 ${mobileTicketOpen ? "h-[100dvh] min-h-0 rounded-none border-0" : "h-[calc(100dvh-14rem)] min-h-[28rem] rounded-2xl border border-slate-200"}`}>
+          <aside className={`h-full overflow-y-auto border-b border-slate-200 lg:block lg:max-h-[76vh] lg:border-b-0 lg:border-e ${mobileTicketOpen ? "hidden" : "block"}`}>
+            {loading ? (
+              <p className="p-10 text-center font-bold text-slate-400">{isFa ? "در حال بارگذاری…" : "Loading…"}</p>
+            ) : tickets.length === 0 ? (
+              <p className="p-10 text-center font-bold text-slate-500">{isFa ? "هیچ تکت پشتیبانی یافت نشد." : "No support tickets found."}</p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {tickets.map((ticket) => (
+                  <button key={ticket.id} onClick={() => { setChat(null); setSelectedId(ticket.id); setMobileTicketOpen(true); }} className={`flex w-full items-center gap-3 p-3 text-start transition sm:p-4 ${selectedId === ticket.id ? "bg-emerald-50 lg:bg-blue-50" : "hover:bg-slate-50"}`}>
+                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-slate-200 to-slate-100 text-base font-black text-slate-600">
+                      {String(ticket.requester?.name || "?").slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <strong className="min-w-0 flex-1 truncate text-sm">{ticket.subject}</strong>
+                        <span className="text-[10px] font-semibold text-slate-400">{formatListTime(ticket.lastMessageAt, isFa)}</span>
+                      </span>
+                      <span className="mt-1 flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-500">{ticket.requester?.name} · {ticket.lastMessagePreview}</span>
+                        {ticket.unreadForSupport > 0 ? <span className="grid min-w-5 place-items-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-black text-white">{ticket.unreadForSupport}</span> : null}
+                      </span>
+                      <span className="mt-1.5 flex justify-between text-[10px] font-bold"><span className="text-emerald-700">{labels[ticket.status]}</span><span className="text-slate-400">{ticket.ticketNumber}</span></span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </aside>
+
+          <div className={`${mobileTicketOpen ? "flex" : "hidden"} h-full min-h-0 flex-col lg:flex lg:min-h-[620px]`}>
+            {!chat ? (
+              <div className="grid flex-1 place-items-center text-center text-slate-400">
+                <div><MessageCircle className="mx-auto" size={48} /><p className="mt-3 font-bold">{mobileTicketOpen ? (isFa ? "در حال بارگذاری گفتگو…" : "Loading conversation…") : (isFa ? "یک گفتگو را انتخاب کنید" : "Select a conversation")}</p></div>
+              </div>
+            ) : (
+              <>
+                <header className="sticky top-0 z-20 border-b border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <button type="button" onClick={() => setMobileTicketOpen(false)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-600 hover:bg-slate-100 lg:hidden" aria-label={isFa ? "بازگشت" : "Back"}>
+                        {isFa ? <ChevronRight size={23} /> : <ChevronLeft size={23} />}
+                      </button>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-100 font-black text-slate-600">
+                        {String(chat.ticket.requester?.name || "?").slice(0, 1).toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <h2 className="truncate text-sm font-black sm:text-base">{chat.ticket.subject}</h2>
+                        <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[10px] font-semibold text-slate-500 sm:mt-1 sm:text-xs">
+                          <span className="max-w-28 truncate sm:max-w-none">{chat.ticket.requester?.name}</span>
+                          <span aria-hidden="true">·</span>
+                          <span className="max-w-40 truncate" dir="ltr">{chat.ticket.requester?.email}</span>
+                          <span aria-hidden="true">·</span>
+                          <span className="whitespace-nowrap" dir="ltr">{chat.ticket.ticketNumber}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid w-full grid-cols-2 gap-2 sm:ps-0 lg:w-auto lg:min-w-[650px] lg:grid-cols-5">
+                        <button
+                          disabled={
+                            busy ||
+                            (chat.ticket.assignedTo?.id &&
+                              chat.ticket.assignedTo.id !==
+                                agentId)
+                          }
+                          onClick={() =>
+                            chat.ticket.assignedTo?.id === agentId
+                              ? setHandoffOpen(true)
+                              : updateTicket({ assignedTo: agentId })
+                          }
+                          className="h-10 min-w-0 truncate rounded-xl bg-slate-100 px-3 text-[11px] font-black text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {!chat.ticket.assignedTo?.id
+                            ? isFa
+                              ? "گرفتن تکت"
+                              : "Claim ticket"
+                            : chat.ticket.assignedTo.id ===
+                                agentId
+                              ? isFa
+                                ? "رها کردن تکت من"
+                                : "Release my ticket"
+                              : isFa
+                                ? `مسئول: ${chat.ticket.assignedTo.name}`
+                                : `Owned by ${chat.ticket.assignedTo.name}`}
+                        </button>
+                        <div className="flex h-10 min-w-0 items-center rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-black text-slate-600">
+                          <span className="truncate">
+                            {chat.ticket.assignedTo?.id
+                              ? `${isFa ? "مسئول" : "Owner"}: ${chat.ticket.assignedTo.name}`
+                              : isFa ? "بدون مسئول" : "Unassigned"}
+                          </span>
+                        </div>
+                        <TicketSelect value={chat.ticket.priority} values={PRIORITIES} disabled={busy || chat.ticket.assignedTo?.id !== agentId} onChange={(priority) => updateTicket({ priority })} labels={labels} ariaLabel={isFa ? "اولویت" : "Priority"} />
+                        <TicketSelect value={chat.ticket.status} values={STATUSES} disabled={busy || chat.ticket.assignedTo?.id !== agentId} onChange={(status) => updateTicket({ status })} labels={labels} ariaLabel={isFa ? "وضعیت" : "Status"} />
+                        <button
+                          type="button"
+                          onClick={deleteCompletedTicket}
+                          disabled={
+                            busy ||
+                            chat.ticket.assignedTo?.id !== agentId ||
+                            !["resolved", "closed"].includes(chat.ticket.status)
+                          }
+                          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-red-50 px-3 text-[11px] font-black text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          title={
+                            isFa
+                              ? "پس از حل یا بستن تکت قابل حذف است"
+                              : "Available after resolving or closing the ticket"
+                          }
+                        >
+                          <Trash2 size={15} />
+                          <span>{isFa ? "حذف گفتگو" : "Delete chat"}</span>
+                        </button>
+                  </div>
+                  </div>
+                </header>
+                <div className="flex-1 space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.32)_0,rgba(255,255,255,0.32)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:space-y-3 sm:p-4">
+                  {chat.messages.map((message) => (
+                    <MessageBubble key={message.id} message={message} isFa={isFa} />
+                  ))}
+                  <div ref={bottomRef} />
+                </div>
+                <form onSubmit={send} className="border-t bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
+                  {chat.ticket.assignedTo?.id !== agentId ? (
+                    <p className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                      {chat.ticket.assignedTo?.id
+                        ? isFa ? "این تکت توسط عضو دیگری مدیریت می‌شود." : "Another team member owns this ticket."
+                        : isFa ? "برای پاسخ دادن، ابتدا تکت را بگیرید." : "Claim this ticket before replying."}
+                    </p>
+                  ) : null}
+                  <div className="mb-2 flex gap-2">
+                    <ModeButton disabled={chat.ticket.assignedTo?.id !== agentId} active={!internalNote} onClick={() => setInternalNote(false)}>{isFa ? "پاسخ" : "Reply"}</ModeButton>
+                    <ModeButton disabled={chat.ticket.assignedTo?.id !== agentId} active={internalNote} note onClick={() => setInternalNote(true)}>{isFa ? "یادداشت داخلی" : "Internal note"}</ModeButton>
+                  </div>
+                  <div className="flex gap-2">
+                    <textarea disabled={chat.ticket.assignedTo?.id !== agentId} value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={4000} rows={1} placeholder={internalNote ? (isFa ? "یادداشت خصوصی که فقط تیم پشتیبانی می‌بیند" : "Private note visible only to support staff") : (isFa ? "پاسخ خود را برای کاربر بنویسید" : "Write a reply to the user")} className={`min-h-11 max-h-28 flex-1 resize-none rounded-3xl border px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 ${internalNote ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white focus:border-emerald-500"}`} />
+                    <button disabled={busy || !draft.trim() || chat.ticket.assignedTo?.id !== agentId} className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-sm disabled:opacity-40 ${internalNote ? "bg-amber-600" : "bg-emerald-600"}`}><Send size={19} /></button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
+        </section> : null}
+      </main>
+      {handoffOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
+          <form onSubmit={handoffTicket} className="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl">
+            <h2 className="text-lg font-black">{isFa ? "انتقال تکت" : "Hand off ticket"}</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              {isFa ? "دلیل انتقال را بنویسید تا عضو بعدی بداند چه کاری باقی مانده است." : "Explain why you are releasing it so the next agent knows what remains."}
+            </p>
+            <textarea autoFocus value={handoffReason} onChange={(event) => setHandoffReason(event.target.value)} rows={4} minLength={5} maxLength={500} required className="mt-4 w-full resize-none rounded-2xl border border-slate-200 p-3 text-sm outline-none focus:border-blue-500" placeholder={isFa ? "مثال: نیاز به بررسی تخنیکی دارد…" : "Example: Needs technical investigation…"} />
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => { setHandoffOpen(false); setHandoffReason(""); }} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-600">{isFa ? "لغو" : "Cancel"}</button>
+              <button disabled={busy || handoffReason.trim().length < 5} className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-black text-white disabled:opacity-40">{isFa ? "انتقال به صف" : "Return to queue"}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {!mobileDetailOpen ? (
+        <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-3 border-t border-slate-200 bg-white/95 px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
+          <MobileNavButton active={activeView === "tickets"} icon={Inbox} label={isFa ? "تکت‌ها" : "Tickets"} badge={tickets.reduce((sum, ticket) => sum + Number(ticket.unreadForSupport || 0), 0)} onClick={() => changeView("tickets")} />
+          <MobileNavButton active={activeView === "team"} icon={MessagesSquare} label={isFa ? "تیم" : "Team"} badge={teamUnread} onClick={() => changeView("team")} />
+          <MobileNavButton active={activeView === "guide"} icon={BookOpenCheck} label={isFa ? "راهنما" : "Guide"} onClick={() => changeView("guide")} />
+        </nav>
+      ) : null}
+    </div>
+  );
+}
+
+function WorkspaceTab({ active, icon: Icon, label, badge = 0, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${
+        active
+          ? "bg-[#0B4FD8] text-white shadow-md"
+          : "text-slate-600 hover:bg-slate-100"
+      }`}
+    >
+      <Icon size={17} />
+      {label}
+      {badge > 0 ? (
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] ${
+            active ? "bg-white text-blue-700" : "bg-red-500 text-white"
+          }`}
+        >
+          {badge > 99 ? "99+" : badge}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function MobileNavButton({
+  active,
+  icon: Icon,
+  label,
+  badge = 0,
+  onClick,
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[11px] font-black ${
+        active ? "text-emerald-700" : "text-slate-500"
+      }`}
+    >
+      <span className="relative">
+        <Icon size={21} strokeWidth={active ? 2.6 : 2} />
+        {badge > 0 ? (
+          <span className="absolute -end-3 -top-2 grid min-h-4 min-w-4 place-items-center rounded-full bg-emerald-500 px-1 text-[9px] text-white">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        ) : null}
+      </span>
+      {label}
+    </button>
+  );
+}
+
+function FilterSelect({ value, onChange, values, allLabel, labels }) {
+  return <select value={value} onChange={(event) => onChange(event.target.value)} className="rounded-xl border border-slate-200 px-3 text-sm font-bold"><option value="all">{allLabel}</option>{values.map((entry) => <option key={entry} value={entry}>{labels[entry]}</option>)}</select>;
+}
+
+function TicketSelect({
+  value,
+  onChange,
+  values,
+  disabled,
+  labels,
+  ariaLabel,
+}) {
+  return <select aria-label={ariaLabel} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="h-10 min-w-0 w-full rounded-xl border border-slate-200 bg-white px-2 text-[11px] font-black">{values.map((entry) => <option key={entry} value={entry}>{ariaLabel}: {labels[entry]}</option>)}</select>;
+}
+
+function ModeButton({ active, note = false, disabled = false, onClick, children }) {
+  const activeClass = note ? "bg-amber-100 text-amber-800" : "bg-blue-50 text-blue-700";
+  return <button type="button" disabled={disabled} onClick={onClick} className={`rounded-lg px-3 py-1.5 text-xs font-black disabled:cursor-not-allowed disabled:opacity-40 ${active ? activeClass : "bg-slate-100 text-slate-500"}`}>{children}</button>;
+}
+
+function MessageBubble({ message, isFa }) {
+  const own = ["admin", "support"].includes(message.senderRole);
+  return (
+    <div className={`flex ${own ? "justify-end" : "justify-start"}`}>
+      <div className={`max-w-[88%] rounded-xl px-3 py-2 shadow-sm sm:max-w-[82%] sm:px-4 sm:py-3 ${message.internalNote ? "border border-amber-300 bg-amber-50" : own ? "bg-[#d9fdd3] text-slate-900" : "bg-white text-slate-900"}`}>
+        {message.internalNote ? <p className="mb-1 flex items-center gap-1 text-[10px] font-black uppercase"><StickyNote size={12} /> {isFa ? "یادداشت داخلی" : "Internal note"}</p> : null}
+        <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p>
+        <p className="mt-1 text-[10px] font-bold text-slate-400">{message.sender?.name} · {new Date(message.createdAt).toLocaleString(isFa ? "fa-IR" : "en-US")}</p>
+      </div>
+    </div>
+  );
+}
+
+function formatListTime(value, isFa) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  return sameDay
+    ? date.toLocaleTimeString(isFa ? "fa-IR" : "en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : date.toLocaleDateString(isFa ? "fa-IR" : "en-US", {
+        month: "short",
+        day: "numeric",
+      });
+}

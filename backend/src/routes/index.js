@@ -22,6 +22,7 @@ import videoRoutes from "./video.routes.js";
 import teacherFollowRoutes from "./teacherFollow.routes.js";
 import articleRoutes from "./article.routes.js";
 import supportRoutes from "./support.routes.js";
+import supportStaffRoutes from "../modules/supportStaff/supportStaff.routes.js";
 
 const router = express.Router();
 
@@ -48,5 +49,6 @@ router.use("/", videoRoutes);
 router.use("/", teacherFollowRoutes);
 router.use("/", articleRoutes);
 router.use("/", supportRoutes);
+router.use("/", supportStaffRoutes);
 
 export default router;

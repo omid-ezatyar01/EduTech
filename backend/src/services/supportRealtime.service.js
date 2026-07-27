@@ -2,8 +2,15 @@ import jwt from "jsonwebtoken";
 import { Server } from "socket.io";
 import User from "../models/User.js";
 import SupportTicket from "../models/SupportTicket.js";
+import SupportStaffProfile from "../modules/supportStaff/SupportStaffProfile.js";
+import {
+  normalizeSupportSpecialization,
+  SPECIALIZATION_CATEGORIES,
+} from "../modules/supportStaff/supportStaff.constants.js";
 
 let io = null;
+const supportConnections = new Map();
+const supportLastSeen = new Map();
 
 const normalizedOrigins = () =>
   String(process.env.CLIENT_ORIGIN || "")
@@ -39,17 +46,70 @@ export const initializeSupportRealtime = (httpServer) => {
     }
   });
 
-  io.on("connection", (socket) => {
+  io.on("connection", async (socket) => {
     const userId = String(socket.user._id);
     socket.join(`support:user:${userId}`);
-    if (socket.user.role === "admin") socket.join("support:agents");
+    if (socket.user.role === "support") {
+      const profile = await SupportStaffProfile.findOne({
+        user: socket.user._id,
+      }).lean().catch(() => null);
+      const specialization = normalizeSupportSpecialization(
+        profile?.specialization,
+      );
+      const categories = SPECIALIZATION_CATEGORIES[specialization] || [];
+      if (categories.length) {
+        categories.forEach((category) =>
+          socket.join(`support:category:${category}`),
+        );
+      } else {
+        socket.join("support:agents");
+      }
+    }
+    if (["admin", "support"].includes(socket.user.role)) {
+      socket.join("support:team");
+    }
+    if (["admin", "support"].includes(socket.user.role)) {
+      supportConnections.set(
+        userId,
+        Number(supportConnections.get(userId) || 0) + 1,
+      );
+      supportLastSeen.set(userId, new Date());
+      io.to("support:team").emit("support:team-presence", {
+        userId,
+        online: true,
+        lastSeenAt: supportLastSeen.get(userId),
+      });
+    }
 
     socket.on("support:join", async (ticketId, acknowledge = () => {}) => {
       try {
-        const ticket = await SupportTicket.findById(ticketId).select("requester");
-        const allowed =
+        const ticket = await SupportTicket.findById(ticketId).select(
+          "requester assignedTo category deletedAt",
+        );
+        let allowed =
           ticket &&
-          (socket.user.role === "admin" || String(ticket.requester) === userId);
+          !ticket.deletedAt &&
+          (socket.user.role === "admin" ||
+            String(ticket.requester) === userId);
+        if (ticket && socket.user.role === "support") {
+          const ownerId = String(ticket.assignedTo || "");
+          if (ownerId === userId) {
+            allowed = true;
+          } else if (!ownerId) {
+            const profile = await SupportStaffProfile.findOne({
+              user: socket.user._id,
+            }).lean();
+            const specialization = normalizeSupportSpecialization(
+              profile?.specialization,
+            );
+            const categories =
+              SPECIALIZATION_CATEGORIES[specialization] || [];
+            allowed =
+              categories.length === 0 || categories.includes(ticket.category);
+          } else {
+            allowed = false;
+          }
+        }
         if (!allowed) return acknowledge({ ok: false });
         socket.join(`support:ticket:${ticketId}`);
         return acknowledge({ ok: true });
@@ -61,20 +121,73 @@ export const initializeSupportRealtime = (httpServer) => {
     socket.on("support:leave", (ticketId) => {
       socket.leave(`support:ticket:${ticketId}`);
     });
+
+    socket.on("disconnect", () => {
+      if (!["admin", "support"].includes(socket.user.role)) return;
+      const remaining = Math.max(
+        0,
+        Number(supportConnections.get(userId) || 1) - 1,
+      );
+      if (remaining) {
+        supportConnections.set(userId, remaining);
+        return;
+      }
+      supportConnections.delete(userId);
+      supportLastSeen.set(userId, new Date());
+      io.to("support:team").emit("support:team-presence", {
+        userId,
+        online: false,
+        lastSeenAt: supportLastSeen.get(userId),
+      });
+    });
   });
 
   return io;
+};
+
+export const getSupportPresenceSnapshot = () => ({
+  onlineIds: [...supportConnections.keys()],
+  lastSeenById: Object.fromEntries(
+    [...supportLastSeen.entries()].map(([userId, value]) => [
+      userId,
+      value.toISOString(),
+    ]),
+  ),
+});
+
+export const emitSupportTeamMessage = ({ recipientId = "", data }) => {
+  if (!io) return;
+  if (recipientId) {
+    io.to(`support:user:${recipientId}`)
+      .to(`support:user:${String(data?.message?.sender?.id || "")}`)
+      .emit("support:team-message", data);
+    return;
+  }
+  io.to("support:team").emit("support:team-message", data);
+};
+
+export const disconnectSupportUser = (userId) => {
+  if (!io || !userId) return;
+  io.in(`support:user:${String(userId)}`).disconnectSockets(true);
 };
 
 export const emitSupportEvent = ({ ticket, event, data, supportOnly = false }) => {
   if (!io || !ticket) return;
   const ticketId = String(ticket._id || ticket.id || "");
   const requesterId = String(ticket.requester?._id || ticket.requester || "");
+  const category = String(ticket.category || "");
+  let supportRecipients = io.to("support:agents");
+  if (category) {
+    supportRecipients = supportRecipients.to(`support:category:${category}`);
+  }
   if (supportOnly) {
-    io.to("support:agents").emit(event, data);
+    if (ticketId) {
+      supportRecipients = supportRecipients.to(`support:ticket:${ticketId}`);
+    }
+    supportRecipients.emit(event, data);
     return;
   }
-  let recipients = io.to("support:agents");
+  let recipients = supportRecipients;
   if (requesterId) recipients = recipients.to(`support:user:${requesterId}`);
   if (ticketId) recipients = recipients.to(`support:ticket:${ticketId}`);
   recipients.emit(event, data);

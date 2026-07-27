@@ -4,18 +4,8 @@ import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
 import { sendEduTechEmail } from "../utils/Email.js";
-import { sendTelegramContactNotification } from "../services/telegramAnnouncement.service.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const CONTACT_LIMIT_TIMEZONE = process.env.APP_TIMEZONE || "Asia/Kabul";
-
-const getDateKeyForTimezone = (value = new Date()) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: CONTACT_LIMIT_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(value);
 
 const mapMessageRow = (row) => ({
   _id: row._id,
@@ -29,60 +19,6 @@ const mapMessageRow = (row) => ({
   updatedAt: row.updatedAt,
   repliedAt: row.repliedAt || null,
   adminReply: row.adminReply || "",
-});
-
-export const createPublicContactMessage = asyncHandler(async (req, res) => {
-  const payload = req.validated?.body || req.body;
-  const user = req.user;
-
-  if (!user || user.role !== "student") {
-    throw new ApiError(403, "Only registered students can send contact messages.");
-  }
-
-  const todayKey = getDateKeyForTimezone(new Date());
-  const lastMessageKey = user.lastContactMessageAt
-    ? getDateKeyForTimezone(user.lastContactMessageAt)
-    : "";
-
-  if (lastMessageKey === todayKey) {
-    throw new ApiError(429, "You can send only one contact message per day.");
-  }
-
-  sendTelegramContactNotification({
-    name: user.name,
-    contact: user.email,
-    subject: payload.subject,
-    message: payload.message,
-    createdAt: new Date(),
-  }).catch((error) => {
-    console.error(
-      "Telegram contact notification failed:",
-      error?.response?.data?.description || error?.response?.data?.message || error.message,
-    );
-  });
-
-  const message = await ContactMessage.create({
-    name: user.name,
-    contact: user.email,
-    subject: payload.subject,
-    message: payload.message,
-    source: "student_contact_form",
-    ipAddress: req.ip || "",
-    userAgent: String(req.get("user-agent") || "").slice(0, 500),
-  });
-
-  user.lastContactMessageAt = new Date();
-  await user.save();
-
-  return res.status(201).json(
-    new ApiResponse({
-      message: "Message sent successfully",
-      data: {
-        status: "sent",
-        id: String(message._id),
-      },
-    }),
-  );
 });
 
 export const getAdminMessages = asyncHandler(async (req, res) => {

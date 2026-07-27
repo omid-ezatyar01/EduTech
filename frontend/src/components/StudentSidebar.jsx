@@ -18,6 +18,7 @@ import {
   UserCheck,
   MessageSquareHeart,
   Headphones,
+  MessagesSquare,
 } from "lucide-react";
 
 const menuItems = {
@@ -32,6 +33,7 @@ const menuItems = {
     { path: "/student/payments", name: "پرداخت‌ها", icon: CreditCard },
     { path: "/student/certificates", name: "سرتیفیکیت‌ها", icon: Award },
     { path: "/student/feedback", name: "بازخورد ایجوتک", icon: MessageSquareHeart },
+    { path: "/student/messages", name: "پیام‌های صنف", icon: MessagesSquare },
     { path: "/student/support", name: "کمک و پشتیبانی", icon: Headphones },
     { path: "/student/profile", name: "پروفایل", icon: User },
     { path: "/student/settings", name: "تنظیمات", icon: Settings },
@@ -47,6 +49,7 @@ const menuItems = {
     { path: "/student/payments", name: "Payments", icon: CreditCard },
     { path: "/student/certificates", name: "Certificates", icon: Award },
     { path: "/student/feedback", name: "EduTech Feedback", icon: MessageSquareHeart },
+    { path: "/student/messages", name: "Class Messages", icon: MessagesSquare },
     { path: "/student/support", name: "Help & Support", icon: Headphones },
     { path: "/student/profile", name: "Profile", icon: User },
     { path: "/student/settings", name: "Settings", icon: Settings },

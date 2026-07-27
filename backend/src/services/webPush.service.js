@@ -1,6 +1,11 @@
 import webPush from "web-push";
 import PushSubscription from "../models/PushSubscription.js";
 import User from "../models/User.js";
+import SupportStaffProfile from "../modules/supportStaff/SupportStaffProfile.js";
+import {
+  SPECIALIZATION_CATEGORIES,
+  SUPPORT_SPECIALIZATIONS,
+} from "../modules/supportStaff/supportStaff.constants.js";
 
 const getPublicSiteOrigin = () => {
   const explicit = String(process.env.COURSE_PUBLIC_ORIGIN || process.env.PUBLIC_SITE_ORIGIN || "").trim();
@@ -12,6 +17,13 @@ const getPublicSiteOrigin = () => {
     .find((origin) => /^https?:\/\//i.test(origin) && !/te\.edutech\.study/i.test(origin));
 
   return firstClientOrigin || "https://edutech.study";
+};
+
+const compactTextForPush = (value = "", maxLength = 120) => {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > maxLength
+    ? `${text.slice(0, maxLength - 1).trim()}…`
+    : text;
 };
 
 export const getWebPushPublicKey = () => String(process.env.WEB_PUSH_VAPID_PUBLIC_KEY || "").trim();
@@ -154,6 +166,69 @@ const sendToSubscription = async (row, payload) => {
     }
     return { ok: false, statusCode: error?.statusCode || 0 };
   }
+};
+
+const supportSpecializationsForCategory = (category = "") =>
+  SUPPORT_SPECIALIZATIONS.filter((specialization) => {
+    const categories = SPECIALIZATION_CATEGORIES[specialization] || [];
+    return categories.length === 0 || categories.includes(category);
+  });
+
+export const notifySupportStaffForTicket = async ({
+  ticket = {},
+  message = {},
+  kind = "new_ticket",
+} = {}) => {
+  if (!configureWebPush()) {
+    return { skipped: true, reason: "web_push_not_configured" };
+  }
+
+  const category = String(ticket?.category || "other");
+  const specializations = supportSpecializationsForCategory(category);
+  const profiles = await SupportStaffProfile.find({
+    specialization: { $in: specializations },
+  }).select("user").lean();
+  const userIds = profiles.map((profile) => profile.user).filter(Boolean);
+  if (!userIds.length) return { sent: 0, failed: 0 };
+
+  const subscriptions = await PushSubscription.find({
+    role: "support",
+    app: "support",
+    userId: { $in: userIds },
+  })
+    .populate("userId", "status role")
+    .lean();
+  const recipients = subscriptions.filter(
+    (row) => row.userId?.status === "active" && row.userId?.role === "support",
+  );
+  if (!recipients.length) return { sent: 0, failed: 0 };
+
+  const ticketNumber = String(ticket?.ticketNumber || "");
+  const subject = String(ticket?.subject || "Support request");
+  const requesterName = String(ticket?.requester?.name || "A user");
+  const messagePreview = compactTextForPush(message?.body || ticket?.lastMessagePreview, 120);
+  const payload = {
+    type: kind === "new_ticket" ? "support_ticket_created" : "support_ticket_message",
+    title: kind === "new_ticket" ? `New ${subject} ticket` : `New reply: ${subject}`,
+    body: `${requesterName}${messagePreview ? `: ${messagePreview}` : ""}`,
+    icon: "/icons/web-app-manifest-192x192.png",
+    badge: "/icons/favicon-96x96.png",
+    url: `/support-team?ticket=${encodeURIComponent(String(ticket?._id || ticket?.id || ""))}`,
+    ticketId: String(ticket?._id || ticket?.id || ""),
+    ticketNumber,
+    category,
+  };
+
+  let sent = 0;
+  let failed = 0;
+  for (let index = 0; index < recipients.length; index += 50) {
+    const results = await Promise.all(
+      recipients.slice(index, index + 50).map((row) => sendToSubscription(row, payload)),
+    );
+    sent += results.filter((result) => result.ok).length;
+    failed += results.filter((result) => !result.ok).length;
+  }
+  return { sent, failed };
 };
 
 const sendCourseEventToUsers = async ({

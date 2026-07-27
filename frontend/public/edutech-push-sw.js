@@ -12,6 +12,8 @@ self.addEventListener("push", (event) => {
     course_published: "/live-courses",
     teacher_added: "/teachers",
     teacher_created: "/teachers",
+    support_ticket_created: "/support-team",
+    support_ticket_message: "/support-team",
   };
 
   const resolveTargetUrl = () => {
@@ -21,13 +23,17 @@ self.addEventListener("push", (event) => {
 
   const title =
     data.title ||
-    (notificationType.startsWith("teacher")
+    (notificationType.startsWith("support")
+      ? "New support request"
+      : notificationType.startsWith("teacher")
       ? "New teacher on EduTech"
       : "New course on EduTech");
 
   const body =
     data.body ||
-    (notificationType.startsWith("teacher")
+    (notificationType.startsWith("support")
+      ? "A user is waiting for support."
+      : notificationType.startsWith("teacher")
       ? "A new teacher has joined EduTech."
       : "You have a new EduTech notification.");
 

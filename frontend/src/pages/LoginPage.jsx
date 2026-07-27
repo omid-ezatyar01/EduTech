@@ -417,6 +417,19 @@ export default function LoginPage({ language = "fa" }) {
                   {data.form.switchLink}
                 </Link>
               </p>
+              <p className="mt-3 text-center text-sm font-semibold text-slate-600">
+                {language === "fa"
+                  ? "عضو تیم پشتیبانی هستید؟"
+                  : "Are you a support team member?"}{" "}
+                <Link
+                  to="/support/login"
+                  className="font-black text-[#0B4FD8] hover:underline"
+                >
+                  {language === "fa"
+                    ? "ورود تیم پشتیبانی"
+                    : "Support team login"}
+                </Link>
+              </p>
               <p className="mt-4 text-center text-xs font-semibold text-slate-500">
                 {language === "fa" ? "توسعه داده شده توسط " : "Developed by "}
                 <a

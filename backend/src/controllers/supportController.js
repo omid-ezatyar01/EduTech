@@ -5,11 +5,19 @@ import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { emitSupportEvent } from "../services/supportRealtime.service.js";
+import SupportStaffProfile from "../modules/supportStaff/SupportStaffProfile.js";
+import {
+  normalizeSupportSpecialization,
+  SPECIALIZATION_CATEGORIES,
+} from "../modules/supportStaff/supportStaff.constants.js";
+import { notifySupportStaffForTicket } from "../services/webPush.service.js";
 
 const preview = (value) => String(value || "").trim().slice(0, 240);
 const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const ticketNumber = () =>
   `SUP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+export const isSupportAgent = (user = {}) =>
+  ["admin", "support"].includes(String(user?.role || ""));
 
 const mapUser = (user) =>
   user && typeof user === "object"
@@ -26,6 +34,9 @@ const mapTicket = (row) => ({
   priority: row.priority,
   status: row.status,
   assignedTo: mapUser(row.assignedTo),
+  claimedAt: row.claimedAt || null,
+  lastAssignedAt: row.lastAssignedAt || null,
+  handoffCount: Number(row.handoffCount || 0),
   lastMessageAt: row.lastMessageAt,
   lastMessagePreview: row.lastMessagePreview,
   lastSenderRole: row.lastSenderRole,
@@ -47,6 +58,22 @@ const mapMessage = (row) => ({
 
 const populatedTicket = (query) =>
   query.populate("requester", "name email avatar role").populate("assignedTo", "name email avatar role");
+
+const buildSupportAccessFilter = async (user) => {
+  const profile = await SupportStaffProfile.findOne({ user: user._id }).lean();
+  const specialization = normalizeSupportSpecialization(
+    profile?.specialization,
+  );
+  const preferredCategories =
+    SPECIALIZATION_CATEGORIES[specialization] || [];
+  const unassigned = { assignedTo: null };
+  if (preferredCategories.length) {
+    unassigned.category = { $in: preferredCategories };
+  }
+  return {
+    $or: [{ assignedTo: user._id }, unassigned],
+  };
+};
 
 export const buildAdminSupportTicketFilter = (
   {
@@ -77,8 +104,12 @@ export const buildAdminSupportTicketFilter = (
 };
 
 const findAccessibleTicket = async (ticketId, user) => {
-  const filter = { _id: ticketId };
-  if (user.role !== "admin") filter.requester = user._id;
+  const filter = { _id: ticketId, deletedAt: null };
+  if (user.role === "support") {
+    Object.assign(filter, await buildSupportAccessFilter(user));
+  } else if (!isSupportAgent(user)) {
+    filter.requester = user._id;
+  }
   const ticket = await populatedTicket(SupportTicket.findOne(filter));
   if (!ticket) throw new ApiError(404, "Support ticket not found");
   return ticket;
@@ -115,12 +146,22 @@ export const createSupportTicket = asyncHandler(async (req, res) => {
   message = await SupportMessage.findById(message._id).populate("sender", "name email avatar role");
   const data = { ticket: mapTicket(ticket), message: mapMessage(message) };
   emitSupportEvent({ ticket, event: "support:ticket-created", data });
+  notifySupportStaffForTicket({
+    ticket,
+    message,
+    kind: "new_ticket",
+  }).catch((error) => {
+    console.warn(`Failed to notify support staff about new ticket: ${error.message}`);
+  });
   return res.status(201).json(new ApiResponse({ message: "Support ticket created", data }));
 });
 
 export const getMySupportTickets = asyncHandler(async (req, res) => {
   const tickets = await populatedTicket(
-    SupportTicket.find({ requester: req.user._id }).sort({ lastMessageAt: -1 }),
+    SupportTicket.find({
+      requester: req.user._id,
+      deletedAt: null,
+    }).sort({ lastMessageAt: -1 }),
   );
   return res.json(new ApiResponse({
     message: "Support tickets fetched",
@@ -134,7 +175,7 @@ export const getMySupportTickets = asyncHandler(async (req, res) => {
 export const getSupportTicket = asyncHandler(async (req, res) => {
   const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
   const filter = { ticket: ticket._id };
-  if (req.user.role !== "admin") filter.internalNote = false;
+  if (!isSupportAgent(req.user)) filter.internalNote = false;
   const messages = await SupportMessage.find(filter)
     .populate("sender", "name email avatar role")
     .sort({ createdAt: 1 });
@@ -147,24 +188,36 @@ export const getSupportTicket = asyncHandler(async (req, res) => {
 export const sendSupportMessage = asyncHandler(async (req, res) => {
   const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
   const payload = req.validated?.body || req.body;
-  const isAdmin = req.user.role === "admin";
-  if (!isAdmin && ["resolved", "closed"].includes(ticket.status)) {
+  const isAgent = isSupportAgent(req.user);
+  const assignedUserId = String(ticket.assignedTo?._id || ticket.assignedTo || "");
+  if (
+    req.user.role === "support" &&
+    assignedUserId !== String(req.user._id)
+  ) {
+    throw new ApiError(
+      assignedUserId ? 409 : 403,
+      assignedUserId
+        ? "This ticket is owned by another support agent"
+        : "Claim this ticket before replying",
+    );
+  }
+  if (!isAgent && ["resolved", "closed"].includes(ticket.status)) {
     throw new ApiError(400, "Reopen this ticket before sending another message");
   }
-  if (!isAdmin && payload.internalNote) throw new ApiError(403, "Internal notes are for support staff");
+  if (!isAgent && payload.internalNote) throw new ApiError(403, "Internal notes are for support staff");
 
   let message = await SupportMessage.create({
     ticket: ticket._id,
     sender: req.user._id,
     senderRole: req.user.role,
     body: payload.body,
-    internalNote: isAdmin && Boolean(payload.internalNote),
+    internalNote: isAgent && Boolean(payload.internalNote),
   });
   const setUpdates = {};
   const update = { $set: setUpdates };
-  if (isAdmin && payload.internalNote) {
+  if (isAgent && payload.internalNote) {
     // Private notes must not change requester-visible conversation metadata.
-  } else if (isAdmin) {
+  } else if (isAgent) {
     Object.assign(setUpdates, {
       lastMessageAt: message.createdAt,
       lastMessagePreview: preview(payload.body),
@@ -193,12 +246,28 @@ export const sendSupportMessage = asyncHandler(async (req, res) => {
     data,
     supportOnly: Boolean(payload.internalNote),
   });
+  if (!isAgent) {
+    notifySupportStaffForTicket({
+      ticket: updatedTicket,
+      message,
+      kind: "new_message",
+    }).catch((error) => {
+      console.warn(`Failed to notify support staff about ticket reply: ${error.message}`);
+    });
+  }
   return res.status(201).json(new ApiResponse({ message: "Message sent", data }));
 });
 
 export const markSupportTicketRead = asyncHandler(async (req, res) => {
   const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
-  const field = req.user.role === "admin" ? "unreadForSupport" : "unreadForRequester";
+  if (
+    req.user.role === "support" &&
+    String(ticket.assignedTo?._id || ticket.assignedTo || "") !==
+      String(req.user._id)
+  ) {
+    throw new ApiError(403, "Claim this ticket before marking it as read");
+  }
+  const field = isSupportAgent(req.user) ? "unreadForSupport" : "unreadForRequester";
   ticket[field] = 0;
   await ticket.save();
   return res.json(new ApiResponse({ message: "Ticket marked as read", data: mapTicket(ticket) }));
@@ -229,11 +298,28 @@ export const getAdminSupportTickets = asyncHandler(async (req, res) => {
     requesterIds = users.map((row) => row._id);
   }
   const filter = buildAdminSupportTicketFilter(query, requesterIds);
+  let accessFilter = null;
+  if (req.user.role === "support") {
+    accessFilter = await buildSupportAccessFilter(req.user);
+  }
+  const visibleFilter = { deletedAt: null };
+  const scopedFilter = accessFilter
+    ? { $and: [visibleFilter, filter, accessFilter] }
+    : { $and: [visibleFilter, filter] };
   const skip = (page - 1) * limit;
-  const [tickets, total, summary] = await Promise.all([
-    populatedTicket(SupportTicket.find(filter).sort({ lastMessageAt: -1 }).skip(skip).limit(limit)),
-    SupportTicket.countDocuments(filter),
-    SupportTicket.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+  const summaryPipeline = [
+    { $match: visibleFilter },
+    ...(accessFilter ? [{ $match: accessFilter }] : []),
+    { $group: { _id: "$status", count: { $sum: 1 } } },
+  ];
+  const unreadFilter = accessFilter
+    ? { $and: [visibleFilter, accessFilter, { unreadForSupport: { $gt: 0 } }] }
+    : { $and: [visibleFilter, { unreadForSupport: { $gt: 0 } }] };
+  const [tickets, total, summary, unread] = await Promise.all([
+    populatedTicket(SupportTicket.find(scopedFilter).sort({ lastMessageAt: -1 }).skip(skip).limit(limit)),
+    SupportTicket.countDocuments(scopedFilter),
+    SupportTicket.aggregate(summaryPipeline),
+    SupportTicket.countDocuments(unreadFilter),
   ]);
   const counts = Object.fromEntries(summary.map((row) => [row._id, row.count]));
   return res.json(new ApiResponse({
@@ -247,7 +333,7 @@ export const getAdminSupportTickets = asyncHandler(async (req, res) => {
         waitingForUser: counts.waiting_for_user || 0,
         resolved: counts.resolved || 0,
         closed: counts.closed || 0,
-        unread: await SupportTicket.countDocuments({ unreadForSupport: { $gt: 0 } }),
+        unread,
       },
     },
     meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
@@ -257,20 +343,187 @@ export const getAdminSupportTickets = asyncHandler(async (req, res) => {
 export const updateAdminSupportTicket = asyncHandler(async (req, res) => {
   const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
   const payload = req.validated?.body || req.body;
-  if (payload.assignedTo) {
-    const admin = await User.exists({ _id: payload.assignedTo, role: "admin", status: "active" });
-    if (!admin) throw new ApiError(400, "Assigned support user is not an active admin");
+  const { handoffReason, ...changes } = payload;
+  const currentOwnerId = String(
+    ticket.assignedTo?._id || ticket.assignedTo || "",
+  );
+  const actorId = String(req.user._id);
+  let handoffMessage = null;
+
+  if (req.user.role === "support") {
+    const isClaim = changes.assignedTo === actorId;
+    const isRelease = changes.assignedTo === null;
+
+    if (
+      Object.prototype.hasOwnProperty.call(changes, "assignedTo") &&
+      !isClaim &&
+      !isRelease
+    ) {
+      throw new ApiError(403, "Support agents can only claim tickets for themselves");
+    }
+    if (isClaim && currentOwnerId && currentOwnerId !== actorId) {
+      throw new ApiError(409, "This ticket is already owned by another support agent");
+    }
+    if (isRelease) {
+      if (currentOwnerId !== actorId) {
+        throw new ApiError(403, "Only the current owner can hand off this ticket");
+      }
+      if (!handoffReason) {
+        throw new ApiError(400, "A handoff reason is required");
+      }
+    }
+
+    const effectiveOwnerId = isClaim
+      ? actorId
+      : isRelease
+        ? ""
+        : currentOwnerId;
+    if (
+      (changes.status !== undefined || changes.priority !== undefined) &&
+      effectiveOwnerId !== actorId
+    ) {
+      throw new ApiError(403, "Claim this ticket before changing it");
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(changes, "assignedTo") &&
+      String(changes.assignedTo || "") !== currentOwnerId
+    ) {
+      const now = new Date();
+      const isClaiming = Boolean(changes.assignedTo);
+      const assignmentUpdate = {
+        $set: {
+          assignedTo: isClaiming ? req.user._id : null,
+          claimedAt: isClaiming ? now : null,
+          lastAssignedAt: now,
+          lastAssignedBy: req.user._id,
+        },
+      };
+      if (isClaiming && ticket.status === "open") {
+        assignmentUpdate.$set.status = "in_progress";
+        ticket.status = "in_progress";
+      }
+      if (!isClaiming) {
+        assignmentUpdate.$set.unreadForSupport = 1;
+        assignmentUpdate.$inc = { handoffCount: 1 };
+        ticket.unreadForSupport = 1;
+      }
+      const assignmentResult = await SupportTicket.updateOne(
+        {
+          _id: ticket._id,
+          assignedTo: isClaiming ? null : req.user._id,
+        },
+        assignmentUpdate,
+      );
+      if (!assignmentResult.matchedCount) {
+        throw new ApiError(
+          409,
+          isClaiming
+            ? "Another support agent claimed this ticket first"
+            : "This ticket is no longer assigned to you",
+        );
+      }
+      ticket.assignedTo = isClaiming ? req.user._id : null;
+      ticket.claimedAt = isClaiming ? now : null;
+      ticket.lastAssignedAt = now;
+      ticket.lastAssignedBy = req.user._id;
+      if (!isClaiming) {
+        ticket.handoffCount = Number(ticket.handoffCount || 0) + 1;
+        handoffMessage = await SupportMessage.create({
+          ticket: ticket._id,
+          sender: req.user._id,
+          senderRole: req.user.role,
+          body: `Handoff: ${handoffReason}`,
+          internalNote: true,
+        });
+      }
+      delete changes.assignedTo;
+    }
   }
-  Object.assign(ticket, payload);
-  if (payload.status === "resolved") ticket.resolvedAt = new Date();
-  if (payload.status === "closed") ticket.closedAt = new Date();
-  if (payload.status && !["resolved", "closed"].includes(payload.status)) {
+
+  if (changes.assignedTo) {
+    const agent = await User.exists({
+      _id: changes.assignedTo,
+      role: { $in: ["admin", "support"] },
+      status: "active",
+    });
+    if (!agent) throw new ApiError(400, "Assigned user is not an active support agent");
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(changes, "assignedTo") &&
+    String(changes.assignedTo || "") !== currentOwnerId
+  ) {
+    ticket.lastAssignedAt = new Date();
+    ticket.lastAssignedBy = req.user._id;
+    ticket.claimedAt = changes.assignedTo ? new Date() : null;
+    if (changes.assignedTo && ticket.status === "open") {
+      changes.status = "in_progress";
+    }
+    if (!changes.assignedTo && currentOwnerId) {
+      ticket.handoffCount = Number(ticket.handoffCount || 0) + 1;
+      ticket.unreadForSupport = Math.max(
+        1,
+        Number(ticket.unreadForSupport || 0),
+      );
+      if (handoffReason) {
+        handoffMessage = await SupportMessage.create({
+          ticket: ticket._id,
+          sender: req.user._id,
+          senderRole: req.user.role,
+          body: `Handoff: ${handoffReason}`,
+          internalNote: true,
+        });
+      }
+    }
+  }
+  Object.assign(ticket, changes);
+  if (changes.status === "resolved") ticket.resolvedAt = new Date();
+  if (changes.status === "closed") ticket.closedAt = new Date();
+  if (changes.status && !["resolved", "closed"].includes(changes.status)) {
     ticket.resolvedAt = null;
     ticket.closedAt = null;
   }
   await ticket.save();
   const updated = await populatedTicket(SupportTicket.findById(ticket._id));
-  const data = { ticket: mapTicket(updated) };
+  if (handoffMessage) {
+    handoffMessage = await SupportMessage.findById(handoffMessage._id).populate(
+      "sender",
+      "name email avatar role",
+    );
+  }
+  const data = {
+    ticket: mapTicket(updated),
+    ...(handoffMessage ? { message: mapMessage(handoffMessage) } : {}),
+  };
   emitSupportEvent({ ticket: updated, event: "support:ticket-updated", data });
   return res.json(new ApiResponse({ message: "Support ticket updated", data }));
+});
+
+export const deleteResolvedSupportTicket = asyncHandler(async (req, res) => {
+  const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
+  const ownerId = String(ticket.assignedTo?._id || ticket.assignedTo || "");
+  if (ownerId !== String(req.user._id)) {
+    throw new ApiError(403, "Only the assigned support agent can delete this conversation");
+  }
+  if (!["resolved", "closed"].includes(ticket.status)) {
+    throw new ApiError(400, "Resolve or close this ticket before deleting it");
+  }
+
+  ticket.deletedAt = new Date();
+  ticket.deletedBy = req.user._id;
+  await ticket.save();
+
+  const data = {
+    ticket: {
+      ...mapTicket(ticket),
+      deletedAt: ticket.deletedAt,
+    },
+  };
+  emitSupportEvent({ ticket, event: "support:ticket-deleted", data });
+  return res.json(
+    new ApiResponse({
+      message: "Completed support conversation deleted",
+      data,
+    }),
+  );
 });

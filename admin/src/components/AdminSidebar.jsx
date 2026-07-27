@@ -17,6 +17,7 @@ import {
   MessageSquareHeart,
   Landmark,
   Headphones,
+  UsersRound,
 } from "lucide-react";
 import { NavLink } from "react-router";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -36,6 +37,7 @@ const menuItems = [
   { key: "coupons", icon: Ticket, path: "/coupons" },
   { key: "messages", icon: Mail, path: "/messages" },
   { key: "support", icon: Headphones, path: "/support" },
+  { key: "supportStaff", icon: UsersRound, path: "/support-staff" },
   { key: "reports", icon: BarChart3, path: "/reports" },
   { key: "feedback", icon: MessageSquareHeart, path: "/feedback" },
   { key: "settings", icon: Settings, path: "/settings" },
