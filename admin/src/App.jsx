@@ -6,7 +6,7 @@ import {
   Navigate,
   Outlet,
   useLocation,
-} from "react-router-dom";
+} from "react-router";
 import AdminLayout from "./layouts/AdminLayout";
 import { enableAdminPushNotifications } from "../services/pushNotifications.js";
 import { useAdminI18n } from "./i18n/AdminI18nContext.jsx";

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router";
 import Footer from "./components/Footer.jsx";
 import Header from "./components/Header.jsx";
 import { translations } from "./data/translations.js";

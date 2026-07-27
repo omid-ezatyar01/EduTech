@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router";
 import VerifyHome from "./pages/VerifyHome";
 import VerifyResult from "./pages/VerifyResult";
 import NotFound from "./pages/NotFound";

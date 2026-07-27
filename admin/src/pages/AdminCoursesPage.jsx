@@ -23,7 +23,7 @@ import {
   formatDisplayCurrencyAmount,
   getDisplayCurrency,
 } from "../utils/currencyDisplay.js";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import {
   approveCourseCancellationRequest,
   approveCourseEndRequest,

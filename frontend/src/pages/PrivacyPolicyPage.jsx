@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router";
 import { legalContent } from "../data/legalContent.js";
 
 export default function PrivacyPolicyPage({ language = "fa" }) {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import StudentSidebar from "./StudentSidebar";
 import StudentTopbar from "./StudentTopbar";
 

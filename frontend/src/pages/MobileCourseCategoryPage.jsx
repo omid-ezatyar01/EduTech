@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import CourseCatalogCard from "../components/CourseCatalogCard.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import {

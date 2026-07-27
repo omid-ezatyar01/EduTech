@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CreditCard, Receipt, FileText, Clock, BadgeCheck } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import PaymentStatsCard from "./PaymentStatsCard.jsx";
 import PaymentFilterBar from "./PaymentFilterBar.jsx";

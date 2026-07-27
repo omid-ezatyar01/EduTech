@@ -18,7 +18,7 @@ import {
   Landmark,
   Headphones,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 
 const menuItems = [

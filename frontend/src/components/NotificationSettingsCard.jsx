@@ -1,5 +1,5 @@
 import { Bell, BellRing } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 export default function NotificationSettingsCard({ language = "fa" }) {
   const isFa = language === "fa";

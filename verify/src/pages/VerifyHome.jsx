@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import Logo from "../components/Logo";
 import VerifyForm from "../components/VerifyForm";
 

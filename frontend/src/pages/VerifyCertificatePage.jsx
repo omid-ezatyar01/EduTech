@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import VerifyCertificateCard from "../components/VerifyCertificateCard.jsx";
 
 export default function VerifyCertificatePage() {

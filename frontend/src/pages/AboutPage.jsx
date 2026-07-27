@@ -17,7 +17,7 @@ import {
   Sparkles,
   UsersRound,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { fetchPublicPlatformStats } from "../../services/courseService.js";
 
 const pageData = {

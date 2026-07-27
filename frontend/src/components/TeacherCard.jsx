@@ -1,6 +1,6 @@
 import { Share2, Star } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { resolveAvatarUrl } from "../utils/avatar";
 import { buildTeacherPath } from "../utils/routePaths";
 import { shareContent } from "../utils/share";

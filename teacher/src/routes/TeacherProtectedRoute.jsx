@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router";
 import { fetchTeacherAccessProfile } from "../../services/teacherPortalService";
 import { getAuthUser, isTeacherAuthenticated } from "../../services/portal.js";
 import TeacherPageLoader from "../components/common/TeacherPageLoader.jsx";

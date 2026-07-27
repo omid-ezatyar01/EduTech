@@ -1,6 +1,6 @@
 import { MessageCircle, Send, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { streamPlatformAiChatMessage } from "../../../services/aiChatService.js";
 import { getAuthUser } from "../../../services/portal.js";
 

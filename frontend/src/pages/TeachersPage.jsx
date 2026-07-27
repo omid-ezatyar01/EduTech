@@ -15,7 +15,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import TeacherCard from "../components/TeacherCard.jsx";
 import { fetchPublicPlatformStats } from "../../services/courseService.js";
 import {

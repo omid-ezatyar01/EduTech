@@ -12,7 +12,7 @@ import {
   Landmark,
   X,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 import { getApiBase } from "../../services/http.js";
 import {

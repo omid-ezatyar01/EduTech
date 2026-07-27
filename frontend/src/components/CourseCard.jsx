@@ -11,7 +11,7 @@ import {
   Share2,
   UsersRound,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import {
   createCheckout,
   getCourseBankPaymentDetails,

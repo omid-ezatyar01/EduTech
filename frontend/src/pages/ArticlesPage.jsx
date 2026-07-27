@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, Clock3, Eye, Search, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { fetchArticles, resolveArticleCoverUrl } from "../../services/articleService.js";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router";
 import { resolveAvatarUrl } from "../utils/avatar";
 import { clearAuth, getAuthUser } from "../../services/portal";
 import {

@@ -1,5 +1,5 @@
 import { Headphones } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 export default function AssignmentHelpCard({ language = "fa" }) {
   const isFa = language === "fa";

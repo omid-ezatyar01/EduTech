@@ -5,7 +5,7 @@ import {
   Home,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 export default function StudentTopbar({ onMenuClick, language = "fa" }) {
   const [isLangOpen, setIsLangOpen] = useState(false);

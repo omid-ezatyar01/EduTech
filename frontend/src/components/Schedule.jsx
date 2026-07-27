@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarCheck2, Loader2 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import WeeklyTimetable from "./WeeklyTimetable.jsx";
 import ScheduleUpcomingTable from "./ScheduleUpcomingTable.jsx";

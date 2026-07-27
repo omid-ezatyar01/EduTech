@@ -15,7 +15,7 @@ import {
   MessageSquareHeart,
   Headphones,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router";
 
 const menuItems = [
   { key: "dashboard", labelFa: "داشبورد", labelEn: "Dashboard", path: "/teacher/dashboard", icon: Home },

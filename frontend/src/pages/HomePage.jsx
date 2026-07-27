@@ -20,7 +20,7 @@ import {
   Users,
   Video,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import CourseCard from "../components/CourseCard.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import SectionTitle from "../components/SectionTitle.jsx";

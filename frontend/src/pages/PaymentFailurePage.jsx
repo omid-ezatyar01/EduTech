@@ -1,5 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 
 export default function PaymentFailurePage() {
   const [searchParams] = useSearchParams();

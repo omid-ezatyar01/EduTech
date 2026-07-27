@@ -14,7 +14,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import CourseCatalogCard from "../components/CourseCatalogCard.jsx";
 import {
   fetchPublicCategories,

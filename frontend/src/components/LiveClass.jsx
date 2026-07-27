@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Star, Video } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import CurrentLiveClassCard from "./CurrentLiveClassCard.jsx";
 import CountdownCard from "./CountdownCard.jsx";

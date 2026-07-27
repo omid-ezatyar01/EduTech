@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router";
 import { clearAuth } from "../../services/portal";
 
 function LanguageSwitcher({ language, onLanguageChange, t }) {

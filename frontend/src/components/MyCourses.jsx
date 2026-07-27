@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, Info, Headphones } from "lucide-react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import CourseFilterTabs from "./CourseFilterTabs.jsx";
 import StudentCourseCard from "./StudentCourseCard.jsx";

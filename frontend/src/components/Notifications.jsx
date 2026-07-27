@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, CalendarCheck2, CheckCheck, GraduationCap, Video } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import { fetchTeacherNotifications, markAllTeacherNotificationsRead, markTeacherNotificationRead } from "../../services/teacherSocialService.js";
 import { resolveAvatarUrl } from "../utils/avatar.js";

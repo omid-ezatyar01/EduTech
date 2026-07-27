@@ -8,7 +8,7 @@ import {
   Mail,
   ShieldCheck,
 } from "lucide-react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router";
 import TeacherAuthLayout from "../layouts/TeacherAuthLayout";
 import TeacherAuthVisual from "../components/auth/TeacherAuthVisual";
 import TeacherAuthInput from "../components/auth/TeacherAuthInput";

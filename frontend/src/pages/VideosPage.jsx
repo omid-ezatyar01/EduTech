@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, BellRing, Bookmark, ChevronDown, ExternalLink, Heart, Play, RefreshCw, Share2, Sparkles, Video } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router";
 import { fetchPublicVideo, fetchPublicVideos, fetchVideoSocialState, toggleVideoLike, toggleVideoSave } from "../../services/videoService.js";
 import { fetchTeacherFollowStatus, followTeacher, unfollowTeacher } from "../../services/teacherSocialService.js";
 import { enableEduTechPushNotifications } from "../../services/pushNotifications.js";

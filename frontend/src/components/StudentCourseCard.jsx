@@ -7,7 +7,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { resolveAvatarUrl } from "../utils/avatar";
 
 const COURSE_IMAGE_FALLBACK = "/logo.png";

@@ -6,7 +6,7 @@ import {
   Headphones,
   Image as ImageIcon,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import ResourceStatsCard from "./ResourceStatsCard.jsx";
 import ResourceFilterBar from "./ResourceFilterBar.jsx";

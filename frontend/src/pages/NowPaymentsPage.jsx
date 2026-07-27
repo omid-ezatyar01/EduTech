@@ -10,7 +10,7 @@ import {
   Wallet,
 } from "lucide-react";
 import QRCode from "qrcode";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 import {
   getPaymentAttemptStatus,

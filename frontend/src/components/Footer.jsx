@@ -1,5 +1,5 @@
 import { Mail, MapPin } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import SocialBrandIcon from "./SocialBrandIcon.jsx";
 
 const WHATSAPP_NUMBER = "93772305458";

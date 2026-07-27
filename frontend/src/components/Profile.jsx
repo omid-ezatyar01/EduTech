@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { User } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import ProfileForm from "./ProfileForm.jsx";
 import LearningStatsCard from "./LearningStatsCard.jsx";

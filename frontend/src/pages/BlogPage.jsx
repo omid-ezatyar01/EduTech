@@ -14,7 +14,7 @@ import {
   Target,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 const roadmaps = [
   {

@@ -8,7 +8,7 @@ import {
   Send,
   ShieldCheck,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import FAQAccordion from "../components/FAQAccordion.jsx";
 import CTASection from "../components/CTASection.jsx";
 import SocialBrandIcon from "../components/SocialBrandIcon.jsx";

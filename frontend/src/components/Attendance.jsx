@@ -9,7 +9,7 @@ import {
   UserCheck,
   UserX,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import { fetchStudentAttendance } from "../../services/courseService.js";
 import { clearAuth, getAuthUser, setAuthNotice } from "../../services/portal.js";

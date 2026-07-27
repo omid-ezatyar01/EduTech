@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock3, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import TeacherLayout from "../layouts/TeacherLayout";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
 import { fetchTeacherProfile, updateTeacherProfile } from "../../services/teacherPortalService";

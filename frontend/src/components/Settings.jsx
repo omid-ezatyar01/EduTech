@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import StudentLayout from "./StudentLayout";
 import SettingsCategoryCard from "./SettingsCategoryCard";
 import AccountSecurityModal from "./AccountSecurityModal";

@@ -18,7 +18,7 @@ import {
   Eye,
   Video,
 } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 import TeacherHero from "../components/TeacherHero.jsx";
 import TeacherStats from "../components/TeacherStats.jsx";
 import CourseCard from "../components/CourseCard.jsx";

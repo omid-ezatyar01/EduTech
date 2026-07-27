@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Clock } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 export default function CourseProgressCard({ course, language = "fa" }) {
   const isActive = course.status === "active";

@@ -1,5 +1,5 @@
 import { Headset } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 export default function HelpCard({ compact = false, language = "fa" }) {
   const isFa = language === "fa";

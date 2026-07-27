@@ -3,7 +3,7 @@ import {
   Headphones, LayoutGrid, MessageCircle, Mic2, Route, Sparkles, Target,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { fetchPublicCategories, fetchPublishedCourses } from "../../services/courseService.js";
 import { buildCoursePath } from "../utils/routePaths.js";
 

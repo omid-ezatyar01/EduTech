@@ -15,7 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { formatDisplayCurrencyAmount } from "../utils/currencyDisplay.js";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import {
   fetchStudentAssignments,

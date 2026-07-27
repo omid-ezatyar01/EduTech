@@ -6,7 +6,7 @@ import {
   CheckCircle,
   HelpCircle,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import StudentLayout from "./StudentLayout.jsx";
 import AssignmentStatsCard from "./AssignmentStatsCard.jsx";
 import AssignmentItem from "./AssignmentItem.jsx";

@@ -12,8 +12,8 @@ import {
   RefreshCw,
   TrendingUp,
 } from "lucide-react";
-import { Link } from "react-router-dom";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router";
+import { useNavigate } from "react-router";
 import StudentLayout from "../components/StudentLayout.jsx";
 import DashboardStatCard from "../components/DashboardStatCard.jsx";
 import TodayClassCard from "../components/TodayClassCard.jsx";

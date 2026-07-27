@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 import LoadingSpinner from "../components/LoadingSpinner";
 import Logo from "../components/Logo";
 import ResultCard from "../components/ResultCard";
