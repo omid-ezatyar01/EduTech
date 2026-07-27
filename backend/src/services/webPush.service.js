@@ -2,6 +2,7 @@ import webPush from "web-push";
 import PushSubscription from "../models/PushSubscription.js";
 import User from "../models/User.js";
 import SupportStaffProfile from "../modules/supportStaff/SupportStaffProfile.js";
+import { isSupportUserOnline } from "./supportRealtime.service.js";
 import {
   SPECIALIZATION_CATEGORIES,
   SUPPORT_SPECIALIZATIONS,
@@ -24,6 +25,35 @@ const compactTextForPush = (value = "", maxLength = 120) => {
   return text.length > maxLength
     ? `${text.slice(0, maxLength - 1).trim()}…`
     : text;
+};
+
+const entityId = (value) =>
+  String(value?._id || value?.id || value || "").trim();
+
+const pushCooldowns = new Map();
+
+const reservePushAudience = ({
+  userIds = [],
+  notificationKey,
+  cooldownMs,
+} = {}) => {
+  const now = Date.now();
+  const allowed = new Set();
+  [...new Set(userIds.map(entityId).filter(Boolean))].forEach((userId) => {
+    const key = `${userId}:${notificationKey}`;
+    const lastSentAt = Number(pushCooldowns.get(key) || 0);
+    if (now - lastSentAt < cooldownMs) return;
+    pushCooldowns.set(key, now);
+    allowed.add(userId);
+  });
+
+  if (pushCooldowns.size > 5_000) {
+    const oldestAllowedAt = now - 24 * 60 * 60 * 1_000;
+    pushCooldowns.forEach((value, key) => {
+      if (Number(value) < oldestAllowedAt) pushCooldowns.delete(key);
+    });
+  }
+  return allowed;
 };
 
 export const getWebPushPublicKey = () => String(process.env.WEB_PUSH_VAPID_PUBLIC_KEY || "").trim();
@@ -174,6 +204,26 @@ const supportSpecializationsForCategory = (category = "") =>
     return categories.length === 0 || categories.includes(category);
   });
 
+export const resolveSupportNotificationAudience = ({
+  ticket = {},
+  specializationUserIds = [],
+} = {}) => {
+  const assignedUserId = entityId(ticket?.assignedTo);
+  if (assignedUserId) {
+    return {
+      assigned: true,
+      userIds: [assignedUserId],
+    };
+  }
+
+  return {
+    assigned: false,
+    userIds: [
+      ...new Set(specializationUserIds.map(entityId).filter(Boolean)),
+    ],
+  };
+};
+
 export const notifySupportStaffForTicket = async ({
   ticket = {},
   message = {},
@@ -184,11 +234,19 @@ export const notifySupportStaffForTicket = async ({
   }
 
   const category = String(ticket?.category || "other");
-  const specializations = supportSpecializationsForCategory(category);
-  const profiles = await SupportStaffProfile.find({
-    specialization: { $in: specializations },
-  }).select("user").lean();
-  const userIds = profiles.map((profile) => profile.user).filter(Boolean);
+  const assignedUserId = entityId(ticket?.assignedTo);
+  let specializationUserIds = [];
+  if (!assignedUserId) {
+    const specializations = supportSpecializationsForCategory(category);
+    const profiles = await SupportStaffProfile.find({
+      specialization: { $in: specializations },
+    }).select("user").lean();
+    specializationUserIds = profiles.map((profile) => profile.user);
+  }
+  const { userIds } = resolveSupportNotificationAudience({
+    ticket,
+    specializationUserIds,
+  });
   if (!userIds.length) return { sent: 0, failed: 0 };
 
   const subscriptions = await PushSubscription.find({
@@ -199,31 +257,50 @@ export const notifySupportStaffForTicket = async ({
     .populate("userId", "status role")
     .lean();
   const recipients = subscriptions.filter(
-    (row) => row.userId?.status === "active" && row.userId?.role === "support",
+    (row) =>
+      row.userId?.status === "active" &&
+      row.userId?.role === "support" &&
+      !isSupportUserOnline(entityId(row.userId)),
   );
   if (!recipients.length) return { sent: 0, failed: 0 };
 
   const ticketNumber = String(ticket?.ticketNumber || "");
   const subject = String(ticket?.subject || "Support request");
   const requesterName = String(ticket?.requester?.name || "A user");
+  const requesterRole = String(ticket?.requesterRole || ticket?.requester?.role || "");
+  const requesterLabel = requesterRole === "teacher" ? "Teacher" : "Student";
   const messagePreview = compactTextForPush(message?.body || ticket?.lastMessagePreview, 120);
+  const ticketId = String(ticket?._id || ticket?.id || "");
+  const allowedUserIds = reservePushAudience({
+    userIds: recipients.map((row) => row.userId),
+    notificationKey: `ticket:${ticketId}`,
+    cooldownMs: kind === "new_ticket" ? 10_000 : 30_000,
+  });
+  const eligibleRecipients = recipients.filter((row) =>
+    allowedUserIds.has(entityId(row.userId)),
+  );
+  if (!eligibleRecipients.length) {
+    return { sent: 0, failed: 0, skipped: true, reason: "online_or_throttled" };
+  }
   const payload = {
     type: kind === "new_ticket" ? "support_ticket_created" : "support_ticket_message",
     title: kind === "new_ticket" ? `New ${subject} ticket` : `New reply: ${subject}`,
-    body: `${requesterName}${messagePreview ? `: ${messagePreview}` : ""}`,
+    body: `${requesterName} · ${requesterLabel}${messagePreview ? `: ${messagePreview}` : ""}`,
     icon: "/icons/web-app-manifest-192x192.png",
     badge: "/icons/favicon-96x96.png",
-    url: `/support-team?ticket=${encodeURIComponent(String(ticket?._id || ticket?.id || ""))}`,
-    ticketId: String(ticket?._id || ticket?.id || ""),
+    tag: `support-ticket-${ticketId}`,
+    url: `/support-team?ticket=${encodeURIComponent(ticketId)}`,
+    ticketId,
     ticketNumber,
     category,
+    requesterRole,
   };
 
   let sent = 0;
   let failed = 0;
-  for (let index = 0; index < recipients.length; index += 50) {
+  for (let index = 0; index < eligibleRecipients.length; index += 50) {
     const results = await Promise.all(
-      recipients.slice(index, index + 50).map((row) => sendToSubscription(row, payload)),
+      eligibleRecipients.slice(index, index + 50).map((row) => sendToSubscription(row, payload)),
     );
     sent += results.filter((result) => result.ok).length;
     failed += results.filter((result) => !result.ok).length;
@@ -258,20 +335,39 @@ export const notifySupportTeamChatMessage = async ({
     userId: { $in: userIds },
   }).lean();
   const conversation = recipientId ? String(senderId || "") : "general";
+  const offlineRecipients = recipients.filter(
+    (row) => !isSupportUserOnline(entityId(row.userId)),
+  );
+  const allowedUserIds = reservePushAudience({
+    userIds: offlineRecipients.map((row) => row.userId),
+    notificationKey: recipientId
+      ? `team-direct:${conversation}`
+      : "team-general",
+    cooldownMs: recipientId ? 30_000 : 2 * 60_000,
+  });
+  const eligibleRecipients = offlineRecipients.filter((row) =>
+    allowedUserIds.has(entityId(row.userId)),
+  );
+  if (!eligibleRecipients.length) {
+    return { sent: 0, failed: 0, skipped: true, reason: "online_or_throttled" };
+  }
   const payload = {
     type: "support_team_message",
     title: `Support team · ${senderName}`,
     body: compactTextForPush(body, 140),
     icon: "/icons/web-app-manifest-192x192.png",
     badge: "/icons/favicon-96x96.png",
+    tag: recipientId
+      ? `support-team-direct-${conversation}`
+      : "support-team-general",
     url: `/support-team?conversation=${encodeURIComponent(conversation)}`,
   };
 
   let sent = 0;
   let failed = 0;
-  for (let index = 0; index < recipients.length; index += 50) {
+  for (let index = 0; index < eligibleRecipients.length; index += 50) {
     const results = await Promise.all(
-      recipients.slice(index, index + 50).map((row) => sendToSubscription(row, payload)),
+      eligibleRecipients.slice(index, index + 50).map((row) => sendToSubscription(row, payload)),
     );
     sent += results.filter((result) => result.ok).length;
     failed += results.filter((result) => !result.ok).length;

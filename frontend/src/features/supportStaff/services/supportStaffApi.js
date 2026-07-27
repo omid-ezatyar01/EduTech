@@ -48,6 +48,17 @@ export const sendSupportStaffMessage = (ticketId, body, internalNote = false) =>
     body: JSON.stringify({ body, internalNote }),
   });
 
+export const updateSupportStaffMessage = (ticketId, messageId, body) =>
+  request(`/support-staff/tickets/${encodeURIComponent(ticketId)}/messages/${encodeURIComponent(messageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ body }),
+  });
+
+export const deleteSupportStaffMessage = (ticketId, messageId) =>
+  request(`/support-staff/tickets/${encodeURIComponent(ticketId)}/messages/${encodeURIComponent(messageId)}`, {
+    method: "DELETE",
+  });
+
 export const updateSupportStaffTicket = (ticketId, changes) =>
   request(`/support-staff/tickets/${encodeURIComponent(ticketId)}`, {
     method: "PATCH",
@@ -93,6 +104,17 @@ export const sendSupportTeamChatMessage = (conversationId, body) =>
     },
   );
 
+export const updateSupportTeamChatMessage = (messageId, body) =>
+  request(`/support-staff/team/messages/${encodeURIComponent(messageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ body }),
+  });
+
+export const deleteSupportTeamChatMessage = (messageId) =>
+  request(`/support-staff/team/messages/${encodeURIComponent(messageId)}`, {
+    method: "DELETE",
+  });
+
 export const markSupportTeamConversationRead = (conversationId) =>
   request(
     `/support-staff/team/conversations/${encodeURIComponent(conversationId)}/read`,
@@ -102,9 +124,10 @@ export const markSupportTeamConversationRead = (conversationId) =>
 export const connectSupportStaffSocket = () => {
   const origin = getApiBase().replace(/\/api\/v\d+$/i, "");
   return io(origin, {
-    path: "/support-socket",
+    path: "/api/support-socket",
     auth: { token: getSupportStaffToken() },
-    transports: ["websocket", "polling"],
+    transports: ["polling", "websocket"],
+    upgrade: true,
     reconnection: true,
   });
 };

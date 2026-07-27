@@ -194,7 +194,7 @@ function AppContent() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    enableAdminPushNotifications().catch((error) => {
+    enableAdminPushNotifications({ promptIfNeeded: false }).catch((error) => {
       console.warn(`Admin push notification setup failed: ${error.message}`);
     });
   }, [isAuthenticated]);

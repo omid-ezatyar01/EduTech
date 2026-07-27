@@ -68,6 +68,20 @@ export const savePushSubscription = async (req, res) => {
     },
   );
 
+  const extraSubscriptions = await PushSubscription.find({
+    userId: req.user._id,
+    app: value.app,
+  })
+    .sort({ lastSubscribedAt: -1, _id: -1 })
+    .skip(5)
+    .select("_id")
+    .lean();
+  if (extraSubscriptions.length) {
+    await PushSubscription.deleteMany({
+      _id: { $in: extraSubscriptions.map((subscription) => subscription._id) },
+    });
+  }
+
   return res.json(
     new ApiResponse({
       message: "Push subscription saved successfully",

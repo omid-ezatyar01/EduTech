@@ -5,9 +5,11 @@ import {
   CheckCheck,
   Headphones,
   MessageCircle,
+  Pencil,
   Plus,
   Search,
   Send,
+  Trash2,
   Wifi,
   WifiOff,
   X,
@@ -17,10 +19,12 @@ import { getAuthUser } from "../../services/portal.js";
 import {
   connectSupportSocket,
   createSupportTicket,
+  deleteSupportMessage,
   fetchMySupportTickets,
   fetchSupportTicket,
   markSupportTicketRead,
   sendSupportMessage,
+  updateSupportMessage,
 } from "../../services/supportService.js";
 import {
   buildSupportCacheKey,
@@ -281,6 +285,8 @@ export default function StudentSupportPage({ language = "fa" }) {
     };
 
     socket.on("support:message", mergeMessage);
+    socket.on("support:message-updated", refreshTicket);
+    socket.on("support:message-deleted", refreshTicket);
     socket.on("support:ticket-updated", refreshTicket);
     socket.on("support:ticket-created", refreshTicket);
     socket.on("support:ticket-deleted", refreshTicket);
@@ -360,6 +366,36 @@ export default function StudentSupportPage({ language = "fa" }) {
       await loadTickets();
     } catch (err) {
       setDraft(body);
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const editMessage = async (message) => {
+    const body = window.prompt(
+      isFa ? "پیام را ویرایش کنید" : "Edit message",
+      message.body,
+    )?.trim();
+    if (!body || body === message.body) return;
+    setBusy(true);
+    try {
+      await updateSupportMessage(selectedId, message.id, body);
+      await Promise.all([loadConversation(selectedId), loadTickets()]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeMessage = async (message) => {
+    if (!window.confirm(isFa ? "این پیام حذف شود؟" : "Delete this message?")) return;
+    setBusy(true);
+    try {
+      await deleteSupportMessage(selectedId, message.id);
+      await Promise.all([loadConversation(selectedId), loadTickets()]);
+    } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
@@ -569,6 +605,7 @@ export default function StudentSupportPage({ language = "fa" }) {
                             {message.body}
                           </p>
                           <span className="mt-1 flex items-center justify-end gap-1 ps-8 text-[9px] font-semibold text-slate-500">
+                            {message.editedAt ? (isFa ? "ویرایش‌شده ·" : "edited ·") : null}
                             {formatMessageTime(message.createdAt, isFa)}
                             {own ? (
                               <CheckCheck
@@ -577,6 +614,12 @@ export default function StudentSupportPage({ language = "fa" }) {
                               />
                             ) : null}
                           </span>
+                          {own ? (
+                            <span className="mt-1 flex justify-end gap-1">
+                              <button type="button" disabled={busy} onClick={() => editMessage(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button>
+                              <button type="button" disabled={busy} onClick={() => removeMessage(message)} className="grid h-6 w-6 place-items-center rounded-full text-rose-600 hover:bg-rose-50" aria-label={isFa ? "حذف" : "Delete"}><Trash2 size={12} /></button>
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     );

@@ -31,22 +31,23 @@ const saveSubscription = async (subscription) => {
   await parseJsonResponse(response);
 };
 
-export const enableCoursePushNotifications = async () => {
+export const enableCoursePushNotifications = async ({ promptIfNeeded = true } = {}) => {
   if (typeof window === "undefined") return false;
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
     return false;
   }
 
-  const publicKey = await fetchVapidPublicKey();
-  if (!publicKey) return false;
-
   let permission = Notification.permission;
   if (permission === "default") {
+    if (!promptIfNeeded) return false;
     if (readLocalStorage(PROMPTED_KEY) === "true") return false;
     writeLocalStorage(PROMPTED_KEY, "true");
     permission = await Notification.requestPermission();
   }
   if (permission !== "granted") return false;
+
+  const publicKey = await fetchVapidPublicKey();
+  if (!publicKey) return false;
 
   await navigator.serviceWorker.register("/edutech-teacher-push-sw.js");
   const readyRegistration = await navigator.serviceWorker.ready;

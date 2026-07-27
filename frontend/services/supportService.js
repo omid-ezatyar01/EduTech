@@ -21,15 +21,25 @@ export const sendSupportMessage = (id, body) =>
     method: "POST",
     body: JSON.stringify({ body }),
   });
+export const updateSupportMessage = (ticketId, messageId, body) =>
+  request(`/support/tickets/${encodeURIComponent(ticketId)}/messages/${encodeURIComponent(messageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ body }),
+  });
+export const deleteSupportMessage = (ticketId, messageId) =>
+  request(`/support/tickets/${encodeURIComponent(ticketId)}/messages/${encodeURIComponent(messageId)}`, {
+    method: "DELETE",
+  });
 export const markSupportTicketRead = (id) =>
   request(`/support/tickets/${encodeURIComponent(id)}/read`, { method: "PATCH" });
 
 export const connectSupportSocket = () => {
   const origin = getApiBase().replace(/\/api\/v\d+$/i, "");
   return io(origin, {
-    path: "/support-socket",
+    path: "/api/support-socket",
     auth: { token: getToken() },
-    transports: ["websocket", "polling"],
+    transports: ["polling", "websocket"],
+    upgrade: true,
     reconnection: true,
   });
 };

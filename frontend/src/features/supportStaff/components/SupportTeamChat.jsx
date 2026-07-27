@@ -3,11 +3,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Check,
   Hash,
   MessageSquare,
+  Pencil,
   Search,
   Send,
+  Trash2,
   Users,
+  X,
 } from "lucide-react";
 import { resolveAvatarUrl } from "../../../utils/avatar.js";
 import {
@@ -17,8 +21,10 @@ import {
 } from "../../../utils/supportPageCache.js";
 import {
   fetchSupportTeamMessages,
+  deleteSupportTeamChatMessage,
   markSupportTeamConversationRead,
   sendSupportTeamChatMessage,
+  updateSupportTeamChatMessage,
 } from "../services/supportStaffApi.js";
 import { useSupportStaffLanguage } from "../services/supportStaffLanguageContext.js";
 import { supportStaffRoleLabel } from "../services/supportStaffRoles.js";
@@ -53,6 +59,9 @@ export default function SupportTeamChat({
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [actionBusy, setActionBusy] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [editingBody, setEditingBody] = useState("");
   const [error, setError] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopLayout] = useState(
@@ -121,6 +130,40 @@ export default function SupportTeamChat({
     refreshToken,
     selectedConversation,
   ]);
+
+  useEffect(() => {
+    const update = (event) => {
+      const message = event.detail;
+      if (!message?.id || !belongsToConversation(message, selectedConversation, agent)) return;
+      setMessages((current) => {
+        const next = current.map((row) => row.id === message.id ? message : row);
+        writeSupportPageCache(conversationCacheKey, next);
+        return next;
+      });
+    };
+    const remove = (event) => {
+      const messageId = event.detail?.messageId;
+      if (!messageId) return;
+      setMessages((current) => {
+        const next = current.filter((row) => row.id !== messageId);
+        writeSupportPageCache(conversationCacheKey, next);
+        return next;
+      });
+    };
+    const clearGeneral = () => {
+      if (selectedConversation !== "general") return;
+      setMessages([]);
+      writeSupportPageCache(conversationCacheKey, []);
+    };
+    window.addEventListener("edutech-support-team-message-updated", update);
+    window.addEventListener("edutech-support-team-message-deleted", remove);
+    window.addEventListener("edutech-support-team-general-cleared", clearGeneral);
+    return () => {
+      window.removeEventListener("edutech-support-team-message-updated", update);
+      window.removeEventListener("edutech-support-team-message-deleted", remove);
+      window.removeEventListener("edutech-support-team-general-cleared", clearGeneral);
+    };
+  }, [agent, conversationCacheKey, selectedConversation]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -196,6 +239,52 @@ export default function SupportTeamChat({
   const closeConversation = () => {
     setMobileOpen(false);
     onMobileDetailChange?.(false);
+  };
+
+  const startEdit = (message) => {
+    setEditingId(message.id);
+    setEditingBody(message.body);
+  };
+
+  const saveEdit = async () => {
+    const body = editingBody.trim();
+    if (!editingId || !body) return;
+    setActionBusy(editingId);
+    try {
+      const data = await updateSupportTeamChatMessage(editingId, body);
+      if (data.message) {
+        setMessages((current) => {
+          const next = current.map((row) =>
+            row.id === data.message.id ? data.message : row,
+          );
+          writeSupportPageCache(conversationCacheKey, next);
+          return next;
+        });
+      }
+      setEditingId("");
+      setEditingBody("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionBusy("");
+    }
+  };
+
+  const removeMessage = async (message) => {
+    if (!window.confirm(isFa ? "این پیام حذف شود؟" : "Delete this message?")) return;
+    setActionBusy(message.id);
+    try {
+      await deleteSupportTeamChatMessage(message.id);
+      setMessages((current) => {
+        const next = current.filter((row) => row.id !== message.id);
+        writeSupportPageCache(conversationCacheKey, next);
+        return next;
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionBusy("");
+    }
   };
 
   return (
@@ -369,6 +458,14 @@ export default function SupportTeamChat({
                   specialization={senderMember?.specialization}
                   senderRole={message.sender?.role}
                   isFa={isFa}
+                  editing={editingId === message.id}
+                  editingBody={editingBody}
+                  busy={actionBusy === message.id}
+                  onEditingBodyChange={setEditingBody}
+                  onStartEdit={() => startEdit(message)}
+                  onCancelEdit={() => { setEditingId(""); setEditingBody(""); }}
+                  onSaveEdit={saveEdit}
+                  onDelete={() => removeMessage(message)}
                 />
               );
             })
@@ -484,6 +581,14 @@ function TeamMessage({
   specialization,
   senderRole,
   isFa,
+  editing,
+  editingBody,
+  busy,
+  onEditingBodyChange,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onDelete,
 }) {
   const isAdmin = senderRole === "admin";
   return (
@@ -509,12 +614,36 @@ function TeamMessage({
             ) : null}
           </div>
         ) : null}
-        <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">
-          {message.body}
-        </p>
+        {editing ? (
+          <div className="space-y-2">
+            <textarea
+              autoFocus
+              value={editingBody}
+              onChange={(event) => onEditingBodyChange(event.target.value)}
+              maxLength={4000}
+              rows={2}
+              className="w-full min-w-52 resize-none rounded-lg border border-emerald-300 bg-white p-2 text-sm outline-none"
+            />
+            <div className="flex justify-end gap-1">
+              <button type="button" onClick={onCancelEdit} className="grid h-7 w-7 place-items-center rounded-full bg-slate-100 text-slate-600"><X size={14} /></button>
+              <button type="button" disabled={busy || !editingBody.trim()} onClick={onSaveEdit} className="grid h-7 w-7 place-items-center rounded-full bg-emerald-600 text-white disabled:opacity-40"><Check size={14} /></button>
+            </div>
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">
+            {message.body}
+          </p>
+        )}
         <p className="mt-1 text-end text-[9px] font-semibold text-slate-500">
+          {message.editedAt ? (isFa ? "ویرایش‌شده · " : "edited · ") : ""}
           {formatMessageTime(message.createdAt, isFa)}
         </p>
+        {own && !editing ? (
+          <div className="mt-1 flex justify-end gap-1 opacity-70 transition hover:opacity-100">
+            <button type="button" disabled={busy} onClick={onStartEdit} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button>
+            <button type="button" disabled={busy} onClick={onDelete} className="grid h-6 w-6 place-items-center rounded-full text-rose-600 hover:bg-rose-50" aria-label={isFa ? "حذف" : "Delete"}><Trash2 size={12} /></button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

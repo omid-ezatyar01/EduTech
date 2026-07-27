@@ -51,9 +51,10 @@ export const markAdminSupportTicketRead = (id) =>
 export const connectSupportSocket = () => {
   const origin = getApiBase().replace(/\/api\/v\d+$/i, "");
   return io(origin, {
-    path: "/support-socket",
+    path: "/api/support-socket",
     auth: { token: getToken() },
-    transports: ["websocket", "polling"],
+    transports: ["polling", "websocket"],
+    upgrade: true,
     reconnection: true,
   });
 };

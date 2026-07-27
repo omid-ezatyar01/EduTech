@@ -23,8 +23,13 @@ self.addEventListener("push", (event) => {
   };
 
   const resolveTargetUrl = () => {
-    if (data.url) return data.url;
-    return defaultUrlByType[notificationType] || "/live-courses";
+    const fallback = defaultUrlByType[notificationType] || "/live-courses";
+    try {
+      const target = new URL(data.url || fallback, self.location.origin);
+      return target.origin === self.location.origin ? target.href : fallback;
+    } catch {
+      return fallback;
+    }
   };
 
   const title =
@@ -47,6 +52,12 @@ self.addEventListener("push", (event) => {
     body,
     icon: data.icon || "/icons/web-app-manifest-192x192.png",
     badge: data.badge || "/icons/favicon-96x96.png",
+    tag:
+      data.tag ||
+      `${notificationType || "edutech"}:${data.ticketId || data.courseId || data.teacherId || ""}`,
+    renotify: false,
+    requireInteraction: false,
+    timestamp: Date.now(),
     data: {
       url: resolveTargetUrl(),
       type: notificationType,
@@ -71,7 +82,7 @@ self.addEventListener("notificationclick", (event) => {
       if (existingClient) {
         return existingClient.navigate(target).then(() => existingClient.focus());
       }
-      return self.clients.openWindow(targetUrl);
+      return self.clients.openWindow(target);
     }),
   );
 });

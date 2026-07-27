@@ -19,7 +19,7 @@ function App() {
   useEffect(() => {
     const setupPushNotifications = () => {
       if (!isTeacherAuthenticated()) return;
-      enableCoursePushNotifications().catch((error) => {
+      enableCoursePushNotifications({ promptIfNeeded: false }).catch((error) => {
         console.warn(`Course push notification setup failed: ${error.message}`);
       });
     };

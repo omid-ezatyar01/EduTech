@@ -33,6 +33,10 @@ const supportTeamMessageSchema = new mongoose.Schema(
       minlength: 1,
       maxlength: 4000,
     },
+    editedAt: {
+      type: Date,
+      default: null,
+    },
     readBy: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

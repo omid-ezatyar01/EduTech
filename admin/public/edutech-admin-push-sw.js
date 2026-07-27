@@ -14,6 +14,9 @@ self.addEventListener("push", (event) => {
     tag: data.type
       ? `${data.type}:${data.courseId || data.teacherId || ""}`
       : "admin-review",
+    renotify: false,
+    requireInteraction: false,
+    timestamp: Date.now(),
     data: {
       url: data.url || "/",
       type: data.type || "",
@@ -30,16 +33,24 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || "/";
+  const requestedUrl = event.notification.data?.url || "/";
 
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clients) => {
-        const target = new URL(targetUrl, self.location.origin).href;
+        let target = self.location.origin;
+        try {
+          const requestedTarget = new URL(requestedUrl, self.location.origin);
+          if (requestedTarget.origin === self.location.origin) {
+            target = requestedTarget.href;
+          }
+        } catch {
+          // Keep the safe same-origin fallback.
+        }
         const existingClient = clients.find((client) => client.url === target);
         if (existingClient) return existingClient.focus();
-        return self.clients.openWindow(targetUrl);
+        return self.clients.openWindow(target);
       }),
   );
 });

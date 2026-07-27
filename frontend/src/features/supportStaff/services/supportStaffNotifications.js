@@ -19,19 +19,7 @@ export const getSupportNotificationPermission = () => {
   return Notification.permission;
 };
 
-export const enableSupportStaffNotifications = async () => {
-  if (
-    typeof window === "undefined" ||
-    !("serviceWorker" in navigator) ||
-    !("PushManager" in window) ||
-    !("Notification" in window)
-  ) {
-    return false;
-  }
-
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") return false;
-
+const subscribeSupportStaffDevice = async () => {
   const config = await fetchSupportPushConfig();
   if (!config?.enabled || !config?.publicKey) return false;
 
@@ -46,6 +34,38 @@ export const enableSupportStaffNotifications = async () => {
     }));
   await saveSupportPushSubscription(subscription);
   return true;
+};
+
+export const syncSupportStaffNotifications = async () => {
+  if (
+    typeof window === "undefined" ||
+    !("serviceWorker" in navigator) ||
+    !("PushManager" in window) ||
+    !("Notification" in window)
+  ) {
+    return false;
+  }
+
+  if (Notification.permission !== "granted") return false;
+  return subscribeSupportStaffDevice();
+};
+
+export const enableSupportStaffNotifications = async () => {
+  if (
+    typeof window === "undefined" ||
+    !("serviceWorker" in navigator) ||
+    !("PushManager" in window) ||
+    !("Notification" in window)
+  ) {
+    return false;
+  }
+
+  let permission = Notification.permission;
+  if (permission === "default") {
+    permission = await Notification.requestPermission();
+  }
+  if (permission !== "granted") return false;
+  return subscribeSupportStaffDevice();
 };
 
 export const showSupportDesktopNotification = (payload = {}, isFa = false) => {

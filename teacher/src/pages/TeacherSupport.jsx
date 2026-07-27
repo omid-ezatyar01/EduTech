@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Headphones, MessageCircle, Plus, Send, Wifi, WifiOff, X } from "lucide-react";
+import { Headphones, MessageCircle, Pencil, Plus, Send, Trash2, Wifi, WifiOff, X } from "lucide-react";
 import TeacherLayout from "../layouts/TeacherLayout";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
 import { getAuthUser } from "../../services/portal";
@@ -11,10 +11,12 @@ import {
 import {
   connectSupportSocket,
   createSupportTicket,
+  deleteSupportMessage,
   fetchMySupportTickets,
   fetchSupportTicket,
   markSupportTicketRead,
   sendSupportMessage,
+  updateSupportMessage,
 } from "../../services/supportService";
 
 const copy = {
@@ -155,6 +157,8 @@ export default function TeacherSupport() {
       }
     };
     socket.on("support:message", mergeMessage);
+    socket.on("support:message-updated", refresh);
+    socket.on("support:message-deleted", refresh);
     socket.on("support:ticket-updated", refresh);
     socket.on("support:ticket-created", refresh);
     socket.on("support:ticket-deleted", refresh);
@@ -184,12 +188,25 @@ export default function TeacherSupport() {
     try { await sendSupportMessage(selectedId, body); await Promise.all([loadChat(selectedId), loadList()]); }
     catch (err) { setDraft(body); setError(err.message); } finally { setBusy(false); }
   };
+  const editMessage = async (message) => {
+    const body = window.prompt(language === "fa" ? "پیام را ویرایش کنید" : "Edit message", message.body)?.trim();
+    if (!body || body === message.body) return;
+    setBusy(true);
+    try { await updateSupportMessage(selectedId, message.id, body); await Promise.all([loadChat(selectedId), loadList()]); }
+    catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+  const removeMessage = async (message) => {
+    if (!window.confirm(language === "fa" ? "این پیام حذف شود؟" : "Delete this message?")) return;
+    setBusy(true);
+    try { await deleteSupportMessage(selectedId, message.id); await Promise.all([loadChat(selectedId), loadList()]); }
+    catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
   return <TeacherLayout teacher={teacher} language={language} onLanguageChange={setLanguage}>
     <header className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h1 className="flex items-center gap-2 text-2xl font-black"><Headphones className="text-[#0B4FD8]"/>{t.title}</h1><p className="mt-1 text-sm font-semibold text-slate-500">{t.subtitle}</p></div><div className="flex items-center gap-2"><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-black ${live ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{live ? <Wifi size={14}/> : <WifiOff size={14}/>} {live ? t.live : t.reconnecting}</span><button onClick={() => setCreating(true)} className="inline-flex items-center gap-2 rounded-xl bg-[#0B4FD8] px-4 py-2.5 text-sm font-black text-white"><Plus size={17}/>{t.newTicket}</button></div></header>
     {error && <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}
     <section className="grid min-h-[68vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[340px_1fr]">
       <aside className="chat-scrollbar-side edutech-scrollbar max-h-[68vh] overflow-y-auto border-b border-slate-200 lg:border-b-0 lg:border-e"><div className="divide-y divide-slate-100">{tickets.length === 0 ? <p className="p-8 text-center font-bold text-slate-500">{t.empty}</p> : tickets.map((ticket) => <button key={ticket.id} onClick={() => setSelectedId(ticket.id)} className={`w-full p-4 text-start ${selectedId === ticket.id ? "bg-blue-50" : "hover:bg-slate-50"}`}><span className="flex items-center justify-between gap-2"><strong className="truncate text-sm">{ticket.subject}</strong>{ticket.unreadForRequester > 0 && <span className="rounded-full bg-[#0B4FD8] px-2 text-[11px] font-black text-white">{ticket.unreadForRequester}</span>}</span><span className="mt-1 block truncate text-xs font-semibold text-slate-500">{ticket.lastMessagePreview}</span><span className="mt-2 flex justify-between text-[11px] font-bold text-blue-700"><span>{t.statuses[ticket.status]}</span><span className="text-slate-400" dir="ltr">{ticket.ticketNumber}</span></span></button>)}</div></aside>
-      <div className="flex min-h-[540px] flex-col">{!chat ? <div className="grid flex-1 place-items-center text-slate-400"><div className="text-center"><MessageCircle className="mx-auto" size={48}/><p className="mt-3 font-bold">{t.select}</p></div></div> : <><header className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="font-black">{chat.ticket.subject}</h2><p className="text-xs font-bold text-slate-400" dir="ltr">{chat.ticket.ticketNumber}</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700">{t.statuses[chat.ticket.status]}</span></header><div className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-3 overflow-y-auto bg-slate-50/60 p-4">{chat.messages.map((message) => { const own = message.senderRole === "teacher"; return <div key={message.id} className={`flex ${own ? "justify-end" : "justify-start"}`}><div className={`max-w-[82%] rounded-2xl px-4 py-3 ${own ? "bg-[#0B4FD8] text-white" : "border border-slate-200 bg-white"}`}><p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p><p className={`mt-1 text-[10px] font-bold ${own ? "text-blue-100" : "text-slate-400"}`}>{new Date(message.createdAt).toLocaleString(language === "fa" ? "fa-AF" : "en-US")}</p></div></div>})}<div ref={bottomRef}/></div><form onSubmit={reply} className="flex gap-2 border-t p-3"><textarea value={draft} onChange={(e) => setDraft(e.target.value)} disabled={chat.ticket.status === "closed"} rows={2} maxLength={4000} placeholder={t.help} className="min-h-12 flex-1 resize-none rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"/><button disabled={busy || !draft.trim() || chat.ticket.status === "closed"} className="grid w-12 place-items-center rounded-xl bg-[#0B4FD8] text-white disabled:opacity-40"><Send size={19}/></button></form></>}</div>
+      <div className="flex min-h-[540px] flex-col">{!chat ? <div className="grid flex-1 place-items-center text-slate-400"><div className="text-center"><MessageCircle className="mx-auto" size={48}/><p className="mt-3 font-bold">{t.select}</p></div></div> : <><header className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="font-black">{chat.ticket.subject}</h2><p className="text-xs font-bold text-slate-400" dir="ltr">{chat.ticket.ticketNumber}</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700">{t.statuses[chat.ticket.status]}</span></header><div className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-3 overflow-y-auto bg-slate-50/60 p-4">{chat.messages.map((message) => { const own = message.senderRole === "teacher"; return <div key={message.id} className={`flex ${own ? "justify-end" : "justify-start"}`}><div className={`max-w-[82%] rounded-2xl px-4 py-3 ${own ? "bg-[#0B4FD8] text-white" : "border border-slate-200 bg-white"}`}><p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p><p className={`mt-1 text-[10px] font-bold ${own ? "text-blue-100" : "text-slate-400"}`}>{message.editedAt ? (language === "fa" ? "ویرایش‌شده · " : "edited · ") : ""}{new Date(message.createdAt).toLocaleString(language === "fa" ? "fa-AF" : "en-US")}</p>{own ? <div className="mt-1 flex justify-end gap-1"><button type="button" disabled={busy} onClick={() => editMessage(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-white/10"><Pencil size={12}/></button><button type="button" disabled={busy} onClick={() => removeMessage(message)} className="grid h-6 w-6 place-items-center rounded-full text-rose-200 hover:bg-white/10"><Trash2 size={12}/></button></div> : null}</div></div>})}<div ref={bottomRef}/></div><form onSubmit={reply} className="flex gap-2 border-t p-3"><textarea value={draft} onChange={(e) => setDraft(e.target.value)} disabled={chat.ticket.status === "closed"} rows={2} maxLength={4000} placeholder={t.help} className="min-h-12 flex-1 resize-none rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"/><button disabled={busy || !draft.trim() || chat.ticket.status === "closed"} className="grid w-12 place-items-center rounded-xl bg-[#0B4FD8] text-white disabled:opacity-40"><Send size={19}/></button></form></>}</div>
     </section>
     {creating && <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/55 p-4"><form onSubmit={submitTicket} className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><h2 className="text-xl font-black">{t.newTicket}</h2><button type="button" onClick={() => setCreating(false)}><X/></button></div><label className="mt-5 block text-sm font-black">{t.category}<select value={form.category} onChange={(e) => setForm({...form,category:e.target.value})} className="mt-2 w-full rounded-xl border px-4 py-3">{Object.entries(t.categories).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label><label className="mt-4 block text-sm font-black">{t.help}<textarea required minLength={2} rows={5} maxLength={4000} value={form.message} onChange={(e) => setForm({...form,message:e.target.value})} className="mt-2 w-full resize-none rounded-xl border px-4 py-3"/></label><button disabled={busy} className="mt-5 w-full rounded-xl bg-[#0B4FD8] py-3 font-black text-white disabled:opacity-50">{t.create}</button></form></div>}
   </TeacherLayout>;

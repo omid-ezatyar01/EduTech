@@ -54,6 +54,7 @@ const mapMessage = (row) => ({
   sender: mapUser(row.sender),
   senderRole: row.senderRole,
   body: row.body,
+  editedAt: row.editedAt || null,
   internalNote: Boolean(row.internalNote),
   createdAt: row.createdAt,
 });
@@ -248,6 +249,84 @@ export const sendSupportMessage = asyncHandler(async (req, res) => {
     });
   }
   return res.status(201).json(new ApiResponse({ message: "Message sent", data }));
+});
+
+const findOwnedSupportMessage = async (ticketId, messageId, user) => {
+  const ticket = await findAccessibleTicket(ticketId, user);
+  const message = await SupportMessage.findOne({
+    _id: messageId,
+    ticket: ticket._id,
+  });
+  if (!message) throw new ApiError(404, "Support message not found");
+  if (String(message.sender) !== String(user._id)) {
+    throw new ApiError(403, "You can only change your own messages");
+  }
+  return { ticket, message };
+};
+
+const refreshTicketLastMessage = async (ticketId) => {
+  const latest = await SupportMessage.findOne({
+    ticket: ticketId,
+    internalNote: false,
+  }).sort({ createdAt: -1 });
+  const updates = latest
+    ? {
+        lastMessageAt: latest.createdAt,
+        lastMessagePreview: preview(latest.body),
+        lastSenderRole: latest.senderRole,
+      }
+    : {
+        lastMessagePreview: "",
+      };
+  await SupportTicket.updateOne({ _id: ticketId }, { $set: updates });
+};
+
+export const updateSupportMessage = asyncHandler(async (req, res) => {
+  const { message } = await findOwnedSupportMessage(
+    req.params.ticketId,
+    req.params.messageId,
+    req.user,
+  );
+  message.body = (req.validated?.body || req.body).body;
+  message.editedAt = new Date();
+  await message.save();
+  await refreshTicketLastMessage(message.ticket);
+  const [ticket, populatedMessage] = await Promise.all([
+    populatedTicket(SupportTicket.findById(message.ticket)),
+    SupportMessage.findById(message._id).populate(
+      "sender",
+      "name email avatar role",
+    ),
+  ]);
+  const data = {
+    ticket: mapTicket(ticket),
+    message: mapMessage(populatedMessage),
+  };
+  emitSupportEvent({ ticket, event: "support:message-updated", data });
+  return res.json(new ApiResponse({ message: "Support message updated", data }));
+});
+
+export const deleteSupportMessage = asyncHandler(async (req, res) => {
+  const { ticket, message } = await findOwnedSupportMessage(
+    req.params.ticketId,
+    req.params.messageId,
+    req.user,
+  );
+  await message.deleteOne();
+  await refreshTicketLastMessage(ticket._id);
+  const updatedTicket = await populatedTicket(
+    SupportTicket.findById(ticket._id),
+  );
+  const data = {
+    ticket: mapTicket(updatedTicket),
+    messageId: String(message._id),
+  };
+  emitSupportEvent({
+    ticket: updatedTicket,
+    event: "support:message-deleted",
+    data,
+  });
+  return res.json(new ApiResponse({ message: "Support message deleted", data }));
 });
 
 export const markSupportTicketRead = asyncHandler(async (req, res) => {

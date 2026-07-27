@@ -4,36 +4,46 @@ import authorizeRoles from "../../middlewares/authorizeRoles.js";
 import validateRequest from "../../middlewares/validateRequest.js";
 import {
   deleteResolvedSupportTicket,
+  deleteSupportMessage,
   getAdminSupportTickets,
   getSupportTicket,
   markSupportTicketRead,
   sendSupportMessage,
+  updateSupportMessage,
   updateAdminSupportTicket,
 } from "../../controllers/supportController.js";
 import {
   sendSupportMessageSchema,
+  supportMessageIdSchema,
   supportTicketIdSchema,
   supportTicketListSchema,
   updateSupportTicketSchema,
+  updateSupportMessageSchema,
 } from "../../validators/support.validators.js";
 import {
   createSupportStaff,
+  deleteGeneralSupportTeamMessages,
+  deleteSupportTeamMessage,
   getSupportTeamDirectory,
   getSupportTeamMessages,
   listSupportStaff,
   markSupportTeamConversationRead,
   resetSupportStaffPassword,
   sendSupportTeamMessage,
+  updateSupportTeamMessage,
   updateSupportStaff,
 } from "./supportStaff.controller.js";
 import {
   createSupportStaffSchema,
+  deleteSupportTeamMessagesSchema,
   resetSupportStaffPasswordSchema,
   sendSupportTeamMessageSchema,
   supportConversationSchema,
   supportStaffIdSchema,
   supportStaffListSchema,
+  supportTeamMessageIdSchema,
   supportTeamMessageListSchema,
+  updateSupportTeamMessageSchema,
   updateSupportStaffSchema,
 } from "./supportStaff.validators.js";
 
@@ -93,6 +103,28 @@ router.post(
   sendSupportTeamMessage,
 );
 router.patch(
+  "/support-staff/team/messages/:messageId",
+  protect,
+  authorizeRoles("support", "admin"),
+  validateRequest(supportTeamMessageIdSchema, "params"),
+  validateRequest(updateSupportTeamMessageSchema),
+  updateSupportTeamMessage,
+);
+router.delete(
+  "/support-staff/team/messages/:messageId",
+  protect,
+  authorizeRoles("support", "admin"),
+  validateRequest(supportTeamMessageIdSchema, "params"),
+  deleteSupportTeamMessage,
+);
+router.delete(
+  "/support-staff/team/conversations/general/messages",
+  protect,
+  admin,
+  validateRequest(deleteSupportTeamMessagesSchema),
+  deleteGeneralSupportTeamMessages,
+);
+router.patch(
   "/support-staff/team/conversations/:conversationId/read",
   protect,
   authorizeRoles("support", "admin"),
@@ -115,6 +147,17 @@ router.post(
   validateRequest(supportTicketIdSchema, "params"),
   validateRequest(sendSupportMessageSchema),
   sendSupportMessage,
+);
+router.patch(
+  "/support-staff/tickets/:ticketId/messages/:messageId",
+  validateRequest(supportMessageIdSchema, "params"),
+  validateRequest(updateSupportMessageSchema),
+  updateSupportMessage,
+);
+router.delete(
+  "/support-staff/tickets/:ticketId/messages/:messageId",
+  validateRequest(supportMessageIdSchema, "params"),
+  deleteSupportMessage,
 );
 router.patch(
   "/support-staff/tickets/:ticketId",

@@ -26,6 +26,15 @@ export const supportTicketIdSchema = Joi.object({
   ticketId: objectId.required(),
 });
 
+export const supportMessageIdSchema = Joi.object({
+  ticketId: objectId.required(),
+  messageId: objectId.required(),
+});
+
+export const updateSupportMessageSchema = Joi.object({
+  body: Joi.string().trim().min(1).max(4000).required(),
+});
+
 export const sendSupportMessageSchema = Joi.object({
   body: Joi.string().trim().min(1).max(4000).required(),
   internalNote: Joi.boolean().default(false),

@@ -39,7 +39,7 @@ const saveSubscription = async (subscription) => {
   await parseJsonResponse(response);
 };
 
-export const enableAdminPushNotifications = async () => {
+export const enableAdminPushNotifications = async ({ promptIfNeeded = true } = {}) => {
   if (typeof window === "undefined") return false;
   if (
     !("serviceWorker" in navigator) ||
@@ -49,16 +49,17 @@ export const enableAdminPushNotifications = async () => {
     return false;
   }
 
-  const publicKey = await fetchVapidPublicKey();
-  if (!publicKey) return false;
-
   let permission = Notification.permission;
   if (permission === "default") {
+    if (!promptIfNeeded) return false;
     if (readLocalStorage(PROMPTED_KEY) === "true") return false;
     writeLocalStorage(PROMPTED_KEY, "true");
     permission = await Notification.requestPermission();
   }
   if (permission !== "granted") return false;
+
+  const publicKey = await fetchVapidPublicKey();
+  if (!publicKey) return false;
 
   await navigator.serviceWorker.register("/edutech-admin-push-sw.js");
   const registration = await navigator.serviceWorker.ready;

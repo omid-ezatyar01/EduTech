@@ -64,6 +64,25 @@ export const sendSupportTeamMessage = (conversationId, body) =>
     },
   );
 
+export const updateSupportTeamMessage = (messageId, body) =>
+  request(`/support-staff/team/messages/${encodeURIComponent(messageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ body }),
+  });
+
+export const deleteSupportTeamMessage = (messageId) =>
+  request(`/support-staff/team/messages/${encodeURIComponent(messageId)}`, {
+    method: "DELETE",
+  });
+
+export const clearGeneralSupportTeamMessages = (messageIds = []) =>
+  request("/support-staff/team/conversations/general/messages", {
+    method: "DELETE",
+    body: JSON.stringify(
+      messageIds.length ? { messageIds } : { all: true },
+    ),
+  });
+
 export const markSupportTeamConversationRead = (conversationId) =>
   request(
     `/support-staff/team/conversations/${encodeURIComponent(conversationId)}/read`,

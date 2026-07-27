@@ -66,8 +66,10 @@ const mapTeamMessage = (message) => ({
       }
     : null,
   body: message.body,
+  editedAt: message.editedAt || null,
   readBy: (message.readBy || []).map(String),
   createdAt: message.createdAt,
+  updatedAt: message.updatedAt,
 });
 
 const teamMessagePopulation = (query) =>
@@ -363,6 +365,16 @@ const conversationFilter = (userId, conversationId) => {
   };
 };
 
+export const canDeleteSupportTeamMessage = (user = {}, message = {}) => {
+  const isOwn = String(message.sender?._id || message.sender || "") ===
+    String(user._id || user.id || "");
+  const isAdminGeneral =
+    user.role === "admin" &&
+    message.conversationType === "channel" &&
+    message.channel === "general";
+  return isOwn || isAdminGeneral;
+};
+
 export const getSupportTeamMessages = asyncHandler(async (req, res) => {
   const { conversationId } = req.params;
   if (conversationId !== "general") {
@@ -432,6 +444,75 @@ export const sendSupportTeamMessage = asyncHandler(async (req, res) => {
 
   return res.status(201).json(
     new ApiResponse({ message: "Team message sent", data }),
+  );
+});
+
+export const updateSupportTeamMessage = asyncHandler(async (req, res) => {
+  const message = await SupportTeamMessage.findById(req.params.messageId);
+  if (!message) throw new ApiError(404, "Team message not found");
+  if (String(message.sender) !== String(req.user._id)) {
+    throw new ApiError(403, "You can only edit your own messages");
+  }
+
+  message.body = (req.validated?.body || req.body).body;
+  message.editedAt = new Date();
+  await message.save();
+  const populated = await teamMessagePopulation(
+    SupportTeamMessage.findById(message._id),
+  );
+  const data = { message: mapTeamMessage(populated) };
+  emitSupportTeamMessage({
+    recipientId:
+      message.conversationType === "direct" ? String(message.recipient) : "",
+    event: "support:team-message-updated",
+    data,
+  });
+  return res.json(new ApiResponse({ message: "Team message updated", data }));
+});
+
+export const deleteSupportTeamMessage = asyncHandler(async (req, res) => {
+  const message = await SupportTeamMessage.findById(req.params.messageId);
+  if (!message) throw new ApiError(404, "Team message not found");
+  if (!canDeleteSupportTeamMessage(req.user, message)) {
+    throw new ApiError(403, "You cannot delete this team message");
+  }
+
+  const data = {
+    messageId: String(message._id),
+    conversationType: message.conversationType,
+    channel: message.channel || null,
+    senderId: String(message.sender),
+    recipientId: message.recipient ? String(message.recipient) : "",
+  };
+  await message.deleteOne();
+  emitSupportTeamMessage({
+    recipientId:
+      message.conversationType === "direct" ? String(message.recipient) : "",
+    event: "support:team-message-deleted",
+    data,
+  });
+  return res.json(new ApiResponse({ message: "Team message deleted", data }));
+});
+
+export const deleteGeneralSupportTeamMessages = asyncHandler(async (req, res) => {
+  const payload = req.validated?.body || req.body || {};
+  const filter = {
+    conversationType: "channel",
+    channel: "general",
+  };
+  if (!payload.all) filter._id = { $in: payload.messageIds };
+  const result = await SupportTeamMessage.deleteMany(filter);
+  const data = {
+    all: Boolean(payload.all),
+    messageIds: payload.all ? [] : payload.messageIds.map(String),
+    deletedCount: Number(result.deletedCount || 0),
+  };
+  emitSupportTeamMessage({
+    event: "support:team-general-cleared",
+    data,
+  });
+  return res.json(
+    new ApiResponse({ message: "General team messages deleted", data }),
   );
 });
 

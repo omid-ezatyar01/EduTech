@@ -10,6 +10,7 @@ import {
   SPECIALIZATION_CATEGORIES,
   SUPPORT_SPECIALIZATIONS,
 } from "../src/modules/supportStaff/supportStaff.constants.js";
+import { resolveSupportNotificationAudience } from "../src/services/webPush.service.js";
 import {
   createSupportTicketSchema,
   sendSupportMessageSchema,
@@ -23,11 +24,14 @@ import {
 } from "../src/controllers/supportController.js";
 import {
   createSupportStaffSchema,
+  deleteSupportTeamMessagesSchema,
   resetSupportStaffPasswordSchema,
   sendSupportTeamMessageSchema,
   supportConversationSchema,
+  updateSupportTeamMessageSchema,
   updateSupportStaffSchema,
 } from "../src/modules/supportStaff/supportStaff.validators.js";
+import { canDeleteSupportTeamMessage } from "../src/modules/supportStaff/supportStaff.controller.js";
 
 const objectId = "507f1f77bcf86cd799439011";
 
@@ -66,6 +70,35 @@ test("support staff devices can register for server push notifications", async (
   await subscription.validate();
   assert.equal(subscription.role, "support");
   assert.equal(subscription.app, "support");
+});
+
+test("assigned ticket notifications target only the assigned support member", () => {
+  const assignedId = "507f1f77bcf86cd799439012";
+  const audience = resolveSupportNotificationAudience({
+    ticket: { assignedTo: { _id: assignedId } },
+    specializationUserIds: [
+      objectId,
+      assignedId,
+      "507f1f77bcf86cd799439013",
+    ],
+  });
+
+  assert.deepEqual(audience, {
+    assigned: true,
+    userIds: [assignedId],
+  });
+});
+
+test("unassigned ticket notifications target the relevant support team once", () => {
+  const audience = resolveSupportNotificationAudience({
+    ticket: { assignedTo: null },
+    specializationUserIds: [objectId, objectId],
+  });
+
+  assert.deepEqual(audience, {
+    assigned: false,
+    userIds: [objectId],
+  });
 });
 
 test("support messages distinguish private staff notes from user-visible replies", () => {
@@ -270,4 +303,36 @@ test("support team conversation validation rejects unsafe targets and empty mess
     undefined,
   );
   assert.ok(sendSupportTeamMessageSchema.validate({ body: "" }).error);
+});
+
+test("support team message editing and admin general-room moderation are protected", () => {
+  const admin = { _id: objectId, role: "admin" };
+  const member = { _id: "507f1f77bcf86cd799439012", role: "support" };
+  const generalMessage = {
+    sender: member._id,
+    conversationType: "channel",
+    channel: "general",
+  };
+  const directMessage = {
+    sender: member._id,
+    conversationType: "direct",
+    recipient: objectId,
+  };
+
+  assert.equal(canDeleteSupportTeamMessage(admin, generalMessage), true);
+  assert.equal(canDeleteSupportTeamMessage(admin, directMessage), false);
+  assert.equal(canDeleteSupportTeamMessage(member, directMessage), true);
+  assert.equal(
+    updateSupportTeamMessageSchema.validate({ body: "Updated message" }).error,
+    undefined,
+  );
+  assert.equal(
+    deleteSupportTeamMessagesSchema.validate({ all: true }).error,
+    undefined,
+  );
+  assert.equal(
+    deleteSupportTeamMessagesSchema.validate({ messageIds: [objectId] }).error,
+    undefined,
+  );
+  assert.ok(deleteSupportTeamMessagesSchema.validate({}).error);
 });

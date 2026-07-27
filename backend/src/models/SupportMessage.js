@@ -27,6 +27,7 @@ const supportMessageSchema = new mongoose.Schema(
       minlength: 1,
       maxlength: 4000,
     },
+    editedAt: { type: Date, default: null },
     internalNote: { type: Boolean, default: false, index: true },
   },
   { timestamps: true },

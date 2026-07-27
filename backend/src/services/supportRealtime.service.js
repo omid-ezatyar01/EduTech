@@ -21,7 +21,7 @@ const normalizedOrigins = () =>
 export const initializeSupportRealtime = (httpServer) => {
   const origins = normalizedOrigins();
   io = new Server(httpServer, {
-    path: "/support-socket",
+    path: "/api/support-socket",
     cors: {
       origin: origins.length ? origins : true,
       credentials: true,
@@ -155,15 +155,26 @@ export const getSupportPresenceSnapshot = () => ({
   ),
 });
 
-export const emitSupportTeamMessage = ({ recipientId = "", data }) => {
+export const isSupportUserOnline = (userId) =>
+  Number(supportConnections.get(String(userId || "")) || 0) > 0;
+
+export const emitSupportTeamMessage = ({
+  recipientId = "",
+  data,
+  event = "support:team-message",
+}) => {
   if (!io) return;
   if (recipientId) {
     io.to(`support:user:${recipientId}`)
-      .to(`support:user:${String(data?.message?.sender?.id || "")}`)
-      .emit("support:team-message", data);
+      .to(
+        `support:user:${String(
+          data?.message?.sender?.id || data?.senderId || "",
+        )}`,
+      )
+      .emit(event, data);
     return;
   }
-  io.to("support:team").emit("support:team-message", data);
+  io.to("support:team").emit(event, data);
 };
 
 export const disconnectSupportUser = (userId) => {
