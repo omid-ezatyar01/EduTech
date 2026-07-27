@@ -13,7 +13,9 @@ import {
 import { resolveSupportNotificationAudience } from "../src/services/webPush.service.js";
 import {
   createSupportTicketSchema,
+  deleteSupportMessagesSchema,
   sendSupportMessageSchema,
+  supportMessageListSchema,
   supportTicketListSchema,
   updateSupportTicketSchema,
 } from "../src/validators/support.validators.js";
@@ -24,10 +26,12 @@ import {
 } from "../src/controllers/supportController.js";
 import {
   createSupportStaffSchema,
+  deleteSelectedSupportTeamMessagesSchema,
   deleteSupportTeamMessagesSchema,
   resetSupportStaffPasswordSchema,
   sendSupportTeamMessageSchema,
   supportConversationSchema,
+  supportTeamMessageListSchema,
   updateSupportTeamMessageSchema,
   updateSupportStaffSchema,
 } from "../src/modules/supportStaff/supportStaff.validators.js";
@@ -112,6 +116,39 @@ test("support messages distinguish private staff notes from user-visible replies
 
   assert.equal(note.internalNote, true);
   assert.equal(note.body, "Ask the payment team to verify this.");
+});
+
+test("support messages retain reply links and per-user hidden state", async () => {
+  const repliedToId = "507f1f77bcf86cd799439014";
+  const hiddenUserId = "507f1f77bcf86cd799439015";
+  const message = new SupportMessage({
+    ticket: objectId,
+    sender: objectId,
+    senderRole: "student",
+    body: "This is a reply",
+    replyTo: repliedToId,
+    hiddenFor: [hiddenUserId],
+    readBy: [objectId],
+  });
+
+  await message.validate();
+  assert.equal(String(message.replyTo), repliedToId);
+  assert.deepEqual(message.hiddenFor.map(String), [hiddenUserId]);
+  assert.deepEqual(message.readBy.map(String), [objectId]);
+});
+
+test("chat history endpoints default to 30-message cursor pages", () => {
+  const ticketPage = supportMessageListSchema.validate({});
+  const teamPage = supportTeamMessageListSchema.validate({});
+  assert.equal(ticketPage.error, undefined);
+  assert.equal(teamPage.error, undefined);
+  assert.equal(ticketPage.value.limit, 30);
+  assert.equal(teamPage.value.limit, 30);
+  assert.equal(
+    supportMessageListSchema.validate({ before: "not-a-date" }).error
+      !== undefined,
+    true,
+  );
 });
 
 test("support role is isolated from student, teacher, and admin roles", async () => {
@@ -284,6 +321,40 @@ test("support team messages separate the shared room from direct conversations",
   await channel.validate();
   assert.equal(channel.channel, "general");
   assert.equal(channel.recipient, null);
+});
+
+test("team messages support replies and WhatsApp-style deletion scopes", async () => {
+  const replyTo = "507f1f77bcf86cd799439014";
+  const message = new SupportTeamMessage({
+    conversationType: "channel",
+    channel: "general",
+    sender: objectId,
+    body: "Reply in the team room",
+    replyTo,
+  });
+  await message.validate();
+  assert.equal(String(message.replyTo), replyTo);
+
+  assert.equal(
+    deleteSelectedSupportTeamMessagesSchema.validate({
+      messageIds: [objectId],
+      scope: "me",
+    }).error,
+    undefined,
+  );
+  assert.equal(
+    deleteSupportMessagesSchema.validate({
+      messageIds: [objectId],
+      scope: "everyone",
+    }).error,
+    undefined,
+  );
+  assert.ok(
+    deleteSupportMessagesSchema.validate({
+      messageIds: [objectId],
+      scope: "invalid",
+    }).error,
+  );
 });
 
 test("support team conversation validation rejects unsafe targets and empty messages", () => {

@@ -33,12 +33,30 @@ export const fetchSupportQueue = (query = {}) => {
   );
   return request(`/admin/support/tickets?${params.toString()}`);
 };
-export const fetchAdminSupportTicket = (id) =>
-  request(`/admin/support/tickets/${encodeURIComponent(id)}`);
-export const sendAdminSupportMessage = (id, body, internalNote = false) =>
+export const fetchAdminSupportTicket = (
+  id,
+  { before = "", limit = 30 } = {},
+) => {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before) query.set("before", before);
+  return request(
+    `/admin/support/tickets/${encodeURIComponent(id)}?${query.toString()}`,
+  );
+};
+export const sendAdminSupportMessage = (
+  id,
+  body,
+  internalNote = false,
+  replyTo = null,
+) =>
   request(`/admin/support/tickets/${encodeURIComponent(id)}/messages`, {
     method: "POST",
-    body: JSON.stringify({ body, internalNote }),
+    body: JSON.stringify({ body, internalNote, replyTo }),
+  });
+export const deleteSelectedAdminSupportMessages = (id, messageIds, scope) =>
+  request(`/admin/support/tickets/${encodeURIComponent(id)}/messages/delete`, {
+    method: "POST",
+    body: JSON.stringify({ messageIds, scope }),
   });
 export const updateAdminSupportTicket = (id, changes) =>
   request(`/admin/support/tickets/${encodeURIComponent(id)}`, {

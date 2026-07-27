@@ -4,12 +4,14 @@ import {
   ChevronRight,
   Circle,
   Check,
+  CheckCheck,
+  CheckCircle2,
   Hash,
   MessageSquare,
   Pencil,
+  Reply,
   Search,
   Send,
-  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -21,7 +23,7 @@ import {
 } from "../../../utils/supportPageCache.js";
 import {
   fetchSupportTeamMessages,
-  deleteSupportTeamChatMessage,
+  deleteSelectedSupportTeamChatMessages,
   markSupportTeamConversationRead,
   sendSupportTeamChatMessage,
   updateSupportTeamChatMessage,
@@ -53,15 +55,23 @@ export default function SupportTeamChat({
     [agentId, selectedConversation],
   );
   const [messages, setMessages] = useState(
-    () => readSupportPageCache(conversationCacheKey) || [],
+    () => {
+      const cached = readSupportPageCache(conversationCacheKey);
+      return Array.isArray(cached) ? cached.slice(-30) : [];
+    },
   );
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [pageInfo, setPageInfo] = useState({ hasMore: false, nextBefore: null });
+  const [typing, setTyping] = useState(false);
   const [sending, setSending] = useState(false);
   const [actionBusy, setActionBusy] = useState("");
   const [editingId, setEditingId] = useState("");
   const [editingBody, setEditingBody] = useState("");
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [replyingTo, setReplyingTo] = useState(null);
   const [error, setError] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopLayout] = useState(
@@ -70,6 +80,10 @@ export default function SupportTeamChat({
       window.matchMedia("(min-width: 1024px)").matches,
   );
   const bottomRef = useRef(null);
+  const messagesRef = useRef(null);
+  const typingTimerRef = useRef(null);
+  const incomingTypingTimerRef = useRef(null);
+  const loadingOlderRef = useRef(false);
 
   const visibleMembers = useMemo(() => {
     const value = search.trim().toLowerCase();
@@ -95,12 +109,13 @@ export default function SupportTeamChat({
       setLoading(true);
       setError("");
       const cached = readSupportPageCache(conversationCacheKey);
-      setMessages(Array.isArray(cached) ? cached : []);
+      setMessages(Array.isArray(cached) ? cached.slice(-30) : []);
       fetchSupportTeamMessages(selectedConversation)
         .then((data) => {
           if (active) {
             const rows = Array.isArray(data.messages) ? data.messages : [];
             setMessages(rows);
+            setPageInfo(data.pageInfo || { hasMore: false, nextBefore: null });
             writeSupportPageCache(conversationCacheKey, rows);
           }
         })
@@ -131,6 +146,40 @@ export default function SupportTeamChat({
     selectedConversation,
   ]);
 
+  const loadEarlier = async () => {
+    if (!pageInfo.hasMore || loadingOlder || !messages[0]?.createdAt) return;
+    const container = messagesRef.current;
+    const previousHeight = container?.scrollHeight || 0;
+    setLoadingOlder(true);
+    loadingOlderRef.current = true;
+    try {
+      const data = await fetchSupportTeamMessages(selectedConversation, {
+        before: messages[0].createdAt,
+      });
+      const older = Array.isArray(data.messages) ? data.messages : [];
+      setMessages((current) => {
+        const currentIds = new Set(current.map((message) => message.id));
+        const next = [
+          ...older.filter((message) => !currentIds.has(message.id)),
+          ...current,
+        ];
+        writeSupportPageCache(conversationCacheKey, next);
+        return next;
+      });
+      setPageInfo(data.pageInfo || { hasMore: false, nextBefore: null });
+      window.requestAnimationFrame(() => {
+        if (container) container.scrollTop += container.scrollHeight - previousHeight;
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingOlder(false);
+      window.setTimeout(() => {
+        loadingOlderRef.current = false;
+      }, 100);
+    }
+  };
+
   useEffect(() => {
     const update = (event) => {
       const message = event.detail;
@@ -155,17 +204,74 @@ export default function SupportTeamChat({
       setMessages([]);
       writeSupportPageCache(conversationCacheKey, []);
     };
+    const markRead = (event) => {
+      const readIds = new Set((event.detail?.messageIds || []).map(String));
+      if (!readIds.size) return;
+      setMessages((current) =>
+        current.map((message) =>
+          readIds.has(String(message.id))
+            ? { ...message, deliveryStatus: "read" }
+            : message,
+        ),
+      );
+    };
+    const showTyping = (event) => {
+      const detail = event.detail || {};
+      const matches =
+        selectedConversation === "general"
+          ? detail.conversationId === "general"
+          : String(detail.userId || "") === String(selectedConversation);
+      if (!matches) return;
+      setTyping(Boolean(detail.isTyping));
+      window.clearTimeout(incomingTypingTimerRef.current);
+      if (detail.isTyping) {
+        incomingTypingTimerRef.current = window.setTimeout(
+          () => setTyping(false),
+          1800,
+        );
+      }
+    };
+    const removeSelected = (event) => {
+      const messageIds = event.detail?.messageIds || [];
+      if (!messageIds.length) return;
+      const removed = new Set(messageIds.map(String));
+      setMessages((current) => {
+        const next =
+          event.detail?.scope === "everyone"
+            ? current.map((row) =>
+                removed.has(String(row.id))
+                  ? {
+                      ...row,
+                      body: "",
+                      deletedForEveryone: true,
+                      deletedForEveryoneAt: new Date().toISOString(),
+                    }
+                  : row,
+              )
+            : current.filter((row) => !removed.has(String(row.id)));
+        writeSupportPageCache(conversationCacheKey, next);
+        return next;
+      });
+      setSelectedIds(new Set());
+    };
     window.addEventListener("edutech-support-team-message-updated", update);
     window.addEventListener("edutech-support-team-message-deleted", remove);
     window.addEventListener("edutech-support-team-general-cleared", clearGeneral);
+    window.addEventListener("edutech-support-team-messages-deleted", removeSelected);
+    window.addEventListener("edutech-support-team-messages-read", markRead);
+    window.addEventListener("edutech-support-team-typing", showTyping);
     return () => {
       window.removeEventListener("edutech-support-team-message-updated", update);
       window.removeEventListener("edutech-support-team-message-deleted", remove);
       window.removeEventListener("edutech-support-team-general-cleared", clearGeneral);
+      window.removeEventListener("edutech-support-team-messages-deleted", removeSelected);
+      window.removeEventListener("edutech-support-team-messages-read", markRead);
+      window.removeEventListener("edutech-support-team-typing", showTyping);
     };
   }, [agent, conversationCacheKey, selectedConversation]);
 
   useEffect(() => {
+    if (loadingOlderRef.current) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
@@ -208,10 +314,15 @@ export default function SupportTeamChat({
     const body = draft.trim();
     if (!body || !selectedConversation) return;
     setSending(true);
+    notifyTyping(false);
     setError("");
     setDraft("");
     try {
-      const data = await sendSupportTeamChatMessage(selectedConversation, body);
+      const data = await sendSupportTeamChatMessage(
+        selectedConversation,
+        body,
+        replyingTo?.id || null,
+      );
       if (data.message) {
         setMessages((current) => {
           const next = current.some((row) => row.id === data.message.id)
@@ -221,6 +332,7 @@ export default function SupportTeamChat({
           return next;
         });
       }
+      setReplyingTo(null);
       refreshTeam();
     } catch (err) {
       setDraft(body);
@@ -230,7 +342,26 @@ export default function SupportTeamChat({
     }
   };
 
+  const notifyTyping = (isTyping) => {
+    window.dispatchEvent(
+      new CustomEvent("edutech-support-team-typing-outgoing", {
+        detail: { conversationId: selectedConversation, isTyping },
+      }),
+    );
+    window.clearTimeout(typingTimerRef.current);
+    if (isTyping) {
+      typingTimerRef.current = window.setTimeout(
+        () => notifyTyping(false),
+        1200,
+      );
+    }
+  };
+
   const openConversation = (conversationId) => {
+    setSelectedIds(new Set());
+    setReplyingTo(null);
+    setTyping(false);
+    setPageInfo({ hasMore: false, nextBefore: null });
     onSelectConversation(conversationId);
     setMobileOpen(true);
     onMobileDetailChange?.(true);
@@ -270,22 +401,56 @@ export default function SupportTeamChat({
     }
   };
 
-  const removeMessage = async (message) => {
-    if (!window.confirm(isFa ? "این پیام حذف شود؟" : "Delete this message?")) return;
-    setActionBusy(message.id);
+  const toggleSelected = (messageId) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  };
+
+  const deleteSelection = async (scope) => {
+    const messageIds = [...selectedIds];
+    if (!messageIds.length) return;
+    setActionBusy("delete-selection");
     try {
-      await deleteSupportTeamChatMessage(message.id);
+      await deleteSelectedSupportTeamChatMessages(messageIds, scope);
+      const removed = new Set(messageIds);
       setMessages((current) => {
-        const next = current.filter((row) => row.id !== message.id);
+        const next =
+          scope === "everyone"
+            ? current.map((row) =>
+                removed.has(row.id)
+                  ? {
+                      ...row,
+                      body: "",
+                      deletedForEveryone: true,
+                      deletedForEveryoneAt: new Date().toISOString(),
+                    }
+                  : row,
+              )
+            : current.filter((row) => !removed.has(row.id));
         writeSupportPageCache(conversationCacheKey, next);
         return next;
       });
+      setSelectedIds(new Set());
     } catch (err) {
       setError(err.message);
     } finally {
       setActionBusy("");
     }
   };
+
+  const selectedMessages = messages.filter((message) =>
+    selectedIds.has(message.id),
+  );
+  const canDeleteSelectionForEveryone =
+    selectedMessages.length > 0 &&
+    selectedMessages.every(
+      (message) =>
+        message.sender?.id === agentId && !message.deletedForEveryone,
+    );
 
   return (
     <section className={`grid w-full min-w-0 max-w-full overflow-hidden bg-white shadow-sm lg:h-[clamp(520px,calc(100dvh-10.5rem),720px)] lg:min-h-0 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:rounded-3xl lg:border lg:border-slate-200 ${mobileOpen ? "h-full min-h-0 rounded-none border-0" : "h-[calc(100dvh-9.5rem)] min-h-[28rem] rounded-2xl border border-slate-200"}`}>
@@ -367,6 +532,16 @@ export default function SupportTeamChat({
 
       <div className={`${mobileOpen ? "flex" : "hidden"} h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#efeae2] lg:flex`}>
         <header className="z-20 flex min-h-14 items-center gap-2 bg-[#f0f2f5] px-2.5 py-2 shadow-sm sm:gap-3 sm:px-4">
+          {selectedIds.size ? (
+            <>
+              <button type="button" onClick={() => setSelectedIds(new Set())} className="grid h-9 w-9 place-items-center rounded-full hover:bg-slate-200" aria-label={isFa ? "لغو انتخاب" : "Cancel selection"}><X size={20} /></button>
+              <strong className="me-auto text-sm">{selectedIds.size}</strong>
+              <button type="button" onClick={() => setSelectedIds(new Set(messages.map((message) => message.id)))} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm">{isFa ? "انتخاب همه" : "Select all"}</button>
+              <button type="button" disabled={actionBusy === "delete-selection"} onClick={() => deleteSelection("me")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm disabled:opacity-40">{isFa ? "حذف برای من" : "Delete for me"}</button>
+              {canDeleteSelectionForEveryone ? <button type="button" disabled={actionBusy === "delete-selection"} onClick={() => deleteSelection("everyone")} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white shadow-sm disabled:opacity-40">{isFa ? "حذف برای همه" : "Delete for everyone"}</button> : null}
+            </>
+          ) : (
+          <>
           <button
             type="button"
             onClick={closeConversation}
@@ -419,13 +594,17 @@ export default function SupportTeamChat({
                     : "Private conversation between you and this team member."}
             </p>
           </div>
+          </>
+          )}
         </header>
+        {typing ? <div className="bg-[#f0f2f5] px-4 pb-1 text-[11px] font-bold text-emerald-700">{isFa ? "در حال نوشتن…" : "typing…"}</div> : null}
         {error ? (
           <div className="m-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">
             {error}
           </div>
         ) : null}
-        <div className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.32)_0,rgba(255,255,255,0.32)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:space-y-3 sm:p-4">
+        <div ref={messagesRef} className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-2 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.32)_0,rgba(255,255,255,0.32)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:space-y-3 sm:p-4">
+          {pageInfo.hasMore ? <div className="flex justify-center"><button type="button" disabled={loadingOlder} onClick={loadEarlier} className="rounded-full bg-white px-4 py-2 text-xs font-black text-emerald-700 shadow-sm disabled:opacity-50">{loadingOlder ? (isFa ? "در حال بارگذاری…" : "Loading…") : (isFa ? "نمایش پیام‌های قبلی" : "Load earlier messages")}</button></div> : null}
           {loading ? (
             <p className="p-10 text-center font-bold text-slate-400">
               {isFa ? "در حال بارگذاری گفتگو…" : "Loading conversation…"}
@@ -465,7 +644,9 @@ export default function SupportTeamChat({
                   onStartEdit={() => startEdit(message)}
                   onCancelEdit={() => { setEditingId(""); setEditingBody(""); }}
                   onSaveEdit={saveEdit}
-                  onDelete={() => removeMessage(message)}
+                  selected={selectedIds.has(message.id)}
+                  onSelect={() => toggleSelected(message.id)}
+                  onReply={() => setReplyingTo(message)}
                 />
               );
             })
@@ -473,10 +654,14 @@ export default function SupportTeamChat({
           <div ref={bottomRef} />
         </div>
         <form onSubmit={send} className="bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
+          {replyingTo ? <ReplyComposerPreview message={replyingTo} isFa={isFa} onClose={() => setReplyingTo(null)} /> : null}
           <div className="flex gap-2">
             <textarea
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                notifyTyping(Boolean(event.target.value.trim()));
+              }}
               maxLength={4000}
               rows={1}
               placeholder={
@@ -588,11 +773,14 @@ function TeamMessage({
   onStartEdit,
   onCancelEdit,
   onSaveEdit,
-  onDelete,
+  selected,
+  onSelect,
+  onReply,
 }) {
   const isAdmin = senderRole === "admin";
   return (
-    <div className={`flex ${own ? "justify-end" : "justify-start"}`}>
+    <div className={`flex items-center gap-1 ${own ? "justify-end" : "justify-start"} ${selected ? "rounded-xl bg-emerald-100/70" : ""}`}>
+      <button type="button" onClick={onSelect} className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${selected ? "text-emerald-600" : "text-slate-400 hover:bg-white/70"}`} aria-label={isFa ? "انتخاب پیام" : "Select message"}>{selected ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button>
       <div
         className={`relative max-w-[86%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[72%] ${
           own
@@ -614,6 +802,7 @@ function TeamMessage({
             ) : null}
           </div>
         ) : null}
+        {message.replyTo ? <ReplyQuote message={message.replyTo} isFa={isFa} /> : null}
         {editing ? (
           <div className="space-y-2">
             <textarea
@@ -629,6 +818,10 @@ function TeamMessage({
               <button type="button" disabled={busy || !editingBody.trim()} onClick={onSaveEdit} className="grid h-7 w-7 place-items-center rounded-full bg-emerald-600 text-white disabled:opacity-40"><Check size={14} /></button>
             </div>
           </div>
+        ) : message.deletedForEveryone ? (
+          <p className="text-sm italic text-slate-500">
+            {isFa ? "این پیام حذف شده است." : "This message was deleted."}
+          </p>
         ) : (
           <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">
             {message.body}
@@ -637,14 +830,41 @@ function TeamMessage({
         <p className="mt-1 text-end text-[9px] font-semibold text-slate-500">
           {message.editedAt ? (isFa ? "ویرایش‌شده · " : "edited · ") : ""}
           {formatMessageTime(message.createdAt, isFa)}
+          {own ? <CheckCheck className={`ms-1 inline ${message.deliveryStatus === "read" ? "text-sky-500" : "text-slate-400"}`} size={14} /> : null}
         </p>
-        {own && !editing ? (
+        {!editing && !message.deletedForEveryone ? (
           <div className="mt-1 flex justify-end gap-1 opacity-70 transition hover:opacity-100">
-            <button type="button" disabled={busy} onClick={onStartEdit} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button>
-            <button type="button" disabled={busy} onClick={onDelete} className="grid h-6 w-6 place-items-center rounded-full text-rose-600 hover:bg-rose-50" aria-label={isFa ? "حذف" : "Delete"}><Trash2 size={12} /></button>
+            <button type="button" disabled={busy} onClick={onReply} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "پاسخ" : "Reply"}><Reply size={12} /></button>
+            {own ? <button type="button" disabled={busy} onClick={onStartEdit} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button> : null}
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function ReplyQuote({ message, isFa }) {
+  return (
+    <div className="mb-1.5 rounded-lg border-s-4 border-emerald-500 bg-black/5 px-2.5 py-1.5">
+      <p className="truncate text-[10px] font-black text-emerald-700">
+        {message.sender?.role === "admin"
+          ? isFa ? "ادمین" : "Admin"
+          : message.sender?.name || (isFa ? "پیام" : "Message")}
+      </p>
+      <p className="line-clamp-2 text-[11px] text-slate-600">
+        {message.deletedForEveryone
+          ? isFa ? "این پیام حذف شده است." : "This message was deleted."
+          : message.body}
+      </p>
+    </div>
+  );
+}
+
+function ReplyComposerPreview({ message, isFa, onClose }) {
+  return (
+    <div className="mb-2 flex items-center gap-2 rounded-xl border-s-4 border-emerald-500 bg-white px-3 py-2 shadow-sm">
+      <ReplyQuote message={{ ...message, sender: message.sender }} isFa={isFa} />
+      <button type="button" onClick={onClose} className="ms-auto grid h-7 w-7 shrink-0 place-items-center rounded-full hover:bg-slate-100" aria-label={isFa ? "لغو پاسخ" : "Cancel reply"}><X size={15} /></button>
     </div>
   );
 }

@@ -122,6 +122,41 @@ export const initializeSupportRealtime = (httpServer) => {
       socket.leave(`support:ticket:${ticketId}`);
     });
 
+    socket.on("support:typing", ({ ticketId, isTyping } = {}) => {
+      const normalizedTicketId = String(ticketId || "");
+      const room = `support:ticket:${normalizedTicketId}`;
+      if (!/^[a-f\d]{24}$/i.test(normalizedTicketId)) return;
+      if (!socket.rooms.has(room)) return;
+      socket.to(room).emit("support:typing", {
+        ticketId: normalizedTicketId,
+        userId,
+        role: socket.user.role,
+        isTyping: Boolean(isTyping),
+      });
+    });
+
+    socket.on(
+      "support:team-typing",
+      ({ conversationId, isTyping } = {}) => {
+        if (!["admin", "support"].includes(socket.user.role)) return;
+        const normalizedConversationId = String(conversationId || "");
+        const data = {
+          conversationId: normalizedConversationId,
+          userId,
+          role: socket.user.role,
+          isTyping: Boolean(isTyping),
+        };
+        if (normalizedConversationId === "general") {
+          socket.to("support:team").emit("support:team-typing", data);
+          return;
+        }
+        if (!/^[a-f\d]{24}$/i.test(normalizedConversationId)) return;
+        socket
+          .to(`support:user:${normalizedConversationId}`)
+          .emit("support:team-typing", data);
+      },
+    );
+
     socket.on("disconnect", () => {
       if (!["admin", "support"].includes(socket.user.role)) return;
       const remaining = Math.max(
@@ -175,6 +210,11 @@ export const emitSupportTeamMessage = ({
     return;
   }
   io.to("support:team").emit(event, data);
+};
+
+export const emitSupportUserEvent = (userId, event, data) => {
+  if (!io || !userId || !event) return;
+  io.to(`support:user:${String(userId)}`).emit(event, data);
 };
 
 export const disconnectSupportUser = (userId) => {

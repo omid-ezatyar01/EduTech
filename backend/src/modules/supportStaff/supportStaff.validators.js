@@ -57,12 +57,13 @@ export const supportConversationSchema = Joi.object({
 });
 
 export const supportTeamMessageListSchema = Joi.object({
-  limit: Joi.number().integer().min(1).max(100).default(100),
+  limit: Joi.number().integer().min(10).max(50).default(30),
   before: Joi.date().iso(),
 });
 
 export const sendSupportTeamMessageSchema = Joi.object({
   body: Joi.string().trim().min(1).max(4000).required(),
+  replyTo: Joi.alternatives().try(objectId, Joi.valid(null)),
 });
 
 export const supportTeamMessageIdSchema = Joi.object({
@@ -81,4 +82,9 @@ export const deleteSupportTeamMessagesSchema = Joi.object({
     return helpers.error("object.missing");
   }
   return value;
+});
+
+export const deleteSelectedSupportTeamMessagesSchema = Joi.object({
+  messageIds: Joi.array().items(objectId).min(1).max(100).unique().required(),
+  scope: Joi.string().valid("me", "everyone").required(),
 });

@@ -3,13 +3,15 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCheck,
+  CheckCircle2,
+  Circle,
   Headphones,
   MessageCircle,
   Pencil,
   Plus,
   Search,
   Send,
-  Trash2,
+  Reply,
   Wifi,
   WifiOff,
   X,
@@ -19,7 +21,7 @@ import { getAuthUser } from "../../services/portal.js";
 import {
   connectSupportSocket,
   createSupportTicket,
-  deleteSupportMessage,
+  deleteSelectedSupportMessages,
   fetchMySupportTickets,
   fetchSupportTicket,
   markSupportTicketRead,
@@ -146,17 +148,24 @@ export default function StudentSupportPage({ language = "fa" }) {
   const [tickets, setTickets] = useState(initialListCache?.tickets || []);
   const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [conversation, setConversation] = useState(() =>
-    initialSelectedId
-      ? readSupportPageCache(
+    {
+      const cached = initialSelectedId
+        ? readSupportPageCache(
           buildSupportCacheKey(
             "student",
             viewerId,
             `ticket:${initialSelectedId}`,
           ),
         )
-      : null,
+        : null;
+      return cached
+        ? { ...cached, messages: (cached.messages || []).slice(-30) }
+        : null;
+    },
   );
   const [draft, setDraft] = useState("");
+  const [selectedMessageIds, setSelectedMessageIds] = useState(() => new Set());
+  const [replyingTo, setReplyingTo] = useState(null);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({
     category: "consultation",
@@ -165,10 +174,18 @@ export default function StudentSupportPage({ language = "fa" }) {
   const [showCreate, setShowCreate] = useState(false);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [loading, setLoading] = useState(!initialListCache);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [pageInfo, setPageInfo] = useState({ hasMore: false, nextBefore: null });
+  const [supportTyping, setSupportTyping] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [live, setLive] = useState(false);
   const bottomRef = useRef(null);
+  const messagesRef = useRef(null);
+  const socketRef = useRef(null);
+  const typingTimerRef = useRef(null);
+  const incomingTypingTimerRef = useRef(null);
+  const loadingOlderRef = useRef(false);
 
   const loadTickets = useCallback(async () => {
     const data = await fetchMySupportTickets();
@@ -181,14 +198,35 @@ export default function StudentSupportPage({ language = "fa" }) {
     });
   }, []);
 
-  const loadConversation = useCallback(async (id) => {
+  const loadConversation = useCallback(async (id, { before = "" } = {}) => {
     if (!id) return;
     const cacheKey = buildSupportCacheKey("student", viewerId, `ticket:${id}`);
     const cached = readSupportPageCache(cacheKey);
-    if (cached) setConversation(cached);
-    const data = await fetchSupportTicket(id);
-    setConversation(data);
-    writeSupportPageCache(cacheKey, data);
+    if (cached) {
+      setConversation((current) =>
+        current?.ticket?.id === id
+          ? current
+          : { ...cached, messages: (cached.messages || []).slice(-30) },
+      );
+    }
+    const data = await fetchSupportTicket(id, { before });
+    setConversation((current) => {
+      const sameTicket = current?.ticket?.id === data.ticket?.id;
+      const currentMessages = sameTicket ? current.messages || [] : [];
+      const combined = before
+        ? [...(data.messages || []), ...currentMessages]
+        : [...currentMessages, ...(data.messages || [])];
+      const byId = new Map(combined.map((message) => [message.id, message]));
+      const next = {
+        ...data,
+        messages: [...byId.values()].sort(
+          (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+        ),
+      };
+      writeSupportPageCache(cacheKey, next);
+      return next;
+    });
+    setPageInfo(data.pageInfo || { hasMore: false, nextBefore: null });
     setTickets((rows) =>
       rows.map((row) =>
         row.id === id
@@ -198,6 +236,29 @@ export default function StudentSupportPage({ language = "fa" }) {
     );
     markSupportTicketRead(id).catch(() => {});
   }, [viewerId]);
+
+  const loadEarlierMessages = async () => {
+    if (!pageInfo.hasMore || loadingOlder || !conversation?.messages?.[0]?.createdAt) return;
+    const container = messagesRef.current;
+    const previousHeight = container?.scrollHeight || 0;
+    setLoadingOlder(true);
+    loadingOlderRef.current = true;
+    try {
+      await loadConversation(selectedId, {
+        before: conversation.messages[0].createdAt,
+      });
+      window.requestAnimationFrame(() => {
+        if (container) container.scrollTop += container.scrollHeight - previousHeight;
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingOlder(false);
+      window.setTimeout(() => {
+        loadingOlderRef.current = false;
+      }, 100);
+    }
+  };
 
   useEffect(() => {
     if (loading && !initialListCache) return;
@@ -234,11 +295,13 @@ export default function StudentSupportPage({ language = "fa" }) {
   }, [selectedId, loadConversation]);
 
   useEffect(() => {
+    if (loadingOlderRef.current) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation?.messages?.length]);
 
   useEffect(() => {
     const socket = connectSupportSocket();
+    socketRef.current = socket;
     socket.on("connect", () => {
       setLive(true);
       if (selectedId) socket.emit("support:join", selectedId);
@@ -287,6 +350,34 @@ export default function StudentSupportPage({ language = "fa" }) {
     socket.on("support:message", mergeMessage);
     socket.on("support:message-updated", refreshTicket);
     socket.on("support:message-deleted", refreshTicket);
+    socket.on("support:messages-deleted", refreshTicket);
+    socket.on("support:messages-read", (payload) => {
+      if (payload?.ticket?.id !== selectedId) return;
+      const readIds = new Set((payload.messageIds || []).map(String));
+      setConversation((current) =>
+        current
+          ? {
+              ...current,
+              messages: current.messages.map((message) =>
+                readIds.has(String(message.id))
+                  ? { ...message, deliveryStatus: "read" }
+                  : message,
+              ),
+            }
+          : current,
+      );
+    });
+    socket.on("support:typing", (payload) => {
+      if (payload?.ticketId !== selectedId || payload?.userId === viewerId) return;
+      setSupportTyping(Boolean(payload.isTyping));
+      window.clearTimeout(incomingTypingTimerRef.current);
+      if (payload.isTyping) {
+        incomingTypingTimerRef.current = window.setTimeout(
+          () => setSupportTyping(false),
+          1800,
+        );
+      }
+    });
     socket.on("support:ticket-updated", refreshTicket);
     socket.on("support:ticket-created", refreshTicket);
     socket.on("support:ticket-deleted", refreshTicket);
@@ -299,9 +390,10 @@ export default function StudentSupportPage({ language = "fa" }) {
 
     return () => {
       window.clearInterval(timer);
+      socketRef.current = null;
       socket.disconnect();
     };
-  }, [selectedId, loadConversation, loadTickets]);
+  }, [selectedId, loadConversation, loadTickets, viewerId]);
 
   const filteredTickets = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -315,6 +407,10 @@ export default function StudentSupportPage({ language = "fa" }) {
   }, [search, tickets]);
 
   const openTicket = (ticketId) => {
+    setSelectedMessageIds(new Set());
+    setReplyingTo(null);
+    setSupportTyping(false);
+    setPageInfo({ hasMore: false, nextBefore: null });
     setSelectedId(ticketId);
     setMobileChatOpen(true);
   };
@@ -331,6 +427,8 @@ export default function StudentSupportPage({ language = "fa" }) {
       setForm({ category: "consultation", message: "" });
       setShowCreate(false);
       await loadTickets();
+      setSelectedMessageIds(new Set());
+      setReplyingTo(null);
       setSelectedId(data.ticket.id);
       setMobileChatOpen(true);
     } catch (err) {
@@ -345,9 +443,15 @@ export default function StudentSupportPage({ language = "fa" }) {
     const body = draft.trim();
     if (!body || !selectedId) return;
     setBusy(true);
+    notifyTyping(false);
     setDraft("");
     try {
-      const data = await sendSupportMessage(selectedId, body);
+      const data = await sendSupportMessage(
+        selectedId,
+        body,
+        replyingTo?.id || null,
+      );
+      setReplyingTo(null);
       if (data?.message?.id) {
         setConversation((current) => {
           if (!current || current.ticket?.id !== selectedId) return current;
@@ -372,6 +476,15 @@ export default function StudentSupportPage({ language = "fa" }) {
     }
   };
 
+  const notifyTyping = (isTyping) => {
+    if (!selectedId) return;
+    socketRef.current?.emit("support:typing", { ticketId: selectedId, isTyping });
+    window.clearTimeout(typingTimerRef.current);
+    if (isTyping) {
+      typingTimerRef.current = window.setTimeout(() => notifyTyping(false), 1200);
+    }
+  };
+
   const editMessage = async (message) => {
     const body = window.prompt(
       isFa ? "پیام را ویرایش کنید" : "Edit message",
@@ -389,11 +502,22 @@ export default function StudentSupportPage({ language = "fa" }) {
     }
   };
 
-  const removeMessage = async (message) => {
-    if (!window.confirm(isFa ? "این پیام حذف شود؟" : "Delete this message?")) return;
+  const toggleMessageSelection = (messageId) => {
+    setSelectedMessageIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  };
+
+  const deleteSelection = async (scope) => {
+    const messageIds = [...selectedMessageIds];
+    if (!messageIds.length) return;
     setBusy(true);
     try {
-      await deleteSupportMessage(selectedId, message.id);
+      await deleteSelectedSupportMessages(selectedId, messageIds, scope);
+      setSelectedMessageIds(new Set());
       await Promise.all([loadConversation(selectedId), loadTickets()]);
     } catch (err) {
       setError(err.message);
@@ -585,15 +709,27 @@ export default function StudentSupportPage({ language = "fa" }) {
                     {text.statuses[conversation.ticket.status]}
                   </span>
                 </header>
+                {supportTyping ? <div className="bg-[#f0f2f5] px-4 py-1 text-[11px] font-bold text-emerald-700">{isFa ? "پشتیبانی در حال نوشتن است…" : "Support is typing…"}</div> : null}
+                {selectedMessageIds.size ? (
+                  <div className="flex flex-wrap items-center gap-2 border-b bg-white px-3 py-2">
+                    <button type="button" onClick={() => setSelectedMessageIds(new Set())} className="rounded-full p-2 hover:bg-slate-100"><X size={17} /></button>
+                    <strong className="me-auto text-sm">{selectedMessageIds.size}</strong>
+                    <button type="button" onClick={() => setSelectedMessageIds(new Set(conversation.messages.map((message) => message.id)))} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "انتخاب همه" : "Select all"}</button>
+                    <button type="button" disabled={busy} onClick={() => deleteSelection("me")} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "حذف برای من" : "Delete for me"}</button>
+                    {conversation.messages.filter((message) => selectedMessageIds.has(message.id)).every((message) => message.senderRole === "student" && !message.deletedForEveryone) ? <button type="button" disabled={busy} onClick={() => deleteSelection("everyone")} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white">{isFa ? "حذف برای همه" : "Delete for everyone"}</button> : null}
+                  </div>
+                ) : null}
 
-                <div className="chat-scrollbar-side edutech-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:p-5">
+                <div ref={messagesRef} className="chat-scrollbar-side edutech-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3)_0,rgba(255,255,255,0.3)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:p-5">
+                  {pageInfo.hasMore ? <div className="flex justify-center"><button type="button" disabled={loadingOlder} onClick={loadEarlierMessages} className="rounded-full bg-white px-4 py-2 text-xs font-black text-emerald-700 shadow-sm disabled:opacity-50">{loadingOlder ? (isFa ? "در حال بارگذاری…" : "Loading…") : (isFa ? "نمایش پیام‌های قبلی" : "Load earlier messages")}</button></div> : null}
                   {conversation.messages.map((message) => {
                     const own = message.senderRole === "student";
                     return (
                       <div
                         key={message.id}
-                        className={`flex ${own ? "justify-end" : "justify-start"}`}
+                        className={`flex items-center gap-1 ${own ? "justify-end" : "justify-start"} ${selectedMessageIds.has(message.id) ? "rounded-xl bg-emerald-100/70" : ""}`}
                       >
+                        <button type="button" onClick={() => toggleMessageSelection(message.id)} className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${selectedMessageIds.has(message.id) ? "text-emerald-600" : "text-slate-400"}`} aria-label={isFa ? "انتخاب پیام" : "Select message"}>{selectedMessageIds.has(message.id) ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button>
                         <div
                           className={`relative max-w-[86%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[72%] ${
                             own
@@ -601,23 +737,17 @@ export default function StudentSupportPage({ language = "fa" }) {
                               : "bg-white text-slate-900"
                           }`}
                         >
-                          <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">
-                            {message.body}
-                          </p>
+                          {message.replyTo ? <SupportReplyQuote message={message.replyTo} isFa={isFa} /> : null}
+                          {message.deletedForEveryone ? <p className="text-sm italic text-slate-500">{isFa ? "این پیام حذف شده است." : "This message was deleted."}</p> : <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">{message.body}</p>}
                           <span className="mt-1 flex items-center justify-end gap-1 ps-8 text-[9px] font-semibold text-slate-500">
                             {message.editedAt ? (isFa ? "ویرایش‌شده ·" : "edited ·") : null}
                             {formatMessageTime(message.createdAt, isFa)}
-                            {own ? (
-                              <CheckCheck
-                                size={14}
-                                className="text-sky-500"
-                              />
-                            ) : null}
+                            {own ? <CheckCheck size={14} className={message.deliveryStatus === "read" ? "text-sky-500" : "text-slate-400"} /> : null}
                           </span>
-                          {own ? (
+                          {!message.deletedForEveryone ? (
                             <span className="mt-1 flex justify-end gap-1">
-                              <button type="button" disabled={busy} onClick={() => editMessage(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button>
-                              <button type="button" disabled={busy} onClick={() => removeMessage(message)} className="grid h-6 w-6 place-items-center rounded-full text-rose-600 hover:bg-rose-50" aria-label={isFa ? "حذف" : "Delete"}><Trash2 size={12} /></button>
+                              <button type="button" disabled={busy} onClick={() => setReplyingTo(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "پاسخ" : "Reply"}><Reply size={12} /></button>
+                              {own ? <button type="button" disabled={busy} onClick={() => editMessage(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button> : null}
                             </span>
                           ) : null}
                         </div>
@@ -629,11 +759,16 @@ export default function StudentSupportPage({ language = "fa" }) {
 
                 <form
                   onSubmit={send}
-                  className="flex items-end gap-2 bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3"
+                  className="bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3"
                 >
+                  {replyingTo ? <SupportReplyComposer message={replyingTo} isFa={isFa} onClose={() => setReplyingTo(null)} /> : null}
+                  <div className="flex items-end gap-2">
                   <textarea
                     value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
+                      onChange={(event) => setDraft(event.target.value)}
+                      onInput={(event) =>
+                        notifyTyping(Boolean(event.currentTarget.value.trim()))
+                      }
                     onKeyDown={(event) => {
                       if (
                         event.key === "Enter" &&
@@ -661,6 +796,7 @@ export default function StudentSupportPage({ language = "fa" }) {
                   >
                     <Send size={19} />
                   </button>
+                  </div>
                 </form>
               </>
             )}
@@ -725,4 +861,12 @@ export default function StudentSupportPage({ language = "fa" }) {
       ) : null}
     </StudentLayout>
   );
+}
+
+function SupportReplyQuote({ message, isFa }) {
+  return <div className="mb-1.5 rounded-lg border-s-4 border-emerald-500 bg-black/5 px-2 py-1.5"><p className="truncate text-[10px] font-black text-emerald-700">{message.senderRole === "admin" ? (isFa ? "ادمین" : "Admin") : message.sender?.name || (isFa ? "پیام" : "Message")}</p><p className="line-clamp-2 text-[11px] text-slate-600">{message.deletedForEveryone ? (isFa ? "این پیام حذف شده است." : "This message was deleted.") : message.body}</p></div>;
+}
+
+function SupportReplyComposer({ message, isFa, onClose }) {
+  return <div className="mb-2 flex items-center gap-2 rounded-xl border-s-4 border-emerald-500 bg-white px-3 py-2"><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-black text-emerald-700">{message.sender?.name || (isFa ? "پیام" : "Message")}</p><p className="truncate text-xs text-slate-600">{message.body}</p></div><button type="button" onClick={onClose} className="rounded-full p-1.5 hover:bg-slate-100"><X size={15} /></button></div>;
 }

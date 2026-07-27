@@ -39,13 +39,26 @@ export const fetchSupportStaffQueue = (query = {}) => {
   return request(`/support-staff/tickets?${params.toString()}`);
 };
 
-export const fetchSupportStaffTicket = (ticketId) =>
-  request(`/support-staff/tickets/${encodeURIComponent(ticketId)}`);
+export const fetchSupportStaffTicket = (
+  ticketId,
+  { before = "", limit = 30 } = {},
+) => {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before) query.set("before", before);
+  return request(
+    `/support-staff/tickets/${encodeURIComponent(ticketId)}?${query.toString()}`,
+  );
+};
 
-export const sendSupportStaffMessage = (ticketId, body, internalNote = false) =>
+export const sendSupportStaffMessage = (
+  ticketId,
+  body,
+  internalNote = false,
+  replyTo = null,
+) =>
   request(`/support-staff/tickets/${encodeURIComponent(ticketId)}/messages`, {
     method: "POST",
-    body: JSON.stringify({ body, internalNote }),
+    body: JSON.stringify({ body, internalNote, replyTo }),
   });
 
 export const updateSupportStaffMessage = (ticketId, messageId, body) =>
@@ -57,6 +70,15 @@ export const updateSupportStaffMessage = (ticketId, messageId, body) =>
 export const deleteSupportStaffMessage = (ticketId, messageId) =>
   request(`/support-staff/tickets/${encodeURIComponent(ticketId)}/messages/${encodeURIComponent(messageId)}`, {
     method: "DELETE",
+  });
+export const deleteSelectedSupportStaffMessages = (
+  ticketId,
+  messageIds,
+  scope,
+) =>
+  request(`/support-staff/tickets/${encodeURIComponent(ticketId)}/messages/delete`, {
+    method: "POST",
+    body: JSON.stringify({ messageIds, scope }),
   });
 
 export const updateSupportStaffTicket = (ticketId, changes) =>
@@ -90,17 +112,27 @@ export const saveSupportPushSubscription = (subscription) =>
 export const fetchSupportTeamDirectory = () =>
   request("/support-staff/team");
 
-export const fetchSupportTeamMessages = (conversationId) =>
-  request(
-    `/support-staff/team/conversations/${encodeURIComponent(conversationId)}`,
+export const fetchSupportTeamMessages = (
+  conversationId,
+  { before = "", limit = 30 } = {},
+) => {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before) query.set("before", before);
+  return request(
+    `/support-staff/team/conversations/${encodeURIComponent(conversationId)}?${query.toString()}`,
   );
+};
 
-export const sendSupportTeamChatMessage = (conversationId, body) =>
+export const sendSupportTeamChatMessage = (
+  conversationId,
+  body,
+  replyTo = null,
+) =>
   request(
     `/support-staff/team/conversations/${encodeURIComponent(conversationId)}`,
     {
       method: "POST",
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, replyTo }),
     },
   );
 
@@ -113,6 +145,11 @@ export const updateSupportTeamChatMessage = (messageId, body) =>
 export const deleteSupportTeamChatMessage = (messageId) =>
   request(`/support-staff/team/messages/${encodeURIComponent(messageId)}`, {
     method: "DELETE",
+  });
+export const deleteSelectedSupportTeamChatMessages = (messageIds, scope) =>
+  request("/support-staff/team/messages/delete", {
+    method: "POST",
+    body: JSON.stringify({ messageIds, scope }),
   });
 
 export const markSupportTeamConversationRead = (conversationId) =>

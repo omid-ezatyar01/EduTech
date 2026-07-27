@@ -27,6 +27,26 @@ const supportMessageSchema = new mongoose.Schema(
       minlength: 1,
       maxlength: 4000,
     },
+    replyTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SupportMessage",
+      default: null,
+      index: true,
+    },
+    hiddenFor: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    }],
+    deletedForEveryoneAt: { type: Date, default: null, index: true },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    readBy: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    }],
     editedAt: { type: Date, default: null },
     internalNote: { type: Boolean, default: false, index: true },
   },

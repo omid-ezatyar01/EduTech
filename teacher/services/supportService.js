@@ -13,13 +13,17 @@ const request = async (path, options = {}) => {
 };
 
 export const fetchMySupportTickets = () => request("/support/tickets");
-export const fetchSupportTicket = (id) => request(`/support/tickets/${encodeURIComponent(id)}`);
+export const fetchSupportTicket = (id, { before = "", limit = 30 } = {}) => {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before) query.set("before", before);
+  return request(`/support/tickets/${encodeURIComponent(id)}?${query.toString()}`);
+};
 export const createSupportTicket = (data) =>
   request("/support/tickets", { method: "POST", body: JSON.stringify(data) });
-export const sendSupportMessage = (id, body) =>
+export const sendSupportMessage = (id, body, replyTo = null) =>
   request(`/support/tickets/${encodeURIComponent(id)}/messages`, {
     method: "POST",
-    body: JSON.stringify({ body }),
+    body: JSON.stringify({ body, replyTo }),
   });
 export const updateSupportMessage = (ticketId, messageId, body) =>
   request(`/support/tickets/${encodeURIComponent(ticketId)}/messages/${encodeURIComponent(messageId)}`, {
@@ -29,6 +33,11 @@ export const updateSupportMessage = (ticketId, messageId, body) =>
 export const deleteSupportMessage = (ticketId, messageId) =>
   request(`/support/tickets/${encodeURIComponent(ticketId)}/messages/${encodeURIComponent(messageId)}`, {
     method: "DELETE",
+  });
+export const deleteSelectedSupportMessages = (ticketId, messageIds, scope) =>
+  request(`/support/tickets/${encodeURIComponent(ticketId)}/messages/delete`, {
+    method: "POST",
+    body: JSON.stringify({ messageIds, scope }),
   });
 export const markSupportTicketRead = (id) =>
   request(`/support/tickets/${encodeURIComponent(id)}/read`, { method: "PATCH" });

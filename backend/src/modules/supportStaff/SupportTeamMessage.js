@@ -33,6 +33,26 @@ const supportTeamMessageSchema = new mongoose.Schema(
       minlength: 1,
       maxlength: 4000,
     },
+    replyTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SupportTeamMessage",
+      default: null,
+      index: true,
+    },
+    hiddenFor: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    }],
+    deletedForEveryoneAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     editedAt: {
       type: Date,
       default: null,

@@ -12,6 +12,7 @@ import {
 import {
   disconnectSupportUser,
   emitSupportTeamMessage,
+  emitSupportUserEvent,
   getSupportPresenceSnapshot,
 } from "../../services/supportRealtime.service.js";
 import { notifySupportTeamChatMessage } from "../../services/webPush.service.js";
@@ -34,6 +35,23 @@ const mapStaff = (user, profile = null) => ({
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 });
+
+const mapTeamReply = (message) => {
+  if (!message || typeof message !== "object" || !message._id) return null;
+  const deletedForEveryone = Boolean(message.deletedForEveryoneAt);
+  return {
+    id: String(message._id),
+    sender: message.sender
+      ? {
+          id: String(message.sender._id),
+          name: message.sender.role === "admin" ? "Admin" : message.sender.name,
+          role: message.sender.role || "",
+        }
+      : null,
+    body: deletedForEveryone ? "" : message.body,
+    deletedForEveryone,
+  };
+};
 
 const mapTeamMessage = (message) => ({
   id: String(message._id),
@@ -65,9 +83,19 @@ const mapTeamMessage = (message) => ({
         role: message.recipient.role || "",
       }
     : null,
-  body: message.body,
+  body: message.deletedForEveryoneAt ? "" : message.body,
+  replyTo: mapTeamReply(message.replyTo),
+  deletedForEveryone: Boolean(message.deletedForEveryoneAt),
+  deletedForEveryoneAt: message.deletedForEveryoneAt || null,
   editedAt: message.editedAt || null,
   readBy: (message.readBy || []).map(String),
+  deliveryStatus: (message.readBy || []).some(
+    (userId) =>
+      String(userId) !==
+      String(message.sender?._id || message.sender || ""),
+  )
+    ? "read"
+    : "sent",
   createdAt: message.createdAt,
   updatedAt: message.updatedAt,
 });
@@ -75,7 +103,15 @@ const mapTeamMessage = (message) => ({
 const teamMessagePopulation = (query) =>
   query
     .populate("sender", "name email avatar role")
-    .populate("recipient", "name email avatar role");
+    .populate("recipient", "name email avatar role")
+    .populate({
+      path: "replyTo",
+      select: "sender body deletedForEveryoneAt",
+      populate: {
+        path: "sender",
+        select: "name role",
+      },
+    });
 
 export const listSupportStaff = asyncHandler(async (req, res) => {
   const query = req.validated?.query || req.query || {};
@@ -293,6 +329,8 @@ export const getSupportTeamDirectory = asyncHandler(async (req, res) => {
           conversationType: "direct",
           recipient: req.user._id,
           readBy: { $ne: req.user._id },
+          hiddenFor: { $ne: req.user._id },
+          deletedForEveryoneAt: null,
         },
       },
       { $group: { _id: "$sender", count: { $sum: 1 } } },
@@ -302,6 +340,8 @@ export const getSupportTeamDirectory = asyncHandler(async (req, res) => {
       channel: "general",
       sender: { $ne: req.user._id },
       readBy: { $ne: req.user._id },
+      hiddenFor: { $ne: req.user._id },
+      deletedForEveryoneAt: null,
       createdAt: { $gte: req.user.createdAt },
     }),
   ]);
@@ -387,17 +427,27 @@ export const getSupportTeamMessages = asyncHandler(async (req, res) => {
   }
   const query = req.validated?.query || req.query || {};
   const filter = conversationFilter(req.user._id, conversationId);
+  filter.hiddenFor = { $ne: req.user._id };
   if (query.before) filter.createdAt = { $lt: new Date(query.before) };
-  const messages = await teamMessagePopulation(
+  const limit = Number(query.limit) || 30;
+  const rows = await teamMessagePopulation(
     SupportTeamMessage.find(filter)
       .sort({ createdAt: -1 })
-      .limit(Number(query.limit) || 100),
+      .limit(limit + 1),
   );
+  const hasMore = rows.length > limit;
+  const messages = (hasMore ? rows.slice(0, limit) : rows).reverse();
 
   return res.json(
     new ApiResponse({
       message: "Team messages fetched",
-      data: { messages: messages.reverse().map(mapTeamMessage) },
+      data: {
+        messages: messages.map(mapTeamMessage),
+        pageInfo: {
+          hasMore,
+          nextBefore: hasMore ? messages[0]?.createdAt || null : null,
+        },
+      },
     }),
   );
 });
@@ -417,12 +467,26 @@ export const sendSupportTeamMessage = asyncHandler(async (req, res) => {
     if (!recipient) throw new ApiError(404, "Support team member not found");
   }
 
+  const payload = req.validated?.body || req.body;
+  let replyTarget = null;
+  if (payload.replyTo) {
+    replyTarget = await SupportTeamMessage.findOne({
+      ...conversationFilter(req.user._id, conversationId),
+      _id: payload.replyTo,
+      hiddenFor: { $ne: req.user._id },
+    }).select("_id");
+    if (!replyTarget) {
+      throw new ApiError(400, "Reply message is not available in this conversation");
+    }
+  }
+
   let message = await SupportTeamMessage.create({
     conversationType: recipient ? "direct" : "channel",
     channel: recipient ? undefined : "general",
     sender: req.user._id,
     recipient: recipient?._id || null,
-    body: (req.validated?.body || req.body).body,
+    body: payload.body,
+    replyTo: replyTarget?._id || null,
     readBy: [req.user._id],
   });
   message = await teamMessagePopulation(
@@ -450,6 +514,9 @@ export const sendSupportTeamMessage = asyncHandler(async (req, res) => {
 export const updateSupportTeamMessage = asyncHandler(async (req, res) => {
   const message = await SupportTeamMessage.findById(req.params.messageId);
   if (!message) throw new ApiError(404, "Team message not found");
+  if (message.deletedForEveryoneAt) {
+    throw new ApiError(409, "A deleted message cannot be edited");
+  }
   if (String(message.sender) !== String(req.user._id)) {
     throw new ApiError(403, "You can only edit your own messages");
   }
@@ -494,6 +561,108 @@ export const deleteSupportTeamMessage = asyncHandler(async (req, res) => {
   return res.json(new ApiResponse({ message: "Team message deleted", data }));
 });
 
+export const deleteSelectedSupportTeamMessages = asyncHandler(async (req, res) => {
+  const payload = req.validated?.body || req.body;
+  const messages = await SupportTeamMessage.find({
+    _id: { $in: payload.messageIds },
+    hiddenFor: { $ne: req.user._id },
+  }).select(
+    "_id sender recipient conversationType channel deletedForEveryoneAt",
+  );
+  if (messages.length !== payload.messageIds.length) {
+    throw new ApiError(404, "One or more selected messages are unavailable");
+  }
+
+  const allAccessible = messages.every((message) => {
+    const filter = conversationFilter(
+      req.user._id,
+      message.conversationType === "channel"
+        ? "general"
+        : String(
+            String(message.sender) === String(req.user._id)
+              ? message.recipient
+              : message.sender,
+          ),
+    );
+    if (filter.conversationType !== message.conversationType) return false;
+    if (message.conversationType === "channel") {
+      return message.channel === "general";
+    }
+    return [message.sender, message.recipient]
+      .map(String)
+      .includes(String(req.user._id));
+  });
+  if (!allAccessible) {
+    throw new ApiError(403, "A selected message is outside your conversation");
+  }
+
+  if (payload.scope === "everyone") {
+    const cannotDelete = messages.some(
+      (message) =>
+        !canDeleteSupportTeamMessage(req.user, message) ||
+        Boolean(message.deletedForEveryoneAt),
+    );
+    if (cannotDelete) {
+      throw new ApiError(
+        403,
+        "Delete for everyone is limited to your messages",
+      );
+    }
+    await SupportTeamMessage.updateMany(
+      { _id: { $in: payload.messageIds } },
+      {
+        $set: {
+          body: "[deleted]",
+          deletedForEveryoneAt: new Date(),
+          deletedBy: req.user._id,
+          editedAt: null,
+        },
+      },
+    );
+  } else {
+    await SupportTeamMessage.updateMany(
+      { _id: { $in: payload.messageIds } },
+      { $addToSet: { hiddenFor: req.user._id } },
+    );
+  }
+
+  const data = {
+    messageIds: payload.messageIds.map(String),
+    scope: payload.scope,
+  };
+  if (payload.scope === "me") {
+    emitSupportUserEvent(req.user._id, "support:team-messages-deleted", data);
+  } else {
+    const includesGeneral = messages.some(
+      (message) => message.conversationType === "channel",
+    );
+    if (includesGeneral) {
+      emitSupportTeamMessage({
+        event: "support:team-messages-deleted",
+        data,
+      });
+    }
+    const directParticipantIds = new Set();
+    messages.forEach((message) => {
+      if (message.conversationType !== "direct") return;
+      directParticipantIds.add(String(message.sender));
+      directParticipantIds.add(String(message.recipient));
+    });
+    directParticipantIds.forEach((userId) =>
+      emitSupportUserEvent(userId, "support:team-messages-deleted", data),
+    );
+  }
+  return res.json(
+    new ApiResponse({
+      message:
+        payload.scope === "everyone"
+          ? "Messages deleted for everyone"
+          : "Messages deleted for you",
+      data,
+    }),
+  );
+});
+
 export const deleteGeneralSupportTeamMessages = asyncHandler(async (req, res) => {
   const payload = req.validated?.body || req.body || {};
   const filter = {
@@ -518,15 +687,44 @@ export const deleteGeneralSupportTeamMessages = asyncHandler(async (req, res) =>
 
 export const markSupportTeamConversationRead = asyncHandler(async (req, res) => {
   const filter = conversationFilter(req.user._id, req.params.conversationId);
+  filter.hiddenFor = { $ne: req.user._id };
   if (req.params.conversationId === "general") {
     filter.createdAt = { $gte: req.user.createdAt };
   }
   filter.sender = { $ne: req.user._id };
   filter.readBy = { $ne: req.user._id };
-  await SupportTeamMessage.updateMany(filter, {
+  const unreadMessages = await SupportTeamMessage.find(filter).select(
+    "_id sender recipient conversationType channel",
+  );
+  const messageIds = unreadMessages.map((message) => message._id);
+  await SupportTeamMessage.updateMany({ _id: { $in: messageIds } }, {
     $addToSet: { readBy: req.user._id },
   });
+  const data = {
+    conversationId: req.params.conversationId,
+    messageIds: messageIds.map(String),
+    readerId: String(req.user._id),
+  };
+  if (messageIds.length) {
+    if (req.params.conversationId === "general") {
+      emitSupportTeamMessage({
+        event: "support:team-messages-read",
+        data,
+      });
+    } else {
+      emitSupportUserEvent(
+        req.params.conversationId,
+        "support:team-messages-read",
+        data,
+      );
+      emitSupportUserEvent(
+        req.user._id,
+        "support:team-messages-read",
+        data,
+      );
+    }
+  }
   return res.json(
-    new ApiResponse({ message: "Team conversation marked as read" }),
+    new ApiResponse({ message: "Team conversation marked as read", data }),
   );
 });

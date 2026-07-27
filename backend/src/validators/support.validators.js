@@ -31,6 +31,11 @@ export const supportMessageIdSchema = Joi.object({
   messageId: objectId.required(),
 });
 
+export const supportMessageListSchema = Joi.object({
+  limit: Joi.number().integer().min(10).max(50).default(30),
+  before: Joi.date().iso(),
+});
+
 export const updateSupportMessageSchema = Joi.object({
   body: Joi.string().trim().min(1).max(4000).required(),
 });
@@ -38,6 +43,12 @@ export const updateSupportMessageSchema = Joi.object({
 export const sendSupportMessageSchema = Joi.object({
   body: Joi.string().trim().min(1).max(4000).required(),
   internalNote: Joi.boolean().default(false),
+  replyTo: Joi.alternatives().try(objectId, Joi.valid(null)),
+});
+
+export const deleteSupportMessagesSchema = Joi.object({
+  messageIds: Joi.array().items(objectId).min(1).max(100).unique().required(),
+  scope: Joi.string().valid("me", "everyone").required(),
 });
 
 export const supportTicketListSchema = Joi.object({

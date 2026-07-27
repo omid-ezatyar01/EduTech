@@ -4,6 +4,7 @@ import authorizeRoles from "../middlewares/authorizeRoles.js";
 import validateRequest from "../middlewares/validateRequest.js";
 import {
   createSupportTicket,
+  deleteSelectedSupportMessages,
   deleteSupportMessage,
   getAdminSupportTickets,
   getMySupportTickets,
@@ -15,8 +16,10 @@ import {
 } from "../controllers/supportController.js";
 import {
   createSupportTicketSchema,
+  deleteSupportMessagesSchema,
   sendSupportMessageSchema,
   supportMessageIdSchema,
+  supportMessageListSchema,
   supportTicketIdSchema,
   supportTicketListSchema,
   updateSupportTicketSchema,
@@ -37,6 +40,7 @@ router.get(
   "/admin/support/tickets/:ticketId",
   authorizeRoles("admin"),
   validateRequest(supportTicketIdSchema, "params"),
+  validateRequest(supportMessageListSchema, "query"),
   getSupportTicket,
 );
 router.post(
@@ -45,6 +49,13 @@ router.post(
   validateRequest(supportTicketIdSchema, "params"),
   validateRequest(sendSupportMessageSchema),
   sendSupportMessage,
+);
+router.post(
+  "/admin/support/tickets/:ticketId/messages/delete",
+  authorizeRoles("admin"),
+  validateRequest(supportTicketIdSchema, "params"),
+  validateRequest(deleteSupportMessagesSchema),
+  deleteSelectedSupportMessages,
 );
 router.patch(
   "/admin/support/tickets/:ticketId/messages/:messageId",
@@ -84,6 +95,7 @@ router.get(
   "/support/tickets/:ticketId",
   authorizeRoles("student", "teacher"),
   validateRequest(supportTicketIdSchema, "params"),
+  validateRequest(supportMessageListSchema, "query"),
   getSupportTicket,
 );
 router.post(
@@ -92,6 +104,13 @@ router.post(
   validateRequest(supportTicketIdSchema, "params"),
   validateRequest(sendSupportMessageSchema),
   sendSupportMessage,
+);
+router.post(
+  "/support/tickets/:ticketId/messages/delete",
+  authorizeRoles("student", "teacher"),
+  validateRequest(supportTicketIdSchema, "params"),
+  validateRequest(deleteSupportMessagesSchema),
+  deleteSelectedSupportMessages,
 );
 router.patch(
   "/support/tickets/:ticketId/messages/:messageId",

@@ -50,17 +50,23 @@ export const resetSupportStaffPassword = (staffId, password) =>
 export const fetchSupportTeamDirectory = () =>
   request("/support-staff/team");
 
-export const fetchSupportTeamMessages = (conversationId) =>
-  request(
-    `/support-staff/team/conversations/${encodeURIComponent(conversationId)}?limit=100`,
+export const fetchSupportTeamMessages = (
+  conversationId,
+  { before = "", limit = 30 } = {},
+) => {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before) query.set("before", before);
+  return request(
+    `/support-staff/team/conversations/${encodeURIComponent(conversationId)}?${query.toString()}`,
   );
+};
 
-export const sendSupportTeamMessage = (conversationId, body) =>
+export const sendSupportTeamMessage = (conversationId, body, replyTo = null) =>
   request(
     `/support-staff/team/conversations/${encodeURIComponent(conversationId)}`,
     {
       method: "POST",
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, replyTo }),
     },
   );
 
@@ -73,6 +79,11 @@ export const updateSupportTeamMessage = (messageId, body) =>
 export const deleteSupportTeamMessage = (messageId) =>
   request(`/support-staff/team/messages/${encodeURIComponent(messageId)}`, {
     method: "DELETE",
+  });
+export const deleteSelectedSupportTeamMessages = (messageIds, scope) =>
+  request("/support-staff/team/messages/delete", {
+    method: "POST",
+    body: JSON.stringify({ messageIds, scope }),
   });
 
 export const clearGeneralSupportTeamMessages = (messageIds = []) =>

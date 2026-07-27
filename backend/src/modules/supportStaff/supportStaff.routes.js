@@ -3,6 +3,7 @@ import { protect, admin } from "../../middlewares/authMiddleware.js";
 import authorizeRoles from "../../middlewares/authorizeRoles.js";
 import validateRequest from "../../middlewares/validateRequest.js";
 import {
+  deleteSelectedSupportMessages,
   deleteResolvedSupportTicket,
   deleteSupportMessage,
   getAdminSupportTickets,
@@ -13,8 +14,10 @@ import {
   updateAdminSupportTicket,
 } from "../../controllers/supportController.js";
 import {
+  deleteSupportMessagesSchema,
   sendSupportMessageSchema,
   supportMessageIdSchema,
+  supportMessageListSchema,
   supportTicketIdSchema,
   supportTicketListSchema,
   updateSupportTicketSchema,
@@ -22,6 +25,7 @@ import {
 } from "../../validators/support.validators.js";
 import {
   createSupportStaff,
+  deleteSelectedSupportTeamMessages,
   deleteGeneralSupportTeamMessages,
   deleteSupportTeamMessage,
   getSupportTeamDirectory,
@@ -36,6 +40,7 @@ import {
 import {
   createSupportStaffSchema,
   deleteSupportTeamMessagesSchema,
+  deleteSelectedSupportTeamMessagesSchema,
   resetSupportStaffPasswordSchema,
   sendSupportTeamMessageSchema,
   supportConversationSchema,
@@ -117,6 +122,13 @@ router.delete(
   validateRequest(supportTeamMessageIdSchema, "params"),
   deleteSupportTeamMessage,
 );
+router.post(
+  "/support-staff/team/messages/delete",
+  protect,
+  authorizeRoles("support", "admin"),
+  validateRequest(deleteSelectedSupportTeamMessagesSchema),
+  deleteSelectedSupportTeamMessages,
+);
 router.delete(
   "/support-staff/team/conversations/general/messages",
   protect,
@@ -140,6 +152,7 @@ router.get(
 router.get(
   "/support-staff/tickets/:ticketId",
   validateRequest(supportTicketIdSchema, "params"),
+  validateRequest(supportMessageListSchema, "query"),
   getSupportTicket,
 );
 router.post(
@@ -147,6 +160,12 @@ router.post(
   validateRequest(supportTicketIdSchema, "params"),
   validateRequest(sendSupportMessageSchema),
   sendSupportMessage,
+);
+router.post(
+  "/support-staff/tickets/:ticketId/messages/delete",
+  validateRequest(supportTicketIdSchema, "params"),
+  validateRequest(deleteSupportMessagesSchema),
+  deleteSelectedSupportMessages,
 );
 router.patch(
   "/support-staff/tickets/:ticketId/messages/:messageId",

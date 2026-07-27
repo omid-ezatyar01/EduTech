@@ -4,7 +4,10 @@ import User from "../models/User.js";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import { emitSupportEvent } from "../services/supportRealtime.service.js";
+import {
+  emitSupportEvent,
+  emitSupportUserEvent,
+} from "../services/supportRealtime.service.js";
 import { notifySupportStaffForTicket } from "../services/webPush.service.js";
 
 const preview = (value) => String(value || "").trim().slice(0, 240);
@@ -48,16 +51,49 @@ const mapTicket = (row) => ({
   updatedAt: row.updatedAt,
 });
 
+const mapReplyMessage = (row) => {
+  if (!row || typeof row !== "object" || !row._id) return null;
+  const deletedForEveryone = Boolean(row.deletedForEveryoneAt);
+  return {
+    id: String(row._id),
+    sender: mapUser(row.sender),
+    senderRole: row.senderRole,
+    body: deletedForEveryone ? "" : row.body,
+    deletedForEveryone,
+  };
+};
+
 const mapMessage = (row) => ({
   id: String(row._id),
   ticketId: String(row.ticket),
   sender: mapUser(row.sender),
   senderRole: row.senderRole,
-  body: row.body,
+  body: row.deletedForEveryoneAt ? "" : row.body,
+  replyTo: mapReplyMessage(row.replyTo),
+  deletedForEveryone: Boolean(row.deletedForEveryoneAt),
+  deletedForEveryoneAt: row.deletedForEveryoneAt || null,
   editedAt: row.editedAt || null,
   internalNote: Boolean(row.internalNote),
+  readBy: (row.readBy || []).map(String),
+  deliveryStatus: (row.readBy || []).some(
+    (userId) => String(userId) !== String(row.sender?._id || row.sender || ""),
+  )
+    ? "read"
+    : "sent",
   createdAt: row.createdAt,
 });
+
+const populateSupportMessage = (query) =>
+  query
+    .populate("sender", "name email avatar role")
+    .populate({
+      path: "replyTo",
+      select: "sender senderRole body deletedForEveryoneAt",
+      populate: {
+        path: "sender",
+        select: "name email avatar role",
+      },
+    });
 
 const populatedTicket = (query) =>
   query.populate("requester", "name email avatar role").populate("assignedTo", "name email avatar role");
@@ -130,6 +166,7 @@ export const createSupportTicket = asyncHandler(async (req, res) => {
       sender: req.user._id,
       senderRole: req.user.role,
       body: payload.message,
+      readBy: [req.user._id],
     });
   } catch (error) {
     if (ticket?._id && !message) await SupportTicket.deleteOne({ _id: ticket._id }).catch(() => null);
@@ -167,14 +204,29 @@ export const getMySupportTickets = asyncHandler(async (req, res) => {
 
 export const getSupportTicket = asyncHandler(async (req, res) => {
   const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
-  const filter = { ticket: ticket._id };
+  const query = req.validated?.query || req.query || {};
+  const limit = Math.min(50, Math.max(10, Number(query.limit) || 30));
+  const filter = {
+    ticket: ticket._id,
+    hiddenFor: { $ne: req.user._id },
+  };
+  if (query.before) filter.createdAt = { $lt: new Date(query.before) };
   if (!isSupportAgent(req.user)) filter.internalNote = false;
-  const messages = await SupportMessage.find(filter)
-    .populate("sender", "name email avatar role")
-    .sort({ createdAt: 1 });
+  const rows = await populateSupportMessage(
+    SupportMessage.find(filter).sort({ createdAt: -1 }).limit(limit + 1),
+  );
+  const hasMore = rows.length > limit;
+  const messages = (hasMore ? rows.slice(0, limit) : rows).reverse();
   return res.json(new ApiResponse({
     message: "Support conversation fetched",
-    data: { ticket: mapTicket(ticket), messages: messages.map(mapMessage) },
+    data: {
+      ticket: mapTicket(ticket),
+      messages: messages.map(mapMessage),
+      pageInfo: {
+        hasMore,
+        nextBefore: hasMore ? messages[0]?.createdAt || null : null,
+      },
+    },
   }));
 });
 
@@ -198,12 +250,27 @@ export const sendSupportMessage = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Reopen this ticket before sending another message");
   }
   if (!isAgent && payload.internalNote) throw new ApiError(403, "Internal notes are for support staff");
+  let replyTarget = null;
+  if (payload.replyTo) {
+    const replyFilter = {
+      _id: payload.replyTo,
+      ticket: ticket._id,
+      hiddenFor: { $ne: req.user._id },
+    };
+    if (!isAgent) replyFilter.internalNote = false;
+    replyTarget = await SupportMessage.findOne(replyFilter).select("_id");
+    if (!replyTarget) {
+      throw new ApiError(400, "Reply message is not available in this conversation");
+    }
+  }
 
   let message = await SupportMessage.create({
     ticket: ticket._id,
     sender: req.user._id,
     senderRole: req.user.role,
     body: payload.body,
+    replyTo: replyTarget?._id || null,
+    readBy: [req.user._id],
     internalNote: isAgent && Boolean(payload.internalNote),
   });
   const setUpdates = {};
@@ -231,7 +298,7 @@ export const sendSupportMessage = asyncHandler(async (req, res) => {
     await SupportTicket.updateOne({ _id: ticket._id }, update);
   }
   const updatedTicket = await populatedTicket(SupportTicket.findById(ticket._id));
-  message = await SupportMessage.findById(message._id).populate("sender", "name email avatar role");
+  message = await populateSupportMessage(SupportMessage.findById(message._id));
   const data = { ticket: mapTicket(updatedTicket), message: mapMessage(message) };
   emitSupportEvent({
     ticket: updatedTicket,
@@ -256,6 +323,7 @@ const findOwnedSupportMessage = async (ticketId, messageId, user) => {
   const message = await SupportMessage.findOne({
     _id: messageId,
     ticket: ticket._id,
+    deletedForEveryoneAt: null,
   });
   if (!message) throw new ApiError(404, "Support message not found");
   if (String(message.sender) !== String(user._id)) {
@@ -268,6 +336,7 @@ const refreshTicketLastMessage = async (ticketId) => {
   const latest = await SupportMessage.findOne({
     ticket: ticketId,
     internalNote: false,
+    deletedForEveryoneAt: null,
   }).sort({ createdAt: -1 });
   const updates = latest
     ? {
@@ -293,10 +362,7 @@ export const updateSupportMessage = asyncHandler(async (req, res) => {
   await refreshTicketLastMessage(message.ticket);
   const [ticket, populatedMessage] = await Promise.all([
     populatedTicket(SupportTicket.findById(message.ticket)),
-    SupportMessage.findById(message._id).populate(
-      "sender",
-      "name email avatar role",
-    ),
+    populateSupportMessage(SupportMessage.findById(message._id)),
   ]);
   const data = {
     ticket: mapTicket(ticket),
@@ -329,6 +395,73 @@ export const deleteSupportMessage = asyncHandler(async (req, res) => {
   return res.json(new ApiResponse({ message: "Support message deleted", data }));
 });
 
+export const deleteSelectedSupportMessages = asyncHandler(async (req, res) => {
+  const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
+  const payload = req.validated?.body || req.body;
+  const messages = await SupportMessage.find({
+    _id: { $in: payload.messageIds },
+    ticket: ticket._id,
+    hiddenFor: { $ne: req.user._id },
+  }).select("_id sender deletedForEveryoneAt");
+  if (messages.length !== payload.messageIds.length) {
+    throw new ApiError(404, "One or more selected messages are unavailable");
+  }
+
+  if (payload.scope === "everyone") {
+    const cannotDelete = messages.some(
+      (message) =>
+        String(message.sender) !== String(req.user._id) ||
+        Boolean(message.deletedForEveryoneAt),
+    );
+    if (cannotDelete) {
+      throw new ApiError(403, "Delete for everyone is limited to your own messages");
+    }
+    const deletedAt = new Date();
+    await SupportMessage.updateMany(
+      { _id: { $in: payload.messageIds }, ticket: ticket._id },
+      {
+        $set: {
+          body: "[deleted]",
+          deletedForEveryoneAt: deletedAt,
+          deletedBy: req.user._id,
+          editedAt: null,
+        },
+      },
+    );
+    await refreshTicketLastMessage(ticket._id);
+    const updatedTicket = await populatedTicket(
+      SupportTicket.findById(ticket._id),
+    );
+    const data = {
+      ticket: mapTicket(updatedTicket),
+      messageIds: payload.messageIds.map(String),
+      scope: "everyone",
+    };
+    emitSupportEvent({
+      ticket: updatedTicket,
+      event: "support:messages-deleted",
+      data,
+    });
+    return res.json(
+      new ApiResponse({ message: "Messages deleted for everyone", data }),
+    );
+  }
+
+  await SupportMessage.updateMany(
+    { _id: { $in: payload.messageIds }, ticket: ticket._id },
+    { $addToSet: { hiddenFor: req.user._id } },
+  );
+  const data = {
+    ticket: mapTicket(ticket),
+    messageIds: payload.messageIds.map(String),
+    scope: "me",
+  };
+  emitSupportUserEvent(req.user._id, "support:messages-deleted", data);
+  return res.json(
+    new ApiResponse({ message: "Messages deleted for you", data }),
+  );
+});
+
 export const markSupportTicketRead = asyncHandler(async (req, res) => {
   const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
   if (
@@ -339,9 +472,34 @@ export const markSupportTicketRead = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Claim this ticket before marking it as read");
   }
   const field = isSupportAgent(req.user) ? "unreadForSupport" : "unreadForRequester";
+  const unreadMessages = await SupportMessage.find({
+    ticket: ticket._id,
+    sender: { $ne: req.user._id },
+    readBy: { $ne: req.user._id },
+    hiddenFor: { $ne: req.user._id },
+  }).select("_id");
+  const messageIds = unreadMessages.map((message) => message._id);
+  if (messageIds.length) {
+    await SupportMessage.updateMany(
+      { _id: { $in: messageIds } },
+      { $addToSet: { readBy: req.user._id } },
+    );
+  }
   ticket[field] = 0;
   await ticket.save();
-  return res.json(new ApiResponse({ message: "Ticket marked as read", data: mapTicket(ticket) }));
+  const data = {
+    ticket: mapTicket(ticket),
+    messageIds: messageIds.map(String),
+    readerId: String(req.user._id),
+  };
+  if (messageIds.length) {
+    emitSupportEvent({
+      ticket,
+      event: "support:messages-read",
+      data,
+    });
+  }
+  return res.json(new ApiResponse({ message: "Ticket marked as read", data }));
 });
 
 export const getAdminSupportTickets = asyncHandler(async (req, res) => {
@@ -495,6 +653,7 @@ export const updateAdminSupportTicket = asyncHandler(async (req, res) => {
           senderRole: req.user.role,
           body: `Handoff: ${handoffReason}`,
           internalNote: true,
+          readBy: [req.user._id],
         });
       }
       delete changes.assignedTo;

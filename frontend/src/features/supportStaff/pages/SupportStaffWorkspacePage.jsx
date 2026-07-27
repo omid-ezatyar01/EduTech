@@ -5,6 +5,9 @@ import {
   BookOpenCheck,
   Bell,
   BellRing,
+  CheckCheck,
+  CheckCircle2,
+  Circle,
   Download,
   GraduationCap,
   Headphones,
@@ -15,6 +18,7 @@ import {
   MoreVertical,
   Pencil,
   RefreshCw,
+  Reply,
   Search,
   Send,
   StickyNote,
@@ -32,7 +36,7 @@ import {
 } from "../../../utils/supportPageCache.js";
 import {
   connectSupportStaffSocket,
-  deleteSupportStaffMessage,
+  deleteSelectedSupportStaffMessages,
   deleteSupportStaffTicket,
   fetchSupportTeamDirectory,
   fetchSupportStaffQueue,
@@ -150,25 +154,35 @@ function SupportStaffWorkspaceContent() {
     "";
   const [selectedId, setSelectedId] = useState(initialTicketId);
   const [chat, setChat] = useState(() =>
-    initialTicketId
-      ? readSupportPageCache(
+    {
+      const cached = initialTicketId
+        ? readSupportPageCache(
           buildSupportCacheKey(
             "support",
             agentId,
             `ticket:${initialTicketId}`,
           ),
         )
-      : null,
+        : null;
+      return cached
+        ? { ...cached, messages: (cached.messages || []).slice(-30) }
+        : null;
+    },
   );
   const [filters, setFilters] = useState({
     search: "",
     status: "workspace",
   });
   const [draft, setDraft] = useState("");
+  const [selectedMessageIds, setSelectedMessageIds] = useState(() => new Set());
+  const [replyingTo, setReplyingTo] = useState(null);
   const [internalNote, setInternalNote] = useState(false);
   const [loading, setLoading] = useState(
     !(initialWorkspaceCache && initialTeamCache),
   );
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [pageInfo, setPageInfo] = useState({ hasMore: false, nextBefore: null });
+  const [requesterTyping, setRequesterTyping] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [teamRefreshToken, setTeamRefreshToken] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -187,6 +201,11 @@ function SupportStaffWorkspaceContent() {
   const [ticketActionsOpen, setTicketActionsOpen] = useState(false);
   const [handoffReason, setHandoffReason] = useState("");
   const bottomRef = useRef(null);
+  const messagesRef = useRef(null);
+  const socketRef = useRef(null);
+  const typingTimerRef = useRef(null);
+  const incomingTypingTimerRef = useRef(null);
+  const loadingOlderRef = useRef(false);
 
   const loadQueue = useCallback(async () => {
     const workspaceView = filters.status === "workspace";
@@ -207,7 +226,7 @@ function SupportStaffWorkspaceContent() {
     setSelectedId((current) => current || rows[0]?.id || "");
   }, [agentId, filters]);
 
-  const loadChat = useCallback(async (ticketId) => {
+  const loadChat = useCallback(async (ticketId, { before = "" } = {}) => {
     if (!ticketId) return;
     const cacheKey = buildSupportCacheKey(
       "support",
@@ -215,10 +234,31 @@ function SupportStaffWorkspaceContent() {
       `ticket:${ticketId}`,
     );
     const cached = readSupportPageCache(cacheKey);
-    if (cached) setChat(cached);
-    const data = await fetchSupportStaffTicket(ticketId);
-    setChat(data);
-    writeSupportPageCache(cacheKey, data);
+    if (cached) {
+      setChat((current) =>
+        current?.ticket?.id === ticketId
+          ? current
+          : { ...cached, messages: (cached.messages || []).slice(-30) },
+      );
+    }
+    const data = await fetchSupportStaffTicket(ticketId, { before });
+    setChat((current) => {
+      const sameTicket = current?.ticket?.id === data.ticket?.id;
+      const currentMessages = sameTicket ? current.messages || [] : [];
+      const combined = before
+        ? [...(data.messages || []), ...currentMessages]
+        : [...currentMessages, ...(data.messages || [])];
+      const byId = new Map(combined.map((message) => [message.id, message]));
+      const next = {
+        ...data,
+        messages: [...byId.values()].sort(
+          (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+        ),
+      };
+      writeSupportPageCache(cacheKey, next);
+      return next;
+    });
+    setPageInfo(data.pageInfo || { hasMore: false, nextBefore: null });
     setTickets((current) =>
       current.map((ticket) =>
         ticket.id === ticketId
@@ -236,6 +276,27 @@ function SupportStaffWorkspaceContent() {
       markSupportStaffTicketRead(ticketId).catch(() => {});
     }
   }, [agentId]);
+
+  const loadEarlierMessages = async () => {
+    if (!pageInfo.hasMore || loadingOlder || !chat?.messages?.[0]?.createdAt) return;
+    const container = messagesRef.current;
+    const previousHeight = container?.scrollHeight || 0;
+    setLoadingOlder(true);
+    loadingOlderRef.current = true;
+    try {
+      await loadChat(selectedId, { before: chat.messages[0].createdAt });
+      window.requestAnimationFrame(() => {
+        if (container) container.scrollTop += container.scrollHeight - previousHeight;
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingOlder(false);
+      window.setTimeout(() => {
+        loadingOlderRef.current = false;
+      }, 100);
+    }
+  };
 
   useEffect(() => {
     const isDefaultWorkspace =
@@ -339,11 +400,13 @@ function SupportStaffWorkspaceContent() {
   }, [desktopLayout, loadChat, mobileTicketOpen, selectedId]);
 
   useEffect(() => {
+    if (loadingOlderRef.current) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat?.messages?.length]);
 
   useEffect(() => {
     const socket = connectSupportStaffSocket();
+    socketRef.current = socket;
     socket.on("connect", () => {
       setLive(true);
       loadQueue().catch(() => {});
@@ -389,6 +452,7 @@ function SupportStaffWorkspaceContent() {
       "support:message",
       "support:message-updated",
       "support:message-deleted",
+      "support:messages-deleted",
       "support:internal-note",
       "support:ticket-updated",
       "support:ticket-deleted",
@@ -428,6 +492,62 @@ function SupportStaffWorkspaceContent() {
       );
       loadTeam().catch(() => {});
     });
+    socket.on("support:team-messages-deleted", (payload) => {
+      window.dispatchEvent(
+        new CustomEvent("edutech-support-team-messages-deleted", {
+          detail: payload,
+        }),
+      );
+      loadTeam().catch(() => {});
+    });
+    socket.on("support:team-messages-read", (payload) => {
+      window.dispatchEvent(
+        new CustomEvent("edutech-support-team-messages-read", {
+          detail: payload,
+        }),
+      );
+    });
+    socket.on("support:team-typing", (payload) => {
+      window.dispatchEvent(
+        new CustomEvent("edutech-support-team-typing", {
+          detail: payload,
+        }),
+      );
+    });
+    socket.on("support:messages-read", (payload) => {
+      if (payload?.ticket?.id !== selectedId) return;
+      const readIds = new Set((payload.messageIds || []).map(String));
+      setChat((current) =>
+        current
+          ? {
+              ...current,
+              messages: current.messages.map((message) =>
+                readIds.has(String(message.id))
+                  ? { ...message, deliveryStatus: "read" }
+                  : message,
+              ),
+            }
+          : current,
+      );
+    });
+    socket.on("support:typing", (payload) => {
+      if (payload?.ticketId !== selectedId || payload?.userId === agentId) return;
+      setRequesterTyping(Boolean(payload.isTyping));
+      window.clearTimeout(incomingTypingTimerRef.current);
+      if (payload.isTyping) {
+        incomingTypingTimerRef.current = window.setTimeout(
+          () => setRequesterTyping(false),
+          1800,
+        );
+      }
+    });
+    const outgoingTeamTyping = (event) => {
+      socket.emit("support:team-typing", event.detail || {});
+    };
+    window.addEventListener(
+      "edutech-support-team-typing-outgoing",
+      outgoingTeamTyping,
+    );
     socket.on("support:team-general-cleared", (payload) => {
       window.dispatchEvent(
         new CustomEvent("edutech-support-team-general-cleared", {
@@ -447,6 +567,11 @@ function SupportStaffWorkspaceContent() {
     }, 15_000);
     return () => {
       clearInterval(timer);
+      window.removeEventListener(
+        "edutech-support-team-typing-outgoing",
+        outgoingTeamTyping,
+      );
+      socketRef.current = null;
       socket.disconnect();
     };
   }, [
@@ -507,15 +632,34 @@ function SupportStaffWorkspaceContent() {
     const body = draft.trim();
     if (!body) return;
     setBusy(true);
+    notifyTicketTyping(false);
     setDraft("");
     try {
-      await sendSupportStaffMessage(selectedId, body, internalNote);
+      await sendSupportStaffMessage(
+        selectedId,
+        body,
+        internalNote,
+        replyingTo?.id || null,
+      );
+      setReplyingTo(null);
       await Promise.all([loadQueue(), loadChat(selectedId)]);
     } catch (err) {
       setDraft(body);
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const notifyTicketTyping = (isTyping) => {
+    if (!selectedId) return;
+    socketRef.current?.emit("support:typing", { ticketId: selectedId, isTyping });
+    window.clearTimeout(typingTimerRef.current);
+    if (isTyping) {
+      typingTimerRef.current = window.setTimeout(
+        () => notifyTicketTyping(false),
+        1200,
+      );
     }
   };
 
@@ -536,11 +680,22 @@ function SupportStaffWorkspaceContent() {
     }
   };
 
-  const deleteTicketMessage = async (message) => {
-    if (!window.confirm(isFa ? "این پیام حذف شود؟" : "Delete this message?")) return;
+  const toggleMessageSelection = (messageId) => {
+    setSelectedMessageIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  };
+
+  const deleteSelectedMessages = async (scope) => {
+    const messageIds = [...selectedMessageIds];
+    if (!messageIds.length) return;
     setBusy(true);
     try {
-      await deleteSupportStaffMessage(selectedId, message.id);
+      await deleteSelectedSupportStaffMessages(selectedId, messageIds, scope);
+      setSelectedMessageIds(new Set());
       await Promise.all([loadQueue(), loadChat(selectedId)]);
     } catch (err) {
       setError(err.message);
@@ -817,7 +972,7 @@ function SupportStaffWorkspaceContent() {
             ) : (
               <div className="divide-y divide-slate-100">
                 {tickets.map((ticket) => (
-                  <button key={ticket.id} onClick={() => { setChat(null); setTicketActionsOpen(false); setSelectedId(ticket.id); setMobileTicketOpen(true); }} className={`flex w-full items-center gap-3 p-3 text-start transition sm:p-4 ${selectedId === ticket.id ? "bg-[#f0f2f5]" : "hover:bg-slate-50"}`}>
+                  <button key={ticket.id} onClick={() => { setChat(null); setTicketActionsOpen(false); setSelectedMessageIds(new Set()); setReplyingTo(null); setRequesterTyping(false); setPageInfo({ hasMore: false, nextBefore: null }); setSelectedId(ticket.id); setMobileTicketOpen(true); }} className={`flex w-full items-center gap-3 p-3 text-start transition sm:p-4 ${selectedId === ticket.id ? "bg-[#f0f2f5]" : "hover:bg-slate-50"}`}>
                     <RequesterAvatar requester={ticket.requester} />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
@@ -935,7 +1090,20 @@ function SupportStaffWorkspaceContent() {
                   </div>
                   </div>
                 </header>
-                <div className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-1.5 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.32)_0,rgba(255,255,255,0.32)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:p-5">
+                {selectedMessageIds.size ? (
+                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">
+                    <button type="button" onClick={() => setSelectedMessageIds(new Set())} className="rounded-full p-2 hover:bg-slate-100"><Circle size={18} /></button>
+                    <strong className="me-auto text-sm">{selectedMessageIds.size} {isFa ? "پیام انتخاب شد" : "selected"}</strong>
+                    <button type="button" onClick={() => setSelectedMessageIds(new Set(chat.messages.map((message) => message.id)))} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "انتخاب همه" : "Select all"}</button>
+                    <button type="button" disabled={busy} onClick={() => deleteSelectedMessages("me")} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "حذف برای من" : "Delete for me"}</button>
+                    {chat.messages.filter((message) => selectedMessageIds.has(message.id)).every((message) => message.sender?.id === agentId && !message.deletedForEveryone) ? (
+                      <button type="button" disabled={busy} onClick={() => deleteSelectedMessages("everyone")} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white">{isFa ? "حذف برای همه" : "Delete for everyone"}</button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {requesterTyping ? <div className="bg-[#f0f2f5] px-4 py-1 text-[11px] font-bold text-emerald-700">{isFa ? "کاربر در حال نوشتن است…" : "User is typing…"}</div> : null}
+                <div ref={messagesRef} className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-1.5 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.32)_0,rgba(255,255,255,0.32)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:p-5">
+                  {pageInfo.hasMore ? <div className="flex justify-center"><button type="button" disabled={loadingOlder} onClick={loadEarlierMessages} className="rounded-full bg-white px-4 py-2 text-xs font-black text-emerald-700 shadow-sm disabled:opacity-50">{loadingOlder ? (isFa ? "در حال بارگذاری…" : "Loading…") : (isFa ? "نمایش پیام‌های قبلی" : "Load earlier messages")}</button></div> : null}
                   {chat.messages.map((message) => (
                     <MessageBubble
                       key={message.id}
@@ -944,12 +1112,15 @@ function SupportStaffWorkspaceContent() {
                       own={message.sender?.id === agentId}
                       busy={busy}
                       onEdit={() => editTicketMessage(message)}
-                      onDelete={() => deleteTicketMessage(message)}
+                      selected={selectedMessageIds.has(message.id)}
+                      onSelect={() => toggleMessageSelection(message.id)}
+                      onReply={() => setReplyingTo(message)}
                     />
                   ))}
                   <div ref={bottomRef} />
                 </div>
                 <form onSubmit={send} className="bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
+                  {replyingTo ? <TicketReplyPreview message={replyingTo} isFa={isFa} onClose={() => setReplyingTo(null)} /> : null}
                   {chat.ticket.assignedTo?.id !== agentId ? (
                     <p className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
                       {chat.ticket.assignedTo?.id
@@ -962,7 +1133,7 @@ function SupportStaffWorkspaceContent() {
                     <ModeButton disabled={chat.ticket.assignedTo?.id !== agentId} active={internalNote} note onClick={() => setInternalNote(true)}>{isFa ? "یادداشت داخلی" : "Internal note"}</ModeButton>
                   </div>
                   <div className="flex gap-2">
-                    <textarea disabled={chat.ticket.assignedTo?.id !== agentId} value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={4000} rows={1} placeholder={internalNote ? (isFa ? "یادداشت خصوصی که فقط تیم پشتیبانی می‌بیند" : "Private note visible only to support staff") : (isFa ? "پاسخ خود را برای کاربر بنویسید" : "Write a reply to the user")} className={`min-h-11 max-h-28 flex-1 resize-none rounded-3xl border-0 px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 ${internalNote ? "bg-amber-50" : "bg-white"}`} />
+                    <textarea disabled={chat.ticket.assignedTo?.id !== agentId} value={draft} onChange={(event) => { setDraft(event.target.value); if (!internalNote) notifyTicketTyping(Boolean(event.target.value.trim())); }} maxLength={4000} rows={1} placeholder={internalNote ? (isFa ? "یادداشت خصوصی که فقط تیم پشتیبانی می‌بیند" : "Private note visible only to support staff") : (isFa ? "پاسخ خود را برای کاربر بنویسید" : "Write a reply to the user")} className={`min-h-11 max-h-28 flex-1 resize-none rounded-3xl border-0 px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 ${internalNote ? "bg-amber-50" : "bg-white"}`} />
                     <button disabled={busy || !draft.trim() || chat.ticket.assignedTo?.id !== agentId} className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-sm disabled:opacity-40 ${internalNote ? "bg-amber-600" : "bg-[#00a884]"}`}><Send size={19} /></button>
                   </div>
                 </form>
@@ -1071,7 +1242,7 @@ function ModeButton({ active, note = false, disabled = false, onClick, children 
   return <button type="button" disabled={disabled} onClick={onClick} className={`rounded-lg px-3 py-1.5 text-xs font-black disabled:cursor-not-allowed disabled:opacity-40 ${active ? activeClass : "bg-slate-100 text-slate-500"}`}>{children}</button>;
 }
 
-function MessageBubble({ message, isFa, own, busy, onEdit, onDelete }) {
+function MessageBubble({ message, isFa, own, busy, onEdit, selected, onSelect, onReply }) {
   const fromTeam = ["admin", "support"].includes(message.senderRole);
   const senderLabel =
     message.senderRole === "admin"
@@ -1082,16 +1253,27 @@ function MessageBubble({ message, isFa, own, busy, onEdit, onDelete }) {
         ? `${message.sender?.name || (isFa ? "مدرس" : "Teacher")} · ${isFa ? "مدرس" : "Teacher"}`
       : message.sender?.name;
   return (
-    <div className={`flex ${fromTeam ? "justify-end" : "justify-start"}`}>
+    <div className={`flex items-center gap-1 ${fromTeam ? "justify-end" : "justify-start"} ${selected ? "rounded-xl bg-emerald-100/70" : ""}`}>
+      <button type="button" onClick={onSelect} className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${selected ? "text-emerald-600" : "text-slate-400"}`} aria-label={isFa ? "انتخاب پیام" : "Select message"}>{selected ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button>
       <div className={`relative max-w-[86%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[72%] ${message.internalNote ? "border border-amber-300 bg-amber-50" : fromTeam ? "bg-[#d9fdd3] text-slate-900" : "bg-white text-slate-900"}`}>
         {message.internalNote ? <p className="mb-1 flex items-center gap-1 text-[10px] font-black uppercase"><StickyNote size={12} /> {isFa ? "یادداشت داخلی" : "Internal note"}</p> : null}
         <p className="mb-0.5 text-[10px] font-black text-[#00a884]">{senderLabel}</p>
-        <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">{message.body}</p>
+        {message.replyTo ? <TicketReplyQuote message={message.replyTo} isFa={isFa} /> : null}
+        {message.deletedForEveryone ? <p className="text-sm italic text-slate-500">{isFa ? "این پیام حذف شده است." : "This message was deleted."}</p> : <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">{message.body}</p>}
         <p className="mt-1 text-end text-[9px] font-semibold text-slate-500">{message.editedAt ? (isFa ? "ویرایش‌شده · " : "edited · ") : ""}{new Date(message.createdAt).toLocaleTimeString(isFa ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })}</p>
-        {own ? <div className="mt-1 flex justify-end gap-1"><button type="button" disabled={busy} onClick={onEdit} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button><button type="button" disabled={busy} onClick={onDelete} className="grid h-6 w-6 place-items-center rounded-full text-rose-600 hover:bg-rose-50" aria-label={isFa ? "حذف" : "Delete"}><Trash2 size={12} /></button></div> : null}
+        {own ? <span className="absolute bottom-1 end-2"><CheckCheck size={14} className={message.deliveryStatus === "read" ? "text-sky-500" : "text-slate-400"} /></span> : null}
+        {!message.deletedForEveryone ? <div className="mt-1 flex justify-end gap-1"><button type="button" disabled={busy} onClick={onReply} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "پاسخ" : "Reply"}><Reply size={12} /></button>{own ? <button type="button" disabled={busy} onClick={onEdit} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button> : null}</div> : null}
       </div>
     </div>
   );
+}
+
+function TicketReplyQuote({ message, isFa }) {
+  return <div className="mb-1.5 rounded-lg border-s-4 border-emerald-500 bg-black/5 px-2 py-1.5"><p className="truncate text-[10px] font-black text-emerald-700">{message.senderRole === "admin" ? (isFa ? "ادمین" : "Admin") : message.sender?.name || (isFa ? "پیام" : "Message")}</p><p className="line-clamp-2 text-[11px] text-slate-600">{message.deletedForEveryone ? (isFa ? "این پیام حذف شده است." : "This message was deleted.") : message.body}</p></div>;
+}
+
+function TicketReplyPreview({ message, isFa, onClose }) {
+  return <div className="mb-2 flex items-center gap-2 rounded-xl border-s-4 border-emerald-500 bg-white px-3 py-2"><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-black text-emerald-700">{message.sender?.name || (isFa ? "پیام" : "Message")}</p><p className="truncate text-xs text-slate-600">{message.body}</p></div><button type="button" onClick={onClose} className="rounded-full p-1.5 hover:bg-slate-100">×</button></div>;
 }
 
 function RequesterRoleBadge({ role, isFa, compact = false }) {
