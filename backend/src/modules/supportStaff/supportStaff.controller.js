@@ -569,9 +569,7 @@ export const deleteSelectedSupportTeamMessages = asyncHandler(async (req, res) =
   }).select(
     "_id sender recipient conversationType channel deletedForEveryoneAt",
   );
-  if (messages.length !== payload.messageIds.length) {
-    throw new ApiError(404, "One or more selected messages are unavailable");
-  }
+  const availableMessageIds = messages.map((message) => message._id);
 
   const allAccessible = messages.every((message) => {
     const filter = conversationFilter(
@@ -609,7 +607,7 @@ export const deleteSelectedSupportTeamMessages = asyncHandler(async (req, res) =
       );
     }
     await SupportTeamMessage.updateMany(
-      { _id: { $in: payload.messageIds } },
+      { _id: { $in: availableMessageIds } },
       {
         $set: {
           body: "[deleted]",
@@ -621,7 +619,7 @@ export const deleteSelectedSupportTeamMessages = asyncHandler(async (req, res) =
     );
   } else {
     await SupportTeamMessage.updateMany(
-      { _id: { $in: payload.messageIds } },
+      { _id: { $in: availableMessageIds } },
       { $addToSet: { hiddenFor: req.user._id } },
     );
   }

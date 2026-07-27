@@ -81,6 +81,7 @@ export default function SupportTeamChat({
   );
   const bottomRef = useRef(null);
   const messagesRef = useRef(null);
+  const composerRef = useRef(null);
   const typingTimerRef = useRef(null);
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
@@ -270,10 +271,12 @@ export default function SupportTeamChat({
     };
   }, [agent, conversationCacheKey, selectedConversation]);
 
+  const latestTeamMessageId = messages[messages.length - 1]?.id || "";
+
   useEffect(() => {
     if (loadingOlderRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  }, [latestTeamMessageId, selectedConversation]);
 
   useEffect(() => {
     const handler = (event) => {
@@ -597,7 +600,6 @@ export default function SupportTeamChat({
           </>
           )}
         </header>
-        {typing ? <div className="bg-[#f0f2f5] px-4 pb-1 text-[11px] font-bold text-emerald-700">{isFa ? "در حال نوشتن…" : "typing…"}</div> : null}
         {error ? (
           <div className="m-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">
             {error}
@@ -655,8 +657,10 @@ export default function SupportTeamChat({
         </div>
         <form onSubmit={send} className="bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
           {replyingTo ? <ReplyComposerPreview message={replyingTo} isFa={isFa} onClose={() => setReplyingTo(null)} /> : null}
+          {typing ? <div className="mb-1 px-3 text-[11px] font-bold text-emerald-700">{isFa ? "در حال نوشتن…" : "typing…"}</div> : null}
           <div className="flex gap-2">
             <textarea
+              ref={composerRef}
               value={draft}
               onChange={(event) => {
                 setDraft(event.target.value);
@@ -676,6 +680,8 @@ export default function SupportTeamChat({
               className="min-h-11 max-h-28 flex-1 resize-none rounded-3xl border-0 bg-white px-4 py-3 text-sm outline-none"
             />
             <button
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => composerRef.current?.focus({ preventScroll: true })}
               disabled={sending || !draft.trim()}
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#00a884] text-white shadow-sm disabled:opacity-40"
             >

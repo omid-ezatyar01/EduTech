@@ -48,6 +48,44 @@ export const initializeSupportRealtime = (httpServer) => {
 
   io.on("connection", async (socket) => {
     const userId = String(socket.user._id);
+    const joinSupportTicketRoom = async (ticketId) => {
+      const normalizedTicketId = String(ticketId || "");
+      if (!/^[a-f\d]{24}$/i.test(normalizedTicketId)) return false;
+      const room = `support:ticket:${normalizedTicketId}`;
+      if (socket.rooms.has(room)) return true;
+
+      const ticket = await SupportTicket.findById(normalizedTicketId).select(
+        "requester assignedTo category deletedAt",
+      );
+      let allowed =
+        ticket &&
+        !ticket.deletedAt &&
+        (socket.user.role === "admin" ||
+          String(ticket.requester) === userId);
+      if (ticket && socket.user.role === "support") {
+        const ownerId = String(ticket.assignedTo || "");
+        if (ownerId === userId) {
+          allowed = true;
+        } else if (!ownerId) {
+          const profile = await SupportStaffProfile.findOne({
+            user: socket.user._id,
+          }).lean();
+          const specialization = normalizeSupportSpecialization(
+            profile?.specialization,
+          );
+          const categories =
+            SPECIALIZATION_CATEGORIES[specialization] || [];
+          allowed =
+            categories.length === 0 || categories.includes(ticket.category);
+        } else {
+          allowed = false;
+        }
+      }
+      if (!allowed) return false;
+      socket.join(room);
+      return true;
+    };
+
     socket.join(`support:user:${userId}`);
     if (socket.user.role === "support") {
       const profile = await SupportStaffProfile.findOne({
@@ -83,36 +121,8 @@ export const initializeSupportRealtime = (httpServer) => {
 
     socket.on("support:join", async (ticketId, acknowledge = () => {}) => {
       try {
-        const ticket = await SupportTicket.findById(ticketId).select(
-          "requester assignedTo category deletedAt",
-        );
-        let allowed =
-          ticket &&
-          !ticket.deletedAt &&
-          (socket.user.role === "admin" ||
-            String(ticket.requester) === userId);
-        if (ticket && socket.user.role === "support") {
-          const ownerId = String(ticket.assignedTo || "");
-          if (ownerId === userId) {
-            allowed = true;
-          } else if (!ownerId) {
-            const profile = await SupportStaffProfile.findOne({
-              user: socket.user._id,
-            }).lean();
-            const specialization = normalizeSupportSpecialization(
-              profile?.specialization,
-            );
-            const categories =
-              SPECIALIZATION_CATEGORIES[specialization] || [];
-            allowed =
-              categories.length === 0 || categories.includes(ticket.category);
-          } else {
-            allowed = false;
-          }
-        }
-        if (!allowed) return acknowledge({ ok: false });
-        socket.join(`support:ticket:${ticketId}`);
-        return acknowledge({ ok: true });
+        const allowed = await joinSupportTicketRoom(ticketId);
+        return acknowledge({ ok: allowed });
       } catch {
         return acknowledge({ ok: false });
       }
@@ -122,11 +132,18 @@ export const initializeSupportRealtime = (httpServer) => {
       socket.leave(`support:ticket:${ticketId}`);
     });
 
-    socket.on("support:typing", ({ ticketId, isTyping } = {}) => {
+    socket.on("support:typing", async ({ ticketId, isTyping } = {}) => {
       const normalizedTicketId = String(ticketId || "");
       const room = `support:ticket:${normalizedTicketId}`;
       if (!/^[a-f\d]{24}$/i.test(normalizedTicketId)) return;
-      if (!socket.rooms.has(room)) return;
+      if (!socket.rooms.has(room)) {
+        try {
+          const allowed = await joinSupportTicketRoom(normalizedTicketId);
+          if (!allowed) return;
+        } catch {
+          return;
+        }
+      }
       socket.to(room).emit("support:typing", {
         ticketId: normalizedTicketId,
         userId,

@@ -84,6 +84,7 @@ export default function TeacherSupport() {
   const [live, setLive] = useState(false);
   const bottomRef = useRef(null);
   const messagesRef = useRef(null);
+  const composerRef = useRef(null);
   const socketRef = useRef(null);
   const typingTimerRef = useRef(null);
   const incomingTypingTimerRef = useRef(null);
@@ -169,7 +170,8 @@ export default function TeacherSupport() {
     const timer = window.setTimeout(() => loadChat(selectedId).catch((err) => setError(err.message)), 0);
     return () => window.clearTimeout(timer);
   }, [selectedId, loadChat]);
-  useEffect(() => { if (!loadingOlderRef.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chat?.messages?.length]);
+  const latestChatMessageId = chat?.messages?.[chat.messages.length - 1]?.id || "";
+  useEffect(() => { if (!loadingOlderRef.current) bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" }); }, [chat?.ticket?.id, latestChatMessageId]);
   useEffect(() => {
     const socket = connectSupportSocket();
     socketRef.current = socket;
@@ -237,6 +239,7 @@ export default function TeacherSupport() {
     socket.on("support:ticket-updated", refresh);
     socket.on("support:ticket-created", refresh);
     socket.on("support:ticket-deleted", refresh);
+    if (selectedId) socket.emit("support:join", selectedId);
     const timer = setInterval(() => {
       if (document.hidden) return;
       loadList().catch(() => {});
@@ -311,7 +314,6 @@ export default function TeacherSupport() {
       <div className="flex min-h-[540px] flex-col">
         {!chat ? <div className="grid flex-1 place-items-center text-slate-400"><div className="text-center"><MessageCircle className="mx-auto" size={48}/><p className="mt-3 font-bold">{t.select}</p></div></div> : <>
           <header className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="font-black">{chat.ticket.subject}</h2><p className="text-xs font-bold text-slate-400" dir="ltr">{chat.ticket.ticketNumber}</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700">{t.statuses[chat.ticket.status]}</span></header>
-          {supportTyping ? <div className="bg-blue-50 px-4 py-1 text-[11px] font-bold text-blue-700">{language === "fa" ? "پشتیبانی در حال نوشتن است…" : "Support is typing…"}</div> : null}
           {selectedMessageIds.size ? <div className="flex flex-wrap items-center gap-2 border-b bg-white px-3 py-2"><button type="button" onClick={() => setSelectedMessageIds(new Set())} className="rounded-full p-2"><X size={17}/></button><strong className="me-auto text-sm">{selectedMessageIds.size}</strong><button type="button" onClick={() => setSelectedMessageIds(new Set(chat.messages.map((message) => message.id)))} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{language === "fa" ? "انتخاب همه" : "Select all"}</button><button type="button" disabled={busy} onClick={() => deleteSelection("me")} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{language === "fa" ? "حذف برای من" : "Delete for me"}</button>{chat.messages.filter((message) => selectedMessageIds.has(message.id)).every((message) => message.senderRole === "teacher" && !message.deletedForEveryone) ? <button type="button" disabled={busy} onClick={() => deleteSelection("everyone")} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white">{language === "fa" ? "حذف برای همه" : "Delete for everyone"}</button> : null}</div> : null}
           <div ref={messagesRef} className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-3 overflow-y-auto bg-slate-50/60 p-4">
             {pageInfo.hasMore ? <div className="flex justify-center"><button type="button" disabled={loadingOlder} onClick={loadEarlierMessages} className="rounded-full bg-white px-4 py-2 text-xs font-black text-blue-700 shadow-sm disabled:opacity-50">{loadingOlder ? (language === "fa" ? "در حال بارگذاری…" : "Loading…") : (language === "fa" ? "نمایش پیام‌های قبلی" : "Load earlier messages")}</button></div> : null}
@@ -332,7 +334,8 @@ export default function TeacherSupport() {
           </div>
           <form onSubmit={reply} className="border-t p-3">
             {replyingTo ? <div className="mb-2 flex items-center gap-2 rounded-xl border-s-4 border-blue-500 bg-blue-50 px-3 py-2"><div className="min-w-0 flex-1"><p className="text-[10px] font-black text-blue-700">{replyingTo.sender?.name || (language === "fa" ? "پیام" : "Message")}</p><p className="truncate text-xs text-slate-600">{replyingTo.body}</p></div><button type="button" onClick={() => setReplyingTo(null)}><X size={16}/></button></div> : null}
-            <div className="flex gap-2"><textarea value={draft} onChange={(e) => { setDraft(e.target.value); notifyTyping(Boolean(e.target.value.trim())); }} disabled={chat.ticket.status === "closed"} rows={2} maxLength={4000} placeholder={t.help} className="min-h-12 flex-1 resize-none rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"/><button disabled={busy || !draft.trim() || chat.ticket.status === "closed"} className="grid w-12 place-items-center rounded-xl bg-[#0B4FD8] text-white disabled:opacity-40"><Send size={19}/></button></div>
+            {supportTyping ? <div className="mb-1 px-2 text-[11px] font-bold text-blue-700">{language === "fa" ? "پشتیبانی در حال نوشتن است…" : "Support is typing…"}</div> : null}
+            <div className="flex gap-2"><textarea ref={composerRef} value={draft} onChange={(e) => { setDraft(e.target.value); notifyTyping(Boolean(e.target.value.trim())); }} disabled={chat.ticket.status === "closed"} rows={2} maxLength={4000} placeholder={t.help} className="min-h-12 flex-1 resize-none rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"/><button onPointerDown={(event) => event.preventDefault()} onClick={() => composerRef.current?.focus({ preventScroll: true })} disabled={busy || !draft.trim() || chat.ticket.status === "closed"} className="grid w-12 place-items-center rounded-xl bg-[#0B4FD8] text-white disabled:opacity-40"><Send size={19}/></button></div>
           </form>
         </>}
       </div>

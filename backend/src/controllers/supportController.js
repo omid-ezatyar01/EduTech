@@ -403,9 +403,7 @@ export const deleteSelectedSupportMessages = asyncHandler(async (req, res) => {
     ticket: ticket._id,
     hiddenFor: { $ne: req.user._id },
   }).select("_id sender deletedForEveryoneAt");
-  if (messages.length !== payload.messageIds.length) {
-    throw new ApiError(404, "One or more selected messages are unavailable");
-  }
+  const availableMessageIds = messages.map((message) => message._id);
 
   if (payload.scope === "everyone") {
     const cannotDelete = messages.some(
@@ -418,7 +416,7 @@ export const deleteSelectedSupportMessages = asyncHandler(async (req, res) => {
     }
     const deletedAt = new Date();
     await SupportMessage.updateMany(
-      { _id: { $in: payload.messageIds }, ticket: ticket._id },
+      { _id: { $in: availableMessageIds }, ticket: ticket._id },
       {
         $set: {
           body: "[deleted]",
@@ -448,7 +446,7 @@ export const deleteSelectedSupportMessages = asyncHandler(async (req, res) => {
   }
 
   await SupportMessage.updateMany(
-    { _id: { $in: payload.messageIds }, ticket: ticket._id },
+    { _id: { $in: availableMessageIds }, ticket: ticket._id },
     { $addToSet: { hiddenFor: req.user._id } },
   );
   const data = {

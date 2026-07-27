@@ -202,6 +202,7 @@ function SupportStaffWorkspaceContent() {
   const [handoffReason, setHandoffReason] = useState("");
   const bottomRef = useRef(null);
   const messagesRef = useRef(null);
+  const composerRef = useRef(null);
   const socketRef = useRef(null);
   const typingTimerRef = useRef(null);
   const incomingTypingTimerRef = useRef(null);
@@ -399,10 +400,13 @@ function SupportStaffWorkspaceContent() {
     return () => window.clearTimeout(timer);
   }, [desktopLayout, loadChat, mobileTicketOpen, selectedId]);
 
+  const latestTicketMessageId =
+    chat?.messages?.[chat.messages.length - 1]?.id || "";
+
   useEffect(() => {
     if (loadingOlderRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat?.messages?.length]);
+    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  }, [chat?.ticket?.id, latestTicketMessageId]);
 
   useEffect(() => {
     const socket = connectSupportStaffSocket();
@@ -1101,7 +1105,6 @@ function SupportStaffWorkspaceContent() {
                     ) : null}
                   </div>
                 ) : null}
-                {requesterTyping ? <div className="bg-[#f0f2f5] px-4 py-1 text-[11px] font-bold text-emerald-700">{isFa ? "کاربر در حال نوشتن است…" : "User is typing…"}</div> : null}
                 <div ref={messagesRef} className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-1.5 overflow-y-auto bg-[#efeae2] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.32)_0,rgba(255,255,255,0.32)_1px,transparent_1px)] bg-[length:18px_18px] p-2.5 sm:p-5">
                   {pageInfo.hasMore ? <div className="flex justify-center"><button type="button" disabled={loadingOlder} onClick={loadEarlierMessages} className="rounded-full bg-white px-4 py-2 text-xs font-black text-emerald-700 shadow-sm disabled:opacity-50">{loadingOlder ? (isFa ? "در حال بارگذاری…" : "Loading…") : (isFa ? "نمایش پیام‌های قبلی" : "Load earlier messages")}</button></div> : null}
                   {chat.messages.map((message) => (
@@ -1121,6 +1124,7 @@ function SupportStaffWorkspaceContent() {
                 </div>
                 <form onSubmit={send} className="bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
                   {replyingTo ? <TicketReplyPreview message={replyingTo} isFa={isFa} onClose={() => setReplyingTo(null)} /> : null}
+                  {requesterTyping ? <div className="mb-1 px-3 text-[11px] font-bold text-emerald-700">{isFa ? "کاربر در حال نوشتن است…" : "User is typing…"}</div> : null}
                   {chat.ticket.assignedTo?.id !== agentId ? (
                     <p className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
                       {chat.ticket.assignedTo?.id
@@ -1133,8 +1137,8 @@ function SupportStaffWorkspaceContent() {
                     <ModeButton disabled={chat.ticket.assignedTo?.id !== agentId} active={internalNote} note onClick={() => setInternalNote(true)}>{isFa ? "یادداشت داخلی" : "Internal note"}</ModeButton>
                   </div>
                   <div className="flex gap-2">
-                    <textarea disabled={chat.ticket.assignedTo?.id !== agentId} value={draft} onChange={(event) => { setDraft(event.target.value); if (!internalNote) notifyTicketTyping(Boolean(event.target.value.trim())); }} maxLength={4000} rows={1} placeholder={internalNote ? (isFa ? "یادداشت خصوصی که فقط تیم پشتیبانی می‌بیند" : "Private note visible only to support staff") : (isFa ? "پاسخ خود را برای کاربر بنویسید" : "Write a reply to the user")} className={`min-h-11 max-h-28 flex-1 resize-none rounded-3xl border-0 px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 ${internalNote ? "bg-amber-50" : "bg-white"}`} />
-                    <button disabled={busy || !draft.trim() || chat.ticket.assignedTo?.id !== agentId} className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-sm disabled:opacity-40 ${internalNote ? "bg-amber-600" : "bg-[#00a884]"}`}><Send size={19} /></button>
+                    <textarea ref={composerRef} disabled={chat.ticket.assignedTo?.id !== agentId} value={draft} onChange={(event) => { setDraft(event.target.value); if (!internalNote) notifyTicketTyping(Boolean(event.target.value.trim())); }} maxLength={4000} rows={1} placeholder={internalNote ? (isFa ? "یادداشت خصوصی که فقط تیم پشتیبانی می‌بیند" : "Private note visible only to support staff") : (isFa ? "پاسخ خود را برای کاربر بنویسید" : "Write a reply to the user")} className={`min-h-11 max-h-28 flex-1 resize-none rounded-3xl border-0 px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 ${internalNote ? "bg-amber-50" : "bg-white"}`} />
+                    <button onPointerDown={(event) => event.preventDefault()} onClick={() => composerRef.current?.focus({ preventScroll: true })} disabled={busy || !draft.trim() || chat.ticket.assignedTo?.id !== agentId} className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-sm disabled:opacity-40 ${internalNote ? "bg-amber-600" : "bg-[#00a884]"}`}><Send size={19} /></button>
                   </div>
                 </form>
               </>

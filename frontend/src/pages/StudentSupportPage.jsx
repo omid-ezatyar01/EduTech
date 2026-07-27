@@ -182,6 +182,7 @@ export default function StudentSupportPage({ language = "fa" }) {
   const [live, setLive] = useState(false);
   const bottomRef = useRef(null);
   const messagesRef = useRef(null);
+  const composerRef = useRef(null);
   const socketRef = useRef(null);
   const typingTimerRef = useRef(null);
   const incomingTypingTimerRef = useRef(null);
@@ -294,10 +295,16 @@ export default function StudentSupportPage({ language = "fa" }) {
     return () => window.clearTimeout(timer);
   }, [selectedId, loadConversation]);
 
+  const latestConversationMessageId =
+    conversation?.messages?.[conversation.messages.length - 1]?.id || "";
+
   useEffect(() => {
     if (loadingOlderRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation?.messages?.length]);
+    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  }, [
+    conversation?.ticket?.id,
+    latestConversationMessageId,
+  ]);
 
   useEffect(() => {
     const socket = connectSupportSocket();
@@ -381,6 +388,7 @@ export default function StudentSupportPage({ language = "fa" }) {
     socket.on("support:ticket-updated", refreshTicket);
     socket.on("support:ticket-created", refreshTicket);
     socket.on("support:ticket-deleted", refreshTicket);
+    if (selectedId) socket.emit("support:join", selectedId);
 
     const timer = window.setInterval(() => {
       if (document.hidden) return;
@@ -709,7 +717,6 @@ export default function StudentSupportPage({ language = "fa" }) {
                     {text.statuses[conversation.ticket.status]}
                   </span>
                 </header>
-                {supportTyping ? <div className="bg-[#f0f2f5] px-4 py-1 text-[11px] font-bold text-emerald-700">{isFa ? "پشتیبانی در حال نوشتن است…" : "Support is typing…"}</div> : null}
                 {selectedMessageIds.size ? (
                   <div className="flex flex-wrap items-center gap-2 border-b bg-white px-3 py-2">
                     <button type="button" onClick={() => setSelectedMessageIds(new Set())} className="rounded-full p-2 hover:bg-slate-100"><X size={17} /></button>
@@ -762,8 +769,10 @@ export default function StudentSupportPage({ language = "fa" }) {
                   className="bg-[#f0f2f5] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3"
                 >
                   {replyingTo ? <SupportReplyComposer message={replyingTo} isFa={isFa} onClose={() => setReplyingTo(null)} /> : null}
+                  {supportTyping ? <div className="mb-1 px-3 text-[11px] font-bold text-emerald-700">{isFa ? "پشتیبانی در حال نوشتن است…" : "Support is typing…"}</div> : null}
                   <div className="flex items-end gap-2">
                   <textarea
+                    ref={composerRef}
                     value={draft}
                       onChange={(event) => setDraft(event.target.value)}
                       onInput={(event) =>
@@ -786,6 +795,8 @@ export default function StudentSupportPage({ language = "fa" }) {
                     className="max-h-28 min-h-11 flex-1 resize-none rounded-3xl border-0 bg-white px-4 py-3 text-sm outline-none"
                   />
                   <button
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => composerRef.current?.focus({ preventScroll: true })}
                     disabled={
                       busy ||
                       !draft.trim() ||
