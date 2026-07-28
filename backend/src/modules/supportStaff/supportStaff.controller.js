@@ -498,6 +498,7 @@ export const sendSupportTeamMessage = asyncHandler(async (req, res) => {
     data,
   });
   notifySupportTeamChatMessage({
+    messageId: message._id,
     senderId: req.user._id,
     senderName: req.user.role === "admin" ? "Admin" : req.user.name,
     recipientId: recipient ? recipient._id : "",

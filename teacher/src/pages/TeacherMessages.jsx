@@ -649,6 +649,7 @@ export default function TeacherMessages() {
                       return (
                         <div
                           key={message.id}
+                          dir="ltr"
                           className={`flex ${isMine ? "justify-end" : "justify-start"}`}
                         >
                           <div
@@ -741,9 +742,9 @@ export default function TeacherMessages() {
           </div>
         </section>
 
-        <section className="grid gap-0 overflow-hidden rounded-3xl border border-[#E2E8F0] bg-white shadow-sm xl:grid-cols-[360px_1fr]">
+        <section dir="ltr" className="grid gap-0 overflow-hidden rounded-3xl border border-[#E2E8F0] bg-white shadow-sm xl:grid-cols-[360px_1fr]">
           {showConversationList ? (
-          <aside className="border-e border-[#E2E8F0] bg-white">
+          <aside dir={isFa ? "rtl" : "ltr"} className="border-r border-[#E2E8F0] bg-white">
             <div className="border-b border-slate-200 bg-[#f0f2f5] p-3">
             <div className="flex items-center gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3">
               <Search size={16} className="text-slate-400" />
@@ -826,7 +827,7 @@ export default function TeacherMessages() {
           ) : null}
 
           {showChatPanel ? (
-          <article className="bg-white">
+          <article dir={isFa ? "rtl" : "ltr"} className="bg-white">
             {selectedCourseChatId && selectedGroupConversation ? (
               <div className="flex h-[70dvh] min-h-[420px] flex-col md:h-[730px]">
                 <header className="border-b border-[#E2E8F0] bg-[#f0f2f5] px-4 py-3">
@@ -925,7 +926,7 @@ export default function TeacherMessages() {
                       const isMine = msg.senderRole === "teacher";
                       const isChecked = selectedGroupMessageIds.includes(msg.id);
                       return (
-                        <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                        <div key={msg.id} dir="ltr" className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
                           {groupChatSelecting ? (
                             <label className={`mr-2 mt-2 inline-flex h-4 w-4 cursor-pointer items-center justify-center rounded border ${isChecked ? "border-[#0B4FD8] bg-[#0B4FD8]" : "border-slate-300 bg-white"}`}>
                               <input

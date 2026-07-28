@@ -301,7 +301,8 @@ export default function StudentSupportPage({ language = "fa" }) {
 
   useEffect(() => {
     if (loadingOlderRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    const container = messagesRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
   }, [
     conversation?.ticket?.id,
     latestConversationMessageId,
@@ -624,9 +625,10 @@ export default function StudentSupportPage({ language = "fa" }) {
           </div>
         ) : null}
 
-        <section className="grid h-[calc(100dvh-8.5rem)] min-h-[560px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:h-[calc(100dvh-10.5rem)] lg:grid-cols-[380px_1fr] lg:rounded-3xl">
+        <section dir="ltr" className="grid h-[calc(100dvh-8.5rem)] min-h-[560px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:h-[calc(100dvh-10.5rem)] lg:grid-cols-[380px_1fr] lg:rounded-3xl">
           <aside
-            className={`min-h-0 flex-col border-e border-slate-200 bg-white ${
+            dir={isFa ? "rtl" : "ltr"}
+            className={`min-h-0 flex-col border-r border-slate-200 bg-white ${
               mobileChatOpen ? "hidden lg:flex" : "flex"
             }`}
           >
@@ -733,6 +735,7 @@ export default function StudentSupportPage({ language = "fa" }) {
           </aside>
 
           <div
+            dir={isFa ? "rtl" : "ltr"}
             className={`min-h-0 flex-col bg-[#efeae2] ${
               mobileChatOpen ? "flex" : "hidden lg:flex"
             }`}

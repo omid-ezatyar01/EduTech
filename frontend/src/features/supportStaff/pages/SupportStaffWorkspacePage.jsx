@@ -406,7 +406,8 @@ function SupportStaffWorkspaceContent() {
 
   useEffect(() => {
     if (loadingOlderRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    const container = messagesRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
   }, [chat?.ticket?.id, latestTicketMessageId]);
 
   useEffect(() => {
@@ -866,7 +867,7 @@ function SupportStaffWorkspaceContent() {
 
   return (
     <div
-      className={`${mobileDetailOpen ? "h-[100dvh] overflow-hidden lg:h-auto lg:min-h-[100dvh] lg:overflow-visible" : "min-h-[100dvh]"} bg-[#f0f2f5] text-slate-950`}
+      className={`${mobileDetailOpen ? "fixed inset-0 h-[100dvh] overflow-hidden overscroll-none lg:static lg:h-auto lg:min-h-[100dvh] lg:overflow-visible" : "min-h-[100dvh]"} bg-[#f0f2f5] text-slate-950`}
       dir={isFa ? "rtl" : "ltr"}
     >
       <header className={`border-b border-slate-200 bg-[#f0f2f5] px-3 py-2.5 shadow-sm sm:px-4 sm:py-3 ${mobileDetailOpen ? "hidden lg:block" : ""}`}>
@@ -1010,8 +1011,8 @@ function SupportStaffWorkspaceContent() {
 
         {activeView === "guide" ? <SupportTeamGuide /> : null}
 
-        {activeView === "tickets" ? <section className={`grid w-full min-w-0 max-w-full overflow-hidden bg-white shadow-sm lg:h-[clamp(520px,calc(100dvh-10.5rem),720px)] lg:min-h-0 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:rounded-3xl lg:border lg:border-slate-200 ${mobileTicketOpen ? "h-full min-h-0 rounded-none border-0" : "h-[calc(100dvh-14rem)] min-h-[28rem] rounded-2xl border border-slate-200"}`}>
-          <aside className={`chat-scrollbar-side edutech-scrollbar h-full min-h-0 overflow-y-auto border-b border-slate-200 lg:block lg:border-b-0 lg:border-e ${mobileTicketOpen ? "hidden" : "block"}`}>
+        {activeView === "tickets" ? <section dir="ltr" className={`grid w-full min-w-0 max-w-full overflow-hidden bg-white shadow-sm lg:h-[clamp(520px,calc(100dvh-10.5rem),720px)] lg:min-h-0 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:rounded-3xl lg:border lg:border-slate-200 ${mobileTicketOpen ? "h-full min-h-0 rounded-none border-0" : "h-[calc(100dvh-14rem)] min-h-[28rem] rounded-2xl border border-slate-200"}`}>
+          <aside dir={isFa ? "rtl" : "ltr"} className={`chat-scrollbar-side edutech-scrollbar h-full min-h-0 overflow-y-auto border-b border-slate-200 lg:block lg:border-b-0 lg:border-r ${mobileTicketOpen ? "hidden" : "block"}`}>
             {loading ? (
               <p className="p-10 text-center font-bold text-slate-400">{isFa ? "در حال بارگذاری…" : "Loading…"}</p>
             ) : tickets.length === 0 ? (
@@ -1039,7 +1040,7 @@ function SupportStaffWorkspaceContent() {
             )}
           </aside>
 
-          <div className={`${mobileTicketOpen ? "flex" : "hidden"} h-full min-h-0 min-w-0 flex-col overflow-hidden lg:flex`}>
+          <div dir={isFa ? "rtl" : "ltr"} className={`${mobileTicketOpen ? "flex" : "hidden"} h-full min-h-0 min-w-0 flex-col overflow-hidden lg:flex`}>
             {!chat ? (
               <div className="grid flex-1 place-items-center text-center text-slate-400">
                 <div><MessageCircle className="mx-auto" size={48} /><p className="mt-3 font-bold">{mobileTicketOpen ? (isFa ? "در حال بارگذاری گفتگو…" : "Loading conversation…") : (isFa ? "یک گفتگو را انتخاب کنید" : "Select a conversation")}</p></div>

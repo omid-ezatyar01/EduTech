@@ -273,7 +273,8 @@ export default function SupportTeamChat({
 
   useEffect(() => {
     if (loadingOlderRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    const container = messagesRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
   }, [latestTeamMessageId, selectedConversation]);
 
   useEffect(() => {
@@ -467,8 +468,8 @@ export default function SupportTeamChat({
     );
 
   return (
-    <section className={`grid w-full min-w-0 max-w-full overflow-hidden bg-white shadow-sm lg:h-[clamp(520px,calc(100dvh-10.5rem),720px)] lg:min-h-0 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:rounded-3xl lg:border lg:border-slate-200 ${mobileOpen ? "h-full min-h-0 rounded-none border-0" : "h-[calc(100dvh-9.5rem)] min-h-[28rem] rounded-2xl border border-slate-200"}`}>
-      <aside className={`${mobileOpen ? "hidden" : "flex"} h-full min-h-0 flex-col border-b border-slate-200 bg-white lg:flex lg:border-b-0 lg:border-e`}>
+    <section dir="ltr" className={`grid w-full min-w-0 max-w-full overflow-hidden bg-white shadow-sm lg:h-[clamp(520px,calc(100dvh-10.5rem),720px)] lg:min-h-0 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:rounded-3xl lg:border lg:border-slate-200 ${mobileOpen ? "h-full min-h-0 rounded-none border-0" : "h-[calc(100dvh-9.5rem)] min-h-[28rem] rounded-2xl border border-slate-200"}`}>
+      <aside dir={isFa ? "rtl" : "ltr"} className={`${mobileOpen ? "hidden" : "flex"} h-full min-h-0 flex-col border-b border-slate-200 bg-white lg:flex lg:border-b-0 lg:border-r`}>
         <div className="flex items-center justify-between bg-[#f0f2f5] px-3 py-2.5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#00a884] text-white">
@@ -544,7 +545,7 @@ export default function SupportTeamChat({
         </div>
       </aside>
 
-      <div className={`${mobileOpen ? "flex" : "hidden"} h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#efeae2] lg:flex`}>
+      <div dir={isFa ? "rtl" : "ltr"} className={`${mobileOpen ? "flex" : "hidden"} h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#efeae2] lg:flex`}>
         <header className="z-20 flex min-h-14 items-center gap-2 bg-[#f0f2f5] px-2.5 py-2 shadow-sm sm:gap-3 sm:px-4">
           {selectedIds.size ? (
             <>

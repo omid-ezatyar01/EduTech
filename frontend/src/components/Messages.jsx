@@ -367,9 +367,9 @@ export default function Messages({ language = "fa" }) {
           </div>
         ) : null}
 
-        <section className="grid h-[calc(100dvh-8.5rem)] min-h-[560px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:h-[calc(100dvh-10.5rem)] lg:grid-cols-[380px_1fr] lg:rounded-3xl">
+        <section dir="ltr" className="grid h-[calc(100dvh-8.5rem)] min-h-[560px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:h-[calc(100dvh-10.5rem)] lg:grid-cols-[380px_1fr] lg:rounded-3xl">
           {showConversationList ? (
-            <aside className="flex min-h-0 flex-col border-e border-slate-200 bg-white">
+            <aside dir={isFa ? "rtl" : "ltr"} className="flex min-h-0 flex-col border-r border-slate-200 bg-white">
               <div className="flex items-center justify-between bg-[#f0f2f5] px-3 py-2.5">
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#00a884] text-white">
@@ -511,7 +511,7 @@ export default function Messages({ language = "fa" }) {
           ) : null}
 
           {showChatPanel ? (
-            <div className="flex min-h-0 flex-col bg-[#efeae2]">
+            <div dir={isFa ? "rtl" : "ltr"} className="flex min-h-0 flex-col bg-[#efeae2]">
               {!selectedConversation ? (
                 <div className="grid flex-1 place-items-center text-center text-slate-500">
                   <div>
@@ -584,6 +584,7 @@ export default function Messages({ language = "fa" }) {
                         return (
                           <div
                             key={message.id}
+                            dir="ltr"
                             className={`flex ${isStudent ? "justify-end" : "justify-start"}`}
                           >
                             <div

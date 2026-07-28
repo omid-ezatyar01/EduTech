@@ -309,6 +309,7 @@ export const notifySupportStaffForTicket = async ({
 };
 
 export const notifySupportTeamChatMessage = async ({
+  messageId = "",
   senderId,
   senderName = "Support team",
   recipientId = "",
@@ -335,22 +336,11 @@ export const notifySupportTeamChatMessage = async ({
     userId: { $in: userIds },
   }).lean();
   const conversation = recipientId ? String(senderId || "") : "general";
-  const offlineRecipients = recipients.filter(
-    (row) => !isSupportUserOnline(entityId(row.userId)),
-  );
-  const allowedUserIds = reservePushAudience({
-    userIds: offlineRecipients.map((row) => row.userId),
-    notificationKey: recipientId
-      ? `team-direct:${conversation}`
-      : "team-general",
-    cooldownMs: recipientId ? 30_000 : 2 * 60_000,
-  });
-  const eligibleRecipients = offlineRecipients.filter((row) =>
-    allowedUserIds.has(entityId(row.userId)),
-  );
+  const eligibleRecipients = recipients;
   if (!eligibleRecipients.length) {
-    return { sent: 0, failed: 0, skipped: true, reason: "online_or_throttled" };
+    return { sent: 0, failed: 0 };
   }
+  const notificationId = entityId(messageId) || `${Date.now()}`;
   const payload = {
     type: "support_team_message",
     title: `Support team · ${senderName}`,
@@ -358,8 +348,8 @@ export const notifySupportTeamChatMessage = async ({
     icon: "/icons/web-app-manifest-192x192.png",
     badge: "/icons/favicon-96x96.png",
     tag: recipientId
-      ? `support-team-direct-${conversation}`
-      : "support-team-general",
+      ? `support-team-direct-${conversation}-${notificationId}`
+      : `support-team-general-${notificationId}`,
     url: `/support-team?conversation=${encodeURIComponent(conversation)}`,
   };
 

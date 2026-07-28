@@ -117,7 +117,8 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
 
   useEffect(() => {
     if (loadingOlderRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    const container = messagesRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
   }, [latestTeamMessageId, selected]);
 
   useEffect(() => {
@@ -359,8 +360,8 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
     );
 
   return (
-    <section className="grid min-h-[68vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[340px_1fr]">
-      <aside className="chat-scrollbar-side edutech-scrollbar max-h-[72vh] overflow-y-auto border-b border-slate-200 lg:border-b-0 lg:border-e">
+    <section dir="ltr" className="grid min-h-[68vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[340px_1fr]">
+      <aside dir={isFa ? "rtl" : "ltr"} className="chat-scrollbar-side edutech-scrollbar max-h-[72vh] overflow-y-auto border-b border-slate-200 lg:border-b-0 lg:border-r">
         <div className="sticky top-0 z-10 border-b bg-white p-3">
           <label className="relative block">
             <Search className="absolute start-3 top-3 text-slate-400" size={16} />
@@ -395,7 +396,7 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
           />
         ))}
       </aside>
-      <div className="flex min-h-[580px] flex-col">
+      <div dir={isFa ? "rtl" : "ltr"} className="flex min-h-[580px] flex-col">
         <header className="flex items-center gap-3 border-b p-4">
           <span className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
             {selected === "general" ? <UsersRound size={21} /> : <MessageSquare size={21} />}
