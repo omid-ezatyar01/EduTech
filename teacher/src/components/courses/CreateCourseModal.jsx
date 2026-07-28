@@ -581,7 +581,7 @@ export default function CreateCourseModal({
       if (!form.startDate || Number.isNaN(startDateValue.getTime())) {
         return language === "fa" ? "تاریخ شروع کورس معتبر نیست." : "Course start date is invalid.";
       }
-      if (!isAllowedCourseStartDate(form.startDate)) {
+      if (!isAllowedCourseStartDate(form.startDate, form.timezone)) {
         return language === "fa"
           ? "تاریخ شروع کورس فقط می‌تواند روز اول یا پانزدهم ماه باشد."
           : "Course start date can only be the 1st or 15th of a month.";
@@ -726,7 +726,10 @@ export default function CreateCourseModal({
         totalSessionCount < COURSE_SESSIONS_MIN ||
         totalSessionCount > COURSE_SESSIONS_MAX
       ) return "totalSessions";
-      if (!form.startDate || !isAllowedCourseStartDate(form.startDate)) return "startDate";
+      if (
+        !form.startDate ||
+        !isAllowedCourseStartDate(form.startDate, form.timezone)
+      ) return "startDate";
       if (
         !isValidTimeText(form.startTime) ||
         !isValidTimeText(form.endTime) ||
@@ -843,7 +846,7 @@ export default function CreateCourseModal({
         return (
           !form.startDate ||
           Number.isNaN(date.getTime()) ||
-          !isAllowedCourseStartDate(form.startDate)
+          !isAllowedCourseStartDate(form.startDate, form.timezone)
         );
       }
       case "classTime":
@@ -1081,7 +1084,7 @@ export default function CreateCourseModal({
       return;
     }
 
-    if (!isAllowedCourseStartDate(form.startDate)) {
+    if (!isAllowedCourseStartDate(form.startDate, form.timezone)) {
       setFormError(
         language === "fa"
           ? "تاریخ شروع کورس فقط می‌تواند روز اول یا پانزدهم ماه باشد."
@@ -1231,11 +1234,15 @@ export default function CreateCourseModal({
       timezone: form.timezone,
       certificate: {
         enabled: !isFree,
-        minimumAttendance: Number(form.certificateMinimumAttendance || 0),
-        minimumPassingGrade: Number(form.certificateMinimumPassingGrade || 0),
+        minimumAttendance: isFree
+          ? 0
+          : Number(form.certificateMinimumAttendance || 0),
+        minimumPassingGrade: isFree
+          ? 0
+          : Number(form.certificateMinimumPassingGrade || 0),
         assignmentsRequired: false,
         finalProjectRequired: false,
-        fullPaymentRequired: true,
+        fullPaymentRequired: !isFree,
       },
       coursePolicies: {
         refundPolicyAccepted: Boolean(form.refundPolicyAccepted),
@@ -1689,6 +1696,7 @@ export default function CreateCourseModal({
               value={form.startDate}
               onChange={(startDate) => setForm({ ...form, startDate })}
               language={language}
+              timeZone={form.timezone}
             />
           <div className="-mt-3 sm:col-span-2">{renderFieldError("startDate")}</div>
 
@@ -1778,6 +1786,11 @@ export default function CreateCourseModal({
                 setForm({
                   ...form,
                   pricingType: e.target.value,
+                  priceMode: e.target.value === "free" ? "single" : form.priceMode,
+                  regionalPrices:
+                    e.target.value === "free"
+                      ? createEmptyRegionalPrices()
+                      : form.regionalPrices,
                   price: e.target.value === "free" ? "0" : form.price,
                   teacherDiscountPercentage:
                     e.target.value === "free" ? "0" : form.teacherDiscountPercentage,

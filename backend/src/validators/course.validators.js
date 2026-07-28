@@ -184,51 +184,66 @@ const optionalPreviewVideoUrlsSchema = Joi.array()
     return value;
   });
 
-const getCourseStartDay = (value) => {
+const getCalendarDateParts = (value, timeZone) => {
   if (typeof value === "string") {
-    const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match) return Number(match[3]);
+    const dateOnlyMatch = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+      return {
+        year: Number(dateOnlyMatch[1]),
+        month: Number(dateOnlyMatch[2]),
+        day: Number(dateOnlyMatch[3]),
+      };
+    }
   }
 
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.getDate();
-};
 
-const getCourseStartYear = (value) => {
-  if (typeof value === "string") {
-    const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match) return Number(match[1]);
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date);
+    const partMap = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]));
+    return {
+      year: Number(partMap.year),
+      month: Number(partMap.month),
+      day: Number(partMap.day),
+    };
+  } catch {
+    return null;
   }
-
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.getFullYear();
 };
+
+const toCalendarDateKey = ({ year, month, day } = {}) =>
+  Number(year) * 10_000 + Number(month) * 100 + Number(day);
 
 const teacherCourseStartDateSchema = Joi.date().custom((value, helpers) => {
   const originalValue = helpers.original ?? value;
-  const day = getCourseStartDay(originalValue);
-  const year = getCourseStartYear(originalValue);
-  const currentYear = new Date().getFullYear();
+  const payload = helpers.state.ancestors?.[0] || {};
+  const timeZone = payload.timezone || "Asia/Kabul";
+  const selectedParts = getCalendarDateParts(originalValue, timeZone);
+  const todayParts = getCalendarDateParts(new Date(), timeZone);
 
-  if (year !== currentYear) {
+  if (!selectedParts || !todayParts) {
+    return helpers.error("date.base");
+  }
+
+  if (selectedParts.year !== todayParts.year) {
     return helpers.error("any.invalid", {
       message: "Course start date must be within the current year",
     });
   }
 
-  if (!COURSE_START_DATE_DAYS.includes(day)) {
+  if (!COURSE_START_DATE_DAYS.includes(selectedParts.day)) {
     return helpers.error("any.invalid", {
       message: "Course start date can only be the 1st or 15th of a month",
     });
   }
 
-  const selectedDate = new Date(value);
-  selectedDate.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (selectedDate < today) {
+  if (toCalendarDateKey(selectedParts) < toCalendarDateKey(todayParts)) {
     return helpers.error("any.invalid", {
       message: "Course start date cannot be in the past",
     });

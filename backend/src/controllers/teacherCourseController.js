@@ -284,6 +284,8 @@ export const createTeacherCourse = asyncHandler(async (req, res) => {
   }
 
   if (payload.isFree) {
+    payload.pricingType = "single";
+    delete payload.prices;
     payload.price = 0;
     payload.discountPrice = 0;
     payload.teacherDiscountPercentage = 0;
@@ -320,6 +322,18 @@ export const createTeacherCourse = asyncHandler(async (req, res) => {
   payload.certificate = {
     ...(payload.certificate || {}),
     enabled: !payload.isFree,
+    minimumAttendance: payload.isFree
+      ? 0
+      : Number(payload.certificate?.minimumAttendance || 0),
+    minimumPassingGrade: payload.isFree
+      ? 0
+      : Number(payload.certificate?.minimumPassingGrade || 0),
+    assignmentsRequired: payload.isFree
+      ? false
+      : Boolean(payload.certificate?.assignmentsRequired),
+    finalProjectRequired: payload.isFree
+      ? false
+      : Boolean(payload.certificate?.finalProjectRequired),
     fullPaymentRequired: !payload.isFree,
   };
 
@@ -473,6 +487,32 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
       ...(existingCourse.certificate?.toObject?.() || existingCourse.certificate || {}),
       ...(payload.certificate || {}),
       enabled: !nextIsFreeForCertificate,
+      minimumAttendance: nextIsFreeForCertificate
+        ? 0
+        : Number(
+            payload.certificate?.minimumAttendance ??
+            existingCourse.certificate?.minimumAttendance ??
+            0,
+          ),
+      minimumPassingGrade: nextIsFreeForCertificate
+        ? 0
+        : Number(
+            payload.certificate?.minimumPassingGrade ??
+            existingCourse.certificate?.minimumPassingGrade ??
+            0,
+          ),
+      assignmentsRequired: nextIsFreeForCertificate
+        ? false
+        : Boolean(
+            payload.certificate?.assignmentsRequired ??
+            existingCourse.certificate?.assignmentsRequired,
+          ),
+      finalProjectRequired: nextIsFreeForCertificate
+        ? false
+        : Boolean(
+            payload.certificate?.finalProjectRequired ??
+            existingCourse.certificate?.finalProjectRequired,
+          ),
       fullPaymentRequired: !nextIsFreeForCertificate,
     };
   }
@@ -553,6 +593,18 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
     payload.certificate = {
       ...payload.certificate,
       enabled: !payload.isFree,
+      minimumAttendance: payload.isFree
+        ? 0
+        : Number(payload.certificate.minimumAttendance || 0),
+      minimumPassingGrade: payload.isFree
+        ? 0
+        : Number(payload.certificate.minimumPassingGrade || 0),
+      assignmentsRequired: payload.isFree
+        ? false
+        : Boolean(payload.certificate.assignmentsRequired),
+      finalProjectRequired: payload.isFree
+        ? false
+        : Boolean(payload.certificate.finalProjectRequired),
       fullPaymentRequired: !payload.isFree,
     };
   }
@@ -600,6 +652,8 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
   }
 
   if (payload.isFree === true) {
+    payload.pricingType = "single";
+    delete payload.prices;
     payload.price = 0;
     payload.discountPrice = 0;
     payload.teacherDiscountPercentage = 0;

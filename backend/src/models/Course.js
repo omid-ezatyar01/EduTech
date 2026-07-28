@@ -542,10 +542,23 @@ courseSchema.pre("validate", async function () {
         : 0;
   }
 
-  if (this.isFree && this.pricingType !== "regional") {
-    this.price = 0;
-    this.discountPrice = 0;
-    this.teacherDiscountPercentage = 0;
+  if (this.isFree) {
+    if (this.pricingType !== "regional") {
+      this.pricingType = "single";
+      this.prices = undefined;
+      this.price = 0;
+      this.discountPrice = 0;
+      this.teacherDiscountPercentage = 0;
+    }
+    this.certificate = {
+      ...(this.certificate?.toObject?.() || this.certificate || {}),
+      enabled: false,
+      minimumAttendance: 0,
+      minimumPassingGrade: 0,
+      assignmentsRequired: false,
+      finalProjectRequired: false,
+      fullPaymentRequired: false,
+    };
   }
 
   if (!this.isFree && this.pricingType !== "regional") {

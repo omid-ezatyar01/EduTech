@@ -1,65 +1,34 @@
 import { CalendarDays } from "lucide-react";
 import { useMemo } from "react";
-import { isAllowedCourseStartDate } from "../../utils/courseStartDate";
+import {
+  getCourseTodayParts,
+  isAllowedCourseStartDate,
+  parseCourseDateValue,
+  toCourseDateKey,
+} from "../../utils/courseStartDate";
 
 const START_DATE_DAYS = [1, 15];
-
-const toDateOptionValue = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const toMonthOptionValue = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-};
-
-const parseDateOptionValue = (value = "") => {
-  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1;
-  const day = Number(match[3]);
-  const date = new Date(year, monthIndex, day);
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== monthIndex ||
-    date.getDate() !== day
-  ) {
-    return null;
-  }
-  return date;
-};
 
 const parseMonthOptionValue = (value = "") => {
   const match = String(value || "").match(/^(\d{4})-(\d{2})$/);
   if (!match) return null;
   const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1;
-  const date = new Date(year, monthIndex, 1);
-  if (date.getFullYear() !== year || date.getMonth() !== monthIndex) return null;
-  return date;
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  return { year, month };
 };
 
-const getToday = () => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
-};
-
-const buildMonthOptions = (selectedValue = "", language = "fa") => {
-  const today = getToday();
-  const selectedDate = parseDateOptionValue(selectedValue);
-  const currentYear = today.getFullYear();
+const buildMonthOptions = (selectedValue = "", language = "fa", timeZone = "") => {
+  const today = getCourseTodayParts(timeZone);
+  const selectedDate = parseCourseDateValue(selectedValue);
+  const currentYear = today.year;
   const options = [];
   const seen = new Set();
   const formatterLocale = language === "fa" ? "fa-AF-u-ca-gregory" : "en-US";
 
-  const addMonth = (date) => {
-    const value = toMonthOptionValue(date);
+  const addMonth = (year, month) => {
+    const date = new Date(Date.UTC(year, month - 1, 1));
+    const value = `${year}-${String(month).padStart(2, "0")}`;
     if (seen.has(value)) return;
     seen.add(value);
     options.push({
@@ -67,34 +36,40 @@ const buildMonthOptions = (selectedValue = "", language = "fa") => {
       label: date.toLocaleDateString(formatterLocale, {
         year: "numeric",
         month: "long",
+        timeZone: "UTC",
       }),
     });
   };
 
-  if (selectedDate && isAllowedCourseStartDate(selectedValue) && selectedDate.getFullYear() === currentYear) {
-    addMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+  if (
+    selectedDate &&
+    isAllowedCourseStartDate(selectedValue, timeZone) &&
+    selectedDate.year === currentYear
+  ) {
+    addMonth(selectedDate.year, selectedDate.month);
   }
 
-  for (let monthIndex = today.getMonth(); monthIndex < 12; monthIndex += 1) {
-    const month = new Date(currentYear, monthIndex, 1);
+  for (let month = today.month; month <= 12; month += 1) {
     const hasAvailableDay = START_DATE_DAYS.some((day) => {
-      const candidate = new Date(month.getFullYear(), month.getMonth(), day);
-      return candidate >= today;
+      const candidate = { year: currentYear, month, day };
+      return toCourseDateKey(candidate) >= toCourseDateKey(today);
     });
-    if (hasAvailableDay) addMonth(month);
+    if (hasAvailableDay) addMonth(currentYear, month);
   }
 
   return options;
 };
 
 const formatFullDate = (value, language) => {
-  const date = parseDateOptionValue(value);
-  if (!date) return "";
+  const parts = parseCourseDateValue(value);
+  if (!parts) return "";
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
   return date.toLocaleDateString(language === "fa" ? "fa-AF-u-ca-gregory" : "en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: "UTC",
   });
 };
 
@@ -102,16 +77,20 @@ export default function CourseStartDatePicker({
   value = "",
   onChange,
   language = "fa",
+  timeZone = "",
   disabled = false,
 }) {
-  const monthOptions = useMemo(() => buildMonthOptions(value, language), [language, value]);
-  const selectedDate = parseDateOptionValue(value);
+  const monthOptions = useMemo(
+    () => buildMonthOptions(value, language, timeZone),
+    [language, timeZone, value],
+  );
+  const selectedDate = parseCourseDateValue(value);
   const selectedMonthValue =
-    selectedDate && isAllowedCourseStartDate(value)
-      ? toMonthOptionValue(selectedDate)
+    selectedDate && isAllowedCourseStartDate(value, timeZone)
+      ? `${selectedDate.year}-${String(selectedDate.month).padStart(2, "0")}`
       : monthOptions[0]?.value || "";
-  const selectedDay = selectedDate?.getDate() || null;
-  const today = getToday();
+  const selectedDay = selectedDate?.day || null;
+  const today = getCourseTodayParts(timeZone);
   const isFa = language === "fa";
 
   const setMonth = (monthValue) => {
@@ -124,22 +103,26 @@ export default function CourseStartDatePicker({
     const preferredDay = START_DATE_DAYS.includes(selectedDay) ? selectedDay : START_DATE_DAYS[0];
     const nextDay =
       START_DATE_DAYS.find((day) => {
-        const candidate = new Date(month.getFullYear(), month.getMonth(), day);
-        return day === preferredDay && candidate >= today;
+        const candidate = { year: month.year, month: month.month, day };
+        return day === preferredDay && toCourseDateKey(candidate) >= toCourseDateKey(today);
       }) ||
       START_DATE_DAYS.find((day) => {
-        const candidate = new Date(month.getFullYear(), month.getMonth(), day);
-        return candidate >= today;
+        const candidate = { year: month.year, month: month.month, day };
+        return toCourseDateKey(candidate) >= toCourseDateKey(today);
       }) ||
       START_DATE_DAYS[START_DATE_DAYS.length - 1];
 
-    onChange(toDateOptionValue(new Date(month.getFullYear(), month.getMonth(), nextDay)));
+    onChange(
+      `${month.year}-${String(month.month).padStart(2, "0")}-${String(nextDay).padStart(2, "0")}`,
+    );
   };
 
   const setDay = (day) => {
     const month = parseMonthOptionValue(selectedMonthValue);
     if (!month) return;
-    onChange(toDateOptionValue(new Date(month.getFullYear(), month.getMonth(), day)));
+    onChange(
+      `${month.year}-${String(month.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    );
   };
 
   const selectedLabel = formatFullDate(value, language);
@@ -180,10 +163,15 @@ export default function CourseStartDatePicker({
         <div className="grid grid-cols-2 gap-2 sm:w-48">
           {START_DATE_DAYS.map((day) => {
             const month = parseMonthOptionValue(selectedMonthValue);
-            const candidate = month ? new Date(month.getFullYear(), month.getMonth(), day) : null;
-            const candidateValue = candidate ? toDateOptionValue(candidate) : "";
+            const candidate = month ? { year: month.year, month: month.month, day } : null;
+            const candidateValue = candidate
+              ? `${candidate.year}-${String(candidate.month).padStart(2, "0")}-${String(candidate.day).padStart(2, "0")}`
+              : "";
             const isSelected = value === candidateValue;
-            const isPast = candidate && candidate < today && !isSelected;
+            const isPast =
+              candidate &&
+              toCourseDateKey(candidate) < toCourseDateKey(today) &&
+              !isSelected;
 
             return (
               <button

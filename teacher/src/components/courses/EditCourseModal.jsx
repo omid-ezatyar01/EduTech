@@ -887,7 +887,7 @@ export default function EditCourseModal({
       return;
     }
 
-    if (!isAllowedCourseStartDate(form.startDate)) {
+    if (!isAllowedCourseStartDate(form.startDate, form.timezone)) {
       setFormError(
         language === "fa"
           ? "تاریخ شروع کورس فقط می‌تواند روز اول یا پانزدهم ماه باشد."
@@ -1562,6 +1562,7 @@ export default function EditCourseModal({
               value={form.startDate}
               onChange={(startDate) => setForm({ ...form, startDate })}
               language={language}
+              timeZone={form.timezone}
               disabled={isScheduleLocked}
             />
 
