@@ -389,12 +389,7 @@ export default function App() {
     path.startsWith("/support-team") || path.startsWith("/support/");
   const hideGlobalLayout =
     isAuthPage || isStudentPage || isLegalPage || isSupportStaffPage;
-  const showSupportContactButton =
-    !isAuthPage &&
-    !isLegalPage &&
-    !isSupportStaffPage &&
-    path !== "/contact" &&
-    path !== "/student/support";
+  const showSupportContactButton = path === "/";
 
   let activeHref = "/";
   if (path.startsWith("/teachers") || path.startsWith("/teacher/"))

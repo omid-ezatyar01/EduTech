@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Loader2, Search, SlidersHorizontal, X } from "lucide-react";
 import { Link, useParams } from "react-router";
 import CourseCatalogCard from "../components/CourseCatalogCard.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
@@ -13,17 +13,9 @@ import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 import { buildEnrolledCourseIdSet } from "../utils/courseEnrollmentAccess.js";
 import { buildCourseCategoryPath, buildCoursePath } from "../utils/routePaths.js";
 
-const ROW_SIZE = 20;
+const PAGE_SIZE = 20;
 const INITIAL_PAGE_COUNT = 3;
 const LOAD_MORE_PAGE_STEP = 2;
-
-function chunkRows(items = [], size = ROW_SIZE) {
-  const rows = [];
-  for (let index = 0; index < items.length; index += size) {
-    rows.push(items.slice(index, index + size));
-  }
-  return rows;
-}
 
 function extractRouteIdentifier(value = "") {
   const normalizedValue = String(value || "").trim();
@@ -49,9 +41,7 @@ export default function MobileCourseCategoryPage({ t }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [selectedCategoryPath, setSelectedCategoryPath] = useState([]);
-  const [rowNav, setRowNav] = useState({});
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const rowRefs = useRef([]);
 
   const rootCategories = useMemo(
     () => categories.filter((item) => !item?.parent),
@@ -163,7 +153,7 @@ export default function MobileCourseCategoryPage({ t }) {
           Array.from({ length: currentPage }, (_, index) =>
             fetchPublishedCourses({
               page: index + 1,
-              limit: ROW_SIZE,
+              limit: PAGE_SIZE,
               category: activeCategoryFilter,
               search: searchTerm.trim() || undefined,
               sortBy: "popular",
@@ -223,10 +213,6 @@ export default function MobileCourseCategoryPage({ t }) {
   const BackIcon = dir === "rtl" ? ArrowRight : ArrowLeft;
   const totalPages = Number(meta?.totalPages || 1);
   const totalCourses = Number(meta?.total || 0);
-  const courseRows = useMemo(
-    () => chunkRows(courses, ROW_SIZE),
-    [courses],
-  );
   const categoryPath = currentCategory ? buildCourseCategoryPath(currentCategory) : "/live-courses";
   const categoryLabel = currentCategory?.name || (language === "fa" ? "کورس‌های آنلاین" : "Live Courses");
   const buildCourseDetailsPath = useCallback(
@@ -239,109 +225,67 @@ export default function MobileCourseCategoryPage({ t }) {
     },
     [categoryLabel, categoryPath],
   );
-  const getRowNavState = useCallback((rowElement) => {
-    if (!rowElement) return { canPrev: false, canNext: false };
-    const maxScroll = Math.max(0, rowElement.scrollWidth - rowElement.clientWidth);
-    if (dir === "rtl") {
-      const progress = Math.min(maxScroll, Math.abs(rowElement.scrollLeft || 0));
-      return {
-        canPrev: progress > 8,
-        canNext: progress < maxScroll - 8,
-      };
-    }
-
-    const progress = rowElement.scrollLeft || 0;
-    return {
-      canPrev: progress > 8,
-      canNext: progress < maxScroll - 8,
-    };
-  }, [dir]);
-  const scrollRowForward = useCallback((rowElement) => {
-    if (!rowElement) return;
-    const scrollAmount = Math.max(280, Math.round(rowElement.clientWidth * 0.82));
-    rowElement.scrollBy({
-      left: dir === "rtl" ? -scrollAmount : scrollAmount,
-      behavior: "smooth",
-    });
-  }, [dir]);
-  const scrollRowBackward = useCallback((rowElement) => {
-    if (!rowElement) return;
-    const scrollAmount = Math.max(280, Math.round(rowElement.clientWidth * 0.82));
-    rowElement.scrollBy({
-      left: dir === "rtl" ? scrollAmount : -scrollAmount,
-      behavior: "smooth",
-    });
-  }, [dir]);
-  const updateRowNav = useCallback((key, rowElement) => {
-    const nextState = getRowNavState(rowElement);
-    setRowNav((previous) => {
-      const current = previous[key];
-      if (current?.canPrev === nextState.canPrev && current?.canNext === nextState.canNext) {
-        return previous;
-      }
-      return { ...previous, [key]: nextState };
-    });
-  }, [getRowNavState]);
   const scrollPageToTop = useCallback(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   }, []);
 
-  useEffect(() => {
-    courseRows.forEach((_, rowIndex) => {
-      const element = rowRefs.current[rowIndex];
-      if (element) {
-        updateRowNav(rowIndex, element);
-      }
-    });
-  }, [courseRows, updateRowNav]);
-
   return (
-    <section className="bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] pb-20">
-      <div className="mx-auto max-w-[1280px] px-4 pt-6 sm:px-6 lg:px-8">
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-7">
+    <section className="min-w-0 bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] pb-20">
+      <div className="mx-auto max-w-[1340px] px-4 pt-6 sm:px-6 lg:px-8">
+        <div className="min-w-0">
           <Link
             to="/live-courses"
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 shadow-sm transition hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700"
           >
             <BackIcon size={18} />
             {language === "fa" ? "برگشت به فهرست کورس‌ها" : "Back to course catalog"}
           </Link>
 
-          <div className="mt-5 rounded-3xl bg-[linear-gradient(135deg,#F8FAFC_0%,#EEF2FF_52%,#ECFEFF_100%)] p-5 sm:p-6">
-            <div className="max-w-2xl">
-              <p className="text-[11px] font-black uppercase tracking-[0.24em] text-teal-700 sm:text-xs">
-                {language === "fa" ? "دسته‌بندی کورس‌ها" : "Course category"}
-              </p>
-              <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-                {currentCategory?.name || (language === "fa" ? "کورس‌ها" : "Courses")}
-              </h1>
-              <p className="mt-2 text-sm leading-7 text-slate-600 sm:text-base">
-                {language === "fa"
-                  ? "در این بخش می‌توانید تمام کورس‌های مربوط به همین دسته‌بندی را جستجو و بررسی کنید."
-                  : "Explore and search all courses related to this category in one place."}
-              </p>
-            </div>
-            <div className="mt-4 w-full rounded-2xl border border-white/70 bg-white/85 px-4 py-3 text-center shadow-[0_8px_20px_rgba(15,23,42,0.05)] backdrop-blur sm:px-5 sm:py-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                {language === "fa" ? "کورس‌های موجود" : "Available courses"}
-              </p>
-              <p className="mt-1.5 text-2xl font-black text-slate-950 sm:text-3xl">{totalCourses}</p>
+          <div className="relative mt-5 overflow-hidden rounded-3xl border border-primary-100 bg-[linear-gradient(135deg,#EFF6FF_0%,#FFFFFF_48%,#ECFEFF_100%)] p-5 shadow-[0_14px_38px_rgba(15,23,42,0.06)] sm:p-7">
+            <div className="pointer-events-none absolute -end-16 -top-20 h-56 w-56 rounded-full bg-primary-200/35 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-24 -start-20 h-52 w-52 rounded-full bg-teal-200/35 blur-3xl" />
+            <div className="relative grid items-center gap-5 md:grid-cols-[minmax(0,1fr)_180px]">
+              <div className="min-w-0">
+                <div className="inline-flex items-center gap-2 rounded-full border border-primary-100 bg-white/80 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-primary-700 shadow-sm">
+                  <BookOpen size={14} />
+                  {language === "fa" ? "دسته‌بندی کورس‌ها" : "Course category"}
+                </div>
+                <h1 className="mt-4 break-words text-3xl font-black tracking-tight text-slate-950 [overflow-wrap:anywhere] sm:text-4xl">
+                  {currentCategory?.name || (language === "fa" ? "کورس‌ها" : "Courses")}
+                </h1>
+                <p className="mt-2 max-w-2xl text-sm font-medium leading-7 text-slate-600 sm:text-base">
+                  {language === "fa"
+                    ? "کورس مناسب خود را در این دسته‌بندی پیدا کنید، فیلتر کنید و جزئیات آن را ببینید."
+                    : "Find the right course in this category, refine the results, and explore its details."}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/90 px-5 py-4 text-center shadow-[0_10px_28px_rgba(15,23,42,0.07)] backdrop-blur">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  {language === "fa" ? "کورس‌های موجود" : "Available courses"}
+                </p>
+                <p className="mt-1 text-3xl font-black text-primary-700">{totalCourses}</p>
+              </div>
             </div>
           </div>
 
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_25px_rgba(15,23,42,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-600">
-                  {language === "fa" ? "فیلترهای مرتبط" : "Related filters"}
-                </p>
-                <h2 className="mt-1 text-lg font-black text-slate-950">
-                  {currentCategory?.name || (language === "fa" ? "دسته‌بندی" : "Category")}
-                </h2>
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary-50 text-primary-700">
+                  <SlidersHorizontal size={19} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-primary-700">
+                    {language === "fa" ? "فیلترهای مرتبط" : "Related filters"}
+                  </p>
+                  <h2 className="mt-0.5 truncate text-lg font-black text-slate-950">
+                    {currentCategory?.name || (language === "fa" ? "دسته‌بندی" : "Category")}
+                  </h2>
+                </div>
               </div>
               <Link
                 to="/live-courses"
-                className="text-xs font-black text-slate-500 transition hover:text-violet-700"
+                className="rounded-lg px-2 py-1 text-xs font-black text-slate-500 transition hover:bg-primary-50 hover:text-primary-700"
               >
                 {language === "fa" ? "همه دسته‌بندی‌ها" : "All categories"}
               </Link>
@@ -356,7 +300,7 @@ export default function MobileCourseCategoryPage({ t }) {
                 }}
                 className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
                   selectedCategoryPath.length === 0
-                    ? "border-violet-500 bg-violet-50 text-violet-700"
+                    ? "border-primary-500 bg-primary-50 text-primary-700"
                     : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
                 }`}
               >
@@ -378,9 +322,9 @@ export default function MobileCourseCategoryPage({ t }) {
                       type="button"
                       onClick={() => {
                         setCurrentPage(INITIAL_PAGE_COUNT);
-                        setSelectedCategoryPath((previous) => previous.slice(0, index));
+                        setSelectedCategoryPath((previous) => previous.slice(0, index + 1));
                       }}
-                      className="shrink-0 rounded-full border border-violet-200 bg-white px-4 py-2 text-sm font-black text-violet-700 transition hover:border-violet-300 hover:bg-violet-50"
+                      className="shrink-0 rounded-full border border-primary-200 bg-white px-4 py-2 text-sm font-black text-primary-700 transition hover:border-primary-300 hover:bg-primary-50"
                     >
                       {node.name}
                     </button>
@@ -420,7 +364,7 @@ export default function MobileCourseCategoryPage({ t }) {
                         }}
                         className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
                           isActive
-                            ? "border-violet-500 bg-violet-50 text-violet-700"
+                            ? "border-primary-500 bg-primary-50 text-primary-700"
                             : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
                         }`}
                       >
@@ -446,7 +390,7 @@ export default function MobileCourseCategoryPage({ t }) {
                 </p>
               </div>
               <div className="flex gap-2 sm:w-[420px]">
-                <label className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <label className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition focus-within:border-primary-400 focus-within:ring-4 focus-within:ring-primary-50">
                   <Search size={18} className="shrink-0 text-slate-400" />
                   <input
                     type="search"
@@ -465,11 +409,27 @@ export default function MobileCourseCategoryPage({ t }) {
                     }
                     className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400"
                   />
+                  {searchInput ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchInput("");
+                        if (searchTerm) {
+                          setSearchTerm("");
+                          setCurrentPage(INITIAL_PAGE_COUNT);
+                        }
+                      }}
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                      aria-label={language === "fa" ? "پاک‌کردن جستجو" : "Clear search"}
+                    >
+                      <X size={15} />
+                    </button>
+                  ) : null}
                 </label>
                 <button
                   type="button"
                   onClick={applySearch}
-                  className="inline-flex h-auto shrink-0 items-center justify-center rounded-xl bg-violet-600 px-4 py-3 text-sm font-black text-white transition hover:bg-violet-700"
+                  className="inline-flex h-auto shrink-0 items-center justify-center rounded-xl bg-primary-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-primary-700"
                 >
                   {language === "fa" ? "جستجو" : "Search"}
                 </button>
@@ -479,57 +439,45 @@ export default function MobileCourseCategoryPage({ t }) {
 
           {error ? <p className="mt-4 text-sm font-bold text-rose-600">{error}</p> : null}
 
-          <div className="mt-6 space-y-4">
-            {courseRows.map((row, rowIndex) => (
-              <div key={`category-course-row-${rowIndex + 1}`} className="relative">
-                <div
-                  ref={(element) => {
-                    rowRefs.current[rowIndex] = element;
-                  }}
-                  onScroll={(event) => updateRowNav(rowIndex, event.currentTarget)}
-                  className="edutech-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2"
-                  dir={language === "fa" ? "rtl" : "ltr"}
-                >
-                  {row.map((course, itemIndex) => (
-                    <div
-                      key={course._id || course.id || `${course.title}-${rowIndex}-${itemIndex}`}
-                      className="w-[min(82vw,280px)] min-w-[min(82vw,280px)] shrink-0 snap-start"
-                    >
-                      <CourseCatalogCard
-                        course={course}
-                        dir={dir}
-                        index={(rowIndex * ROW_SIZE) + itemIndex}
-                        labels={t.courseLabels}
-                        language={language}
-                        isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))}
-                        coursePathOverride={buildCourseDetailsPath(course)}
-                      />
-                    </div>
-                  ))}
+          {courses.length ? (
+            <div className="mt-6">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-primary-700">
+                    {language === "fa" ? "نتایج کورس‌ها" : "Course results"}
+                  </p>
+                  <h2 className="mt-1 break-words text-xl font-black text-slate-950 [overflow-wrap:anywhere]">
+                    {searchTerm
+                      ? language === "fa"
+                        ? `نتایج جستجو برای «${searchTerm}»`
+                        : `Results for “${searchTerm}”`
+                      : currentCategory?.name || (language === "fa" ? "همه کورس‌ها" : "All courses")}
+                  </h2>
                 </div>
-                {rowNav[rowIndex]?.canPrev ? (
-                  <button
-                    type="button"
-                    onClick={() => scrollRowBackward(rowRefs.current[rowIndex])}
-                    className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
-                    aria-label={language === "fa" ? "نمایش موارد قبلی" : "Show previous items"}
-                  >
-                    <ChevronLeft size={18} className={dir === "rtl" ? "rotate-180" : ""} />
-                  </button>
-                ) : null}
-                {rowNav[rowIndex]?.canNext ? (
-                  <button
-                    type="button"
-                    onClick={() => scrollRowForward(rowRefs.current[rowIndex])}
-                    className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
-                    aria-label={language === "fa" ? "نمایش موارد بعدی" : "Show next items"}
-                  >
-                    <ChevronRight size={18} className={dir === "rtl" ? "rotate-180" : ""} />
-                  </button>
-                ) : null}
+                <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600">
+                  {totalCourses} {language === "fa" ? "کورس" : totalCourses === 1 ? "course" : "courses"}
+                </span>
               </div>
-            ))}
-          </div>
+              <div className="grid min-w-0 items-stretch gap-4 px-3 sm:grid-cols-2 sm:px-0 xl:grid-cols-4">
+                {courses.map((course, index) => (
+                  <div
+                    key={course._id || course.id || `${course.title}-${index}`}
+                    className="relative mx-auto h-full w-full max-w-[390px]"
+                  >
+                    <CourseCatalogCard
+                      course={course}
+                      dir={dir}
+                      index={index}
+                      labels={t.courseLabels}
+                      language={language}
+                      isEnrolled={enrolledCourseIds.has(String(course?._id || course?.id || ""))}
+                      coursePathOverride={buildCourseDetailsPath(course)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {loading && courses.length === 0 ? (
             <FrontendPageLoader
@@ -556,7 +504,7 @@ export default function MobileCourseCategoryPage({ t }) {
                   setIsLoadingMore(true);
                   setCurrentPage((previous) => previous + LOAD_MORE_PAGE_STEP);
                 }}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-violet-500 bg-white px-7 py-3 text-sm font-black text-violet-700 transition hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-primary-500 bg-white px-7 py-3 text-sm font-black text-primary-700 transition hover:bg-primary-50 disabled:cursor-wait disabled:opacity-60"
               >
                 {isLoadingMore
                   ? (
@@ -566,8 +514,8 @@ export default function MobileCourseCategoryPage({ t }) {
                     </>
                   )
                   : language === "fa"
-                    ? `نمایش ${ROW_SIZE * LOAD_MORE_PAGE_STEP} کورس دیگر`
-                    : `Show ${ROW_SIZE * LOAD_MORE_PAGE_STEP} more`}
+                    ? `نمایش ${PAGE_SIZE * LOAD_MORE_PAGE_STEP} کورس دیگر`
+                    : `Show ${PAGE_SIZE * LOAD_MORE_PAGE_STEP} more`}
               </button>
             </div>
           ) : null}
@@ -580,7 +528,7 @@ export default function MobileCourseCategoryPage({ t }) {
       <button
         type="button"
         onClick={scrollPageToTop}
-        className={`fixed bottom-5 right-5 z-[90] grid h-12 w-12 place-items-center rounded-full border border-violet-500 bg-white text-violet-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-violet-50 ${
+        className={`fixed bottom-5 end-5 z-[90] grid h-12 w-12 place-items-center rounded-full border border-primary-400 bg-white text-primary-700 shadow-[0_12px_30px_rgba(15,23,42,0.16)] transition-all duration-300 hover:bg-primary-50 ${
           showScrollTop
             ? "translate-y-0 opacity-100"
             : "pointer-events-none translate-y-4 opacity-0"

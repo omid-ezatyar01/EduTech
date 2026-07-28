@@ -1247,11 +1247,11 @@ export default function CourseDetailsPage({ t }) {
         )}
 
         <div
-          className={`grid gap-6 ${
+          className={`grid min-w-0 gap-6 ${
             isEnrolled || courseEnded || !canPublicEnroll ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"
           }`}
         >
-          <div className="flex flex-col gap-5">
+          <div className="flex min-w-0 max-w-full flex-col gap-5">
             <div
               id="course-overview"
               className="relative order-[-3] mx-auto w-full overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)]"
@@ -1461,10 +1461,10 @@ export default function CourseDetailsPage({ t }) {
             </section>
 
             {previewVideos.length ? (
-              <div className="overflow-hidden rounded-3xl border border-red-100 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+              <div className="w-full min-w-0 max-w-full overflow-hidden rounded-3xl border border-red-100 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
                 <div className="border-b border-red-100 bg-gradient-to-r from-red-50 via-white to-white p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="inline-flex items-center gap-2 rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">
                         <PlayCircle size={14} />
                         YouTube
@@ -1935,8 +1935,8 @@ export default function CourseDetailsPage({ t }) {
 
       {!isEnrolled && !courseEnded && canPublicEnroll ? (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur xl:hidden">
-          <div className="mx-auto flex max-w-[1340px] items-center gap-3">
-            <div className="min-w-0">
+          <div className="mx-auto flex min-w-0 max-w-[1340px] items-center gap-3">
+            <div className="min-w-0 flex-1">
               <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
                 {detail.priceLabel}
               </p>
@@ -1961,7 +1961,7 @@ export default function CourseDetailsPage({ t }) {
               ) : null}
             </div>
             <button
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
               onClick={handlePurchase}
               disabled={isStartingPayment}
             >
