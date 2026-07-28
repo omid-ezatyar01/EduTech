@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <script>
+      var requestedLanguage = /^\/en(?:\/|$)/.test(window.location.pathname)
+        ? "en"
+        : "fa";
+      document.documentElement.lang = requestedLanguage;
+      document.documentElement.dir = requestedLanguage === "fa" ? "rtl" : "ltr";
+
       if (window.location.hostname === "www.edutech.study") {
         const canonicalUrl = new URL(window.location.href);
         canonicalUrl.hostname = "edutech.study";
@@ -30,16 +36,16 @@
     <link
       rel="apple-touch-icon"
       sizes="180x180"
-      href="/icons/apple-touch-icon.png?v=2"
+      href="/icons/apple-touch-icon.png"
     />
-    <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg?v=2" />
     <link
       rel="icon"
       type="image/png"
       sizes="96x96"
-      href="/icons/favicon-96x96.png?v=2"
+      href="/icons/favicon-96x96.png"
     />
-    <link rel="icon" type="image/x-icon" href="/icons/favicon.ico?v=2" />
+    <link rel="icon" type="image/x-icon" href="/icons/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -62,35 +68,38 @@
         });
       })();
     </script>
-    <link rel="canonical" href="https://edutech.study/" />
+    <link rel="canonical" href="https://edutech.study/fa/" />
+    <link rel="alternate" hreflang="fa" href="https://edutech.study/fa/" />
+    <link rel="alternate" hreflang="en" href="https://edutech.study/en/" />
+    <link rel="alternate" hreflang="x-default" href="https://edutech.study/fa/" />
     <meta
       name="description"
-      content="EduTech Academy (edutech.study) offers live online classes, expert teachers, and interactive learning in English and Persian."
+      content="در ایجوتک با مدرسان حرفه‌ای در دوره‌ها و کلاس‌های آنلاین زنده شرکت کنید و مهارت‌های کاربردی را به فارسی و انگلیسی بیاموزید."
     />
     <meta
       property="og:title"
-      content="EduTech | Online Learning Academy"
+      content="ایجوتک | دوره‌های آنلاین زنده در افغانستان"
     />
     <meta
       property="og:description"
-      content="EduTech Academy (edutech.study) offers live online classes, expert teachers, and interactive learning in English and Persian."
+      content="در ایجوتک با مدرسان حرفه‌ای در دوره‌ها و کلاس‌های آنلاین زنده شرکت کنید و مهارت‌های کاربردی را به فارسی و انگلیسی بیاموزید."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://edutech.study/" />
-    <meta property="og:site_name" content="EduTech Academy" />
+    <meta property="og:url" content="https://edutech.study/fa/" />
+    <meta property="og:site_name" content="آکادمی ایجوتک" />
     <meta property="og:locale" content="fa_IR" />
     <meta property="og:image" content="https://edutech.study/logo.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta
       name="twitter:title"
-      content="EduTech | Online Learning Academy"
+      content="ایجوتک | دوره‌های آنلاین زنده در افغانستان"
     />
     <meta
       name="twitter:description"
-      content="EduTech Academy (edutech.study) offers live online classes, expert teachers, and interactive learning in English and Persian."
+      content="در ایجوتک با مدرسان حرفه‌ای در دوره‌ها و کلاس‌های آنلاین زنده شرکت کنید و مهارت‌های کاربردی را به فارسی و انگلیسی بیاموزید."
     />
     <meta name="twitter:image" content="https://edutech.study/logo.png" />
-    <title>EduTech | Online Learning Academy</title>
+    <title>ایجوتک | دوره‌های آنلاین زنده در افغانستان</title>
     <script id="edutech-base-structured-data" type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -110,6 +119,10 @@
             ],
             "url": "https://edutech.study/",
             "logo": "https://edutech.study/logo.png",
+            "areaServed": {
+              "@type": "Country",
+              "name": "Afghanistan"
+            },
             "sameAs": [
               "https://www.instagram.com/edutech_main/",
               "https://t.me/edutech_main",
@@ -122,6 +135,7 @@
             "@id": "https://edutech.study/#website",
             "url": "https://edutech.study/",
             "name": "EduTech Academy",
+            "alternateName": "آکادمی ایجوتک",
             "inLanguage": ["en", "fa"]
           }
         ]

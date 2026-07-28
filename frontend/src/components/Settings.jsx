@@ -21,7 +21,11 @@ import SettingsCategoryCard from "./SettingsCategoryCard";
 import AccountSecurityModal from "./AccountSecurityModal";
 import FrontendPageLoader from "./common/FrontendPageLoader.jsx";
 import { getCurrentUser, updateCurrentUserProfile } from "../../services/authService.js";
-import { clearAuth, getAuthUser } from "../../services/portal.js";
+import {
+  clearAuth,
+  getAuthUser,
+  getLocalizedPortalPath,
+} from "../../services/portal.js";
 
 const DISPLAY_SCALES = { compact: "0.85", comfortable: "0.9", large: "1" };
 
@@ -151,7 +155,7 @@ export default function Settings({ language = "fa" }) {
 
   const signOut = () => {
     clearAuth();
-    window.location.replace("/login");
+    window.location.replace(getLocalizedPortalPath("/login"));
   };
 
   const browserLabel = typeof navigator === "undefined" ? "Browser" : `${navigator.platform || "Web"} · ${/Firefox/i.test(navigator.userAgent) ? "Firefox" : /Edg/i.test(navigator.userAgent) ? "Edge" : /Chrome/i.test(navigator.userAgent) ? "Chrome" : /Safari/i.test(navigator.userAgent) ? "Safari" : "Browser"}`;

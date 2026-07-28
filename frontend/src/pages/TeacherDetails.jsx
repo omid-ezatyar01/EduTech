@@ -36,6 +36,7 @@ import {
 } from "../../services/teacherService.js";
 import { fetchPendingTeacherRatings, fetchStudentEnrollments, fetchStudentTeacherRatings } from "../../services/courseService.js";
 import { buildCoursePath, buildTeacherPath, extractRouteIdentifier } from "../utils/routePaths.js";
+import { buildLocalizedSiteUrl } from "../utils/localizedRoutes.js";
 import {
   getLocalizedRequestErrorMessage,
   isUnauthorizedError,
@@ -756,7 +757,7 @@ export default function TeacherDetails({ language = "fa" }) {
               description,
               image: teacher.avatar || undefined,
               jobTitle: professionalTitle || undefined,
-              url: `https://edutech.study${canonicalPath}`,
+              url: buildLocalizedSiteUrl(canonicalPath, isFa ? "fa" : "en"),
               worksFor: {
                 "@type": "EducationalOrganization",
                 name: "EduTech Academy",
@@ -770,19 +771,19 @@ export default function TeacherDetails({ language = "fa" }) {
                   "@type": "ListItem",
                   position: 1,
                   name: isFa ? "خانه" : "Home",
-                  item: "https://edutech.study/",
+                  item: buildLocalizedSiteUrl("/", isFa ? "fa" : "en"),
                 },
                 {
                   "@type": "ListItem",
                   position: 2,
                   name: isFa ? "مدرسان" : "Teachers",
-                  item: "https://edutech.study/teachers",
+                  item: buildLocalizedSiteUrl("/teachers", isFa ? "fa" : "en"),
                 },
                 {
                   "@type": "ListItem",
                   position: 3,
                   name: teacherName,
-                  item: `https://edutech.study${canonicalPath}`,
+                  item: buildLocalizedSiteUrl(canonicalPath, isFa ? "fa" : "en"),
                 },
               ],
             },

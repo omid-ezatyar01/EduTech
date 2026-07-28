@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router";
 import { fetchArticleBySlug, fetchArticles, resolveArticleCoverUrl } from "../../services/articleService.js";
 import { shareContent } from "../utils/share.js";
 import { applySeo } from "../seo/useSeo.js";
+import { buildLocalizedSiteUrl } from "../utils/localizedRoutes.js";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 
 const copy = {
@@ -80,7 +81,7 @@ export default function BlogArticlePage({ language = "fa" }) {
     const title = localized(article.seoTitle, locale) || localized(article.title, locale);
     const description = localized(article.seoDescription, locale) || localized(article.excerpt, locale);
     const coverImage = resolveArticleCoverUrl(article.coverImage) || "/logo.png";
-    applySeo({ pathname: `/blog/${article.slug}`, language: locale, overrides: { title: `${title} | EduTech`, description, canonicalPath: `/blog/${article.slug}`, image: coverImage, type: "article" }, additionalStructuredData: [{ "@type": "Article", headline: title, description, image: coverImage, datePublished: article.publishedAt, dateModified: article.updatedAt, author: { "@type": "Person", name: article.author?.name || "EduTech" }, publisher: { "@id": "https://edutech.study/#organization" }, mainEntityOfPage: `https://edutech.study/blog/${article.slug}` }] });
+    applySeo({ pathname: `/blog/${article.slug}`, language: locale, overrides: { title: `${title} | EduTech Academy`, description, canonicalPath: `/blog/${article.slug}`, image: coverImage, type: "article" }, additionalStructuredData: [{ "@type": "Article", headline: title, description, image: coverImage, datePublished: article.publishedAt, dateModified: article.updatedAt, author: { "@type": "Person", name: article.author?.name || "EduTech Academy" }, publisher: { "@id": "https://edutech.study/#organization" }, mainEntityOfPage: buildLocalizedSiteUrl(`/blog/${article.slug}`, locale) }] });
   }, [article, locale]);
 
   useEffect(() => { window.scrollTo(0, 0); }, [slug]);

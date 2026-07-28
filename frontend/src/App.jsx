@@ -17,6 +17,11 @@ import useSeo from "./seo/useSeo.js";
 import { RegionalPricingProvider } from "./context/RegionalPricingContext.jsx";
 import FrontendPageLoader from "./components/common/FrontendPageLoader.jsx";
 import SupportContactButton from "./components/SupportContactButton.jsx";
+import {
+  getLanguageFromPathname,
+  localizePath,
+  stripLanguagePrefix,
+} from "./utils/localizedRoutes.js";
 
 // Pages
 const loadHomePage = () => import("./pages/HomePage.jsx");
@@ -179,8 +184,7 @@ const preloadRoutes = [
 
 function getInitialLanguage() {
   if (typeof window !== "undefined") {
-    const saved = window.localStorage.getItem("edutech-language");
-    if (saved === "fa" || saved === "en") return saved;
+    return getLanguageFromPathname(window.location.pathname) || "fa";
   }
   return "fa";
 }
@@ -255,7 +259,7 @@ function AuthRoute({ isAuthenticated, children }) {
 }
 
 export default function App() {
-  const [language, setLanguage] = useState(getInitialLanguage);
+  const [language] = useState(getInitialLanguage);
   const [isAuthenticated, setIsAuthenticated] = useState(
     localStorage.getItem("edutech_auth") === "true",
   );
@@ -267,6 +271,18 @@ export default function App() {
   const dir = t.meta.dir;
 
   useSeo({ pathname: location.pathname, language });
+
+  const handleLanguageChange = useCallback(
+    (nextLanguage) => {
+      if (nextLanguage !== "fa" && nextLanguage !== "en") return;
+      if (nextLanguage === language) return;
+
+      const appPath = stripLanguagePrefix(window.location.pathname);
+      const destination = `${localizePath(appPath, nextLanguage)}${window.location.search}${window.location.hash}`;
+      window.location.assign(destination);
+    },
+    [language],
+  );
 
   useEffect(() => {
     const handleAuthChange = () => {
@@ -303,7 +319,8 @@ export default function App() {
   const prefetchPath = useCallback((pathToPrefetch) => {
     if (!pathToPrefetch) return;
     if (isConstrainedConnection()) return;
-    const match = preloadRoutes.find((route) => route.test(pathToPrefetch));
+    const appPath = stripLanguagePrefix(pathToPrefetch);
+    const match = preloadRoutes.find((route) => route.test(appPath));
     if (!match) return;
     if (prefetchedRoutesRef.current.has(match.key)) return;
     prefetchedRoutesRef.current.add(match.key);
@@ -347,17 +364,15 @@ export default function App() {
   }, [dir, language, t.meta.lang]);
 
   useEffect(() => {
-    const handleLanguageChange = (event) => {
+    const handleLanguageChangeEvent = (event) => {
       const next = event?.detail?.language;
-      if (next === "fa" || next === "en") {
-        setLanguage(next);
-      }
+      handleLanguageChange(next);
     };
-    window.addEventListener("edutech_language_change", handleLanguageChange);
+    window.addEventListener("edutech_language_change", handleLanguageChangeEvent);
     return () => {
-      window.removeEventListener("edutech_language_change", handleLanguageChange);
+      window.removeEventListener("edutech_language_change", handleLanguageChangeEvent);
     };
-  }, []);
+  }, [handleLanguageChange]);
 
   useEffect(() => {
     const hash = location.hash || "";
@@ -405,7 +420,7 @@ export default function App() {
           <Header
             activeHref={activeHref}
             language={language}
-            onLanguageChange={setLanguage}
+            onLanguageChange={handleLanguageChange}
             t={t}
           />
         )}

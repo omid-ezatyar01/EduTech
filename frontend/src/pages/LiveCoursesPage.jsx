@@ -24,6 +24,7 @@ import {
 } from "../../services/courseService.js";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 import { buildCourseCategoryPath, buildCoursePath } from "../utils/routePaths.js";
+import { buildLocalizedSiteUrl } from "../utils/localizedRoutes.js";
 import { buildEnrolledCourseIdSet } from "../utils/courseEnrollmentAccess.js";
 import { applySeo } from "../seo/useSeo.js";
 
@@ -797,10 +798,10 @@ export default function LiveCoursesPage({ t }) {
               return {
                 "@type": "ListItem",
                 position: index + 1,
-                url: `https://edutech.study${buildCoursePath(course)}`,
+                url: buildLocalizedSiteUrl(buildCoursePath(course), language),
                 item: {
                   "@type": "Course",
-                  url: `https://edutech.study${buildCoursePath(course)}`,
+                  url: buildLocalizedSiteUrl(buildCoursePath(course), language),
                   name,
                   description,
                   provider: {

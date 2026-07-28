@@ -40,14 +40,21 @@ export const clearAuth = () => {
   window.dispatchEvent(new Event("auth_change"));
 };
 
+export const getLocalizedPortalPath = (path) => {
+  if (typeof window === "undefined") return path;
+  const language = window.location.pathname.match(/^\/(fa|en)(?=\/|$)/)?.[1];
+  return language ? `/${language}${path}` : path;
+};
+
 export const handleAuthExpired = (message = "") => {
   clearAuth();
   if (message) setAuthNotice(message);
 
   if (typeof window === "undefined") return;
-  if (window.location.pathname === PORTAL_CONFIG.loginPath) return;
+  const loginPath = getLocalizedPortalPath(PORTAL_CONFIG.loginPath);
+  if (window.location.pathname === loginPath) return;
 
-  window.location.replace(PORTAL_CONFIG.loginPath);
+  window.location.replace(loginPath);
 };
 
 export const isAuthExpiredResponse = (status, message = "", code = "") => {

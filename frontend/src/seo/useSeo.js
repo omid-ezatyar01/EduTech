@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { localizePath, stripLanguagePrefix } from "../utils/localizedRoutes.js";
 
 const SITE_NAME_EN = "EduTech Academy";
 const SITE_NAME_FA = "آکادمی ایجوتک";
@@ -76,11 +77,11 @@ function getSeoConfig(pathname, language) {
     {
       match: /^\/$/,
       title: isFa
-        ? "ایجوتک | آکادمی آموزش آنلاین"
-        : "EduTech | Online Learning Academy",
+        ? "ایجوتک | دوره‌های آنلاین زنده در افغانستان"
+        : "EduTech Academy | Live Online Courses in Afghanistan",
       description: isFa
-        ? "ایجوتک آکادمی آموزش آنلاین با کلاس‌های زنده، مدرس‌های حرفه‌ای و دوره‌های تعاملی برای یادگیری موثر است."
-        : "EduTech Academy (edutech.study) offers live online classes, expert teachers, and interactive courses for practical learning.",
+        ? "در ایجوتک با مدرسان حرفه‌ای در دوره‌ها و کلاس‌های آنلاین زنده شرکت کنید و مهارت‌های کاربردی را به فارسی و انگلیسی بیاموزید."
+        : "Join live online courses with expert instructors at EduTech Academy. Learn practical skills in English and Persian from Kabul, Afghanistan.",
       keywords: [
         "live classes",
         "online courses",
@@ -91,7 +92,7 @@ function getSeoConfig(pathname, language) {
     {
       match: /^\/live-courses\/?$/,
       title: isFa
-        ? "دوره‌های زنده | ایجوتک آکادمی"
+        ? "دوره‌های زنده | آکادمی ایجوتک"
         : "Live Courses | EduTech Academy",
       description: isFa
         ? "لیست دوره‌های زنده ایجوتک را ببینید، دوره مناسب خود را پیدا کنید و یادگیری را همین امروز شروع کنید."
@@ -101,7 +102,7 @@ function getSeoConfig(pathname, language) {
     {
       match: /^\/live-courses\/category\/[^/]+\/?$/,
       title: isFa
-        ? "دسته‌بندی دوره‌ها | ایجوتک آکادمی"
+        ? "دسته‌بندی دوره‌ها | آکادمی ایجوتک"
         : "Course Category | EduTech Academy",
       description: isFa
         ? "دوره‌های زنده ایجوتک را بر اساس موضوع، سطح و زبان آموزشی پیدا کنید."
@@ -111,7 +112,7 @@ function getSeoConfig(pathname, language) {
     {
       match: /^\/course\/[^/]+\/?$/,
       title: isFa
-        ? "جزئیات دوره | ایجوتک آکادمی"
+        ? "جزئیات دوره | آکادمی ایجوتک"
         : "Course Details | EduTech Academy",
       description: isFa
         ? "جزئیات کامل دوره شامل برنامه، مدرس، پیش‌نیازها و مسیر ثبت‌نام در ایجوتک."
@@ -120,7 +121,7 @@ function getSeoConfig(pathname, language) {
     },
     {
       match: /^\/teachers\/?$/,
-      title: isFa ? "مدرس‌ها | ایجوتک آکادمی" : "Teachers | EduTech Academy",
+      title: isFa ? "مدرس‌ها | آکادمی ایجوتک" : "Teachers | EduTech Academy",
       description: isFa
         ? "با مدرس‌های ایجوتک آشنا شوید و بهترین استاد را برای مسیر یادگیری خود انتخاب کنید."
         : "Meet EduTech teachers and choose the best instructor for your learning journey.",
@@ -129,7 +130,7 @@ function getSeoConfig(pathname, language) {
     {
       match: /^\/teacher\/[^/]+\/?$/,
       title: isFa
-        ? "پروفایل مدرس | ایجوتک آکادمی"
+        ? "پروفایل مدرس | آکادمی ایجوتک"
         : "Teacher Profile | EduTech Academy",
       description: isFa
         ? "تجربه، تخصص و دوره‌های مدرس را ببینید و بهترین انتخاب را انجام دهید."
@@ -143,7 +144,7 @@ function getSeoConfig(pathname, language) {
     },
     {
       match: /^\/blog\/?$/,
-      title: isFa ? "وبلاگ آموزشی | ایجوتک آکادمی" : "Learning Blog | EduTech Academy",
+      title: isFa ? "وبلاگ آموزشی | آکادمی ایجوتک" : "Learning Blog | EduTech Academy",
       description: isFa
         ? "مقاله‌ها، راهنماهای عملی و نکته‌های آموزشی ایجوتک را برای یادگیری بهتر مطالعه کنید."
         : "Read practical guides, learning strategies, and educational insights from EduTech.",
@@ -151,19 +152,19 @@ function getSeoConfig(pathname, language) {
     },
     {
       match: /^\/blog\/[^/]+\/?$/,
-      title: isFa ? "مقاله آموزشی | ایجوتک آکادمی" : "Learning Article | EduTech Academy",
+      title: isFa ? "مقاله آموزشی | آکادمی ایجوتک" : "Learning Article | EduTech Academy",
       description: isFa ? "این مقاله آموزشی را در وبلاگ ایجوتک بخوانید." : "Read this educational article on the EduTech blog.",
       keywords: ["EduTech article", "learning guide", "مقاله ایجوتک"],
     },
     {
       match: /^\/roadmaps\/?$/,
-      title: isFa ? "نقشه‌های راه یادگیری | ایجوتک آکادمی" : "Learning Roadmaps | EduTech Academy",
+      title: isFa ? "نقشه‌های راه یادگیری | آکادمی ایجوتک" : "Learning Roadmaps | EduTech Academy",
       description: isFa ? "نقشه‌های راه ایجوتک به شما کمک می‌کنند کورس‌ها را برای یادگیری هر مهارت به ترتیب درست انتخاب کنید." : "EduTech learning roadmaps help you choose courses in the right order for each skill and goal.",
       keywords: ["learning roadmaps", "course path", "نقشه راه یادگیری", "مسیر کورس"],
     },
     {
       match: /^\/videos\/?$/,
-      title: isFa ? "ویدیوهای آموزشی | ایجوتک آکادمی" : "Learning Videos | EduTech Academy",
+      title: isFa ? "ویدیوهای آموزشی | آکادمی ایجوتک" : "Learning Videos | EduTech Academy",
       description: isFa
         ? "ویدیوهای آموزشی، نکته‌های کوتاه و محتوای تازه ایجوتک را از یوتیوب و اینستاگرام تماشا کنید."
         : "Watch EduTech lessons, quick learning tips, and fresh videos from YouTube and Instagram.",
@@ -172,7 +173,7 @@ function getSeoConfig(pathname, language) {
     {
       match: /^\/roadmaps\/english\/?$/,
       title: isFa
-        ? "نقشه راه یادگیری انگلیسی | ایجوتک آکادمی"
+        ? "نقشه راه یادگیری انگلیسی | آکادمی ایجوتک"
         : "English Learning Roadmap | EduTech Academy",
       description: isFa
         ? "سطح انگلیسی خود را پیدا کنید و کورس‌های مناسب را در یک مسیر روشن از مبتدی تا پیشرفته انتخاب کنید."
@@ -181,7 +182,7 @@ function getSeoConfig(pathname, language) {
     },
     {
       match: /^\/about\/?$/,
-      title: isFa ? "درباره ما | ایجوتک آکادمی" : "About Us | EduTech Academy",
+      title: isFa ? "درباره ما | آکادمی ایجوتک" : "About Us | EduTech Academy",
       description: isFa
         ? "درباره ماموریت، چشم‌انداز و رویکرد آموزشی ایجوتک بیشتر بدانید."
         : "Learn about EduTech mission, vision, and our approach to interactive online education.",
@@ -190,7 +191,7 @@ function getSeoConfig(pathname, language) {
     {
       match: /^\/contact\/?$/,
       title: isFa
-        ? "تماس با ما | ایجوتک آکادمی"
+        ? "تماس با ما | آکادمی ایجوتک"
         : "Contact Us | EduTech Academy",
       description: isFa
         ? "برای مشاوره آموزشی، ثبت‌نام دوره یا همکاری با ایجوتک با ما در تماس باشید."
@@ -200,7 +201,7 @@ function getSeoConfig(pathname, language) {
     {
       match: /^\/privacy-policy\/?$/,
       title: isFa
-        ? "حریم خصوصی | ایجوتک آکادمی"
+        ? "حریم خصوصی | آکادمی ایجوتک"
         : "Privacy Policy | EduTech Academy",
       description: isFa
         ? "سیاست حریم خصوصی ایجوتک درباره جمع‌آوری، استفاده و محافظت از معلومات کاربران."
@@ -215,7 +216,7 @@ function getSeoConfig(pathname, language) {
     {
       match: /^\/terms\/?$/,
       title: isFa
-        ? "شرایط استفاده | ایجوتک آکادمی"
+        ? "شرایط استفاده | آکادمی ایجوتک"
         : "Terms of Service | EduTech Academy",
       description: isFa
         ? "شرایط و قوانین استفاده از خدمات آموزشی ایجوتک."
@@ -351,8 +352,27 @@ export function applySeo({
 }) {
     const siteUrl = normalizeSiteUrl(import.meta.env.VITE_SITE_URL);
     const config = { ...getSeoConfig(pathname, language), ...overrides };
-    const canonicalPath = config.canonicalPath || pathname || "/";
+    const baseCanonicalPath = config.canonicalPath || pathname || "/";
+    const canonicalPath =
+      baseCanonicalPath.startsWith("http://") ||
+      baseCanonicalPath.startsWith("https://")
+        ? baseCanonicalPath
+        : localizePath(baseCanonicalPath, language);
     const canonicalUrl = ensureAbsoluteUrl(canonicalPath, siteUrl);
+    const alternateSource = config.alternatePath || baseCanonicalPath;
+    const alternateAppPath =
+      alternateSource.startsWith("http://") ||
+      alternateSource.startsWith("https://")
+        ? new URL(alternateSource).pathname
+        : stripLanguagePrefix(alternateSource);
+    const englishUrl = ensureAbsoluteUrl(
+      localizePath(alternateAppPath, "en"),
+      siteUrl,
+    );
+    const persianUrl = ensureAbsoluteUrl(
+      localizePath(alternateAppPath, "fa"),
+      siteUrl,
+    );
     const ogImage = ensureAbsoluteUrl(config.image, siteUrl);
     const locale = language === "fa" ? "fa_IR" : "en_US";
     const keywords = [...new Set([...BASE_KEYWORDS, ...(config.keywords || [])])]
@@ -383,6 +403,10 @@ export function applySeo({
       config.siteName,
     );
     getOrCreateMetaByProperty("og:locale").setAttribute("content", locale);
+    getOrCreateMetaByProperty("og:locale:alternate").setAttribute(
+      "content",
+      language === "fa" ? "en_US" : "fa_AF",
+    );
     getOrCreateMetaByProperty("og:image").setAttribute("content", ogImage);
     getOrCreateMetaByProperty("og:image:alt").setAttribute(
       "content",
@@ -409,6 +433,11 @@ export function applySeo({
 
     setLinkRel("canonical", canonicalUrl);
     removeLanguageAlternates();
+    if (config.shouldIndex) {
+      setLinkRel("alternate", persianUrl, "fa");
+      setLinkRel("alternate", englishUrl, "en");
+      setLinkRel("alternate", persianUrl, "x-default");
+    }
 
     let structuredDataTag = document.getElementById("edutech-structured-data");
     if (!structuredDataTag) {
@@ -437,6 +466,10 @@ export function applySeo({
           url: siteUrl,
           logo: ensureAbsoluteUrl("/logo.png", siteUrl),
           sameAs: OFFICIAL_SOCIAL_URLS,
+          areaServed: {
+            "@type": "Country",
+            name: "Afghanistan",
+          },
         },
         {
           "@type": "EducationalOrganization",
@@ -452,12 +485,17 @@ export function applySeo({
           inLanguage: ["en", "fa"],
           keywords: BASE_KEYWORDS.join(", "),
           sameAs: OFFICIAL_SOCIAL_URLS,
+          areaServed: {
+            "@type": "Country",
+            name: "Afghanistan",
+          },
         },
         {
           "@type": "WebSite",
           "@id": `${siteUrl}/#website`,
           url: siteUrl,
           name: SITE_NAME_EN,
+          alternateName: SITE_NAME_FA,
           inLanguage: ["en", "fa"],
           publisher: { "@id": `${siteUrl}/#organization` },
         },

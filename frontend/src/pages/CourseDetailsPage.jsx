@@ -43,6 +43,7 @@ import {
   buildTeacherPath,
   extractRouteIdentifier,
 } from "../utils/routePaths.js";
+import { buildLocalizedSiteUrl } from "../utils/localizedRoutes.js";
 import { shareContent } from "../utils/share.js";
 import {
   formatTimeZoneOffset,
@@ -604,7 +605,7 @@ export default function CourseDetailsPage({ t }) {
           language,
           overrides: {
             canonicalPath,
-            title: `${courseTitle} | ${language === "fa" ? "ایجوتک آکادمی" : "EduTech Academy"}`,
+            title: `${courseTitle} | ${language === "fa" ? "آکادمی ایجوتک" : "EduTech Academy"}`,
             description,
             image,
             imageAlt: courseTitle,
@@ -634,19 +635,19 @@ export default function CourseDetailsPage({ t }) {
                   "@type": "ListItem",
                   position: 1,
                   name: language === "fa" ? "خانه" : "Home",
-                  item: "https://edutech.study/",
+                  item: buildLocalizedSiteUrl("/", language),
                 },
                 {
                   "@type": "ListItem",
                   position: 2,
                   name: language === "fa" ? "دوره‌ها" : "Courses",
-                  item: "https://edutech.study/live-courses",
+                  item: buildLocalizedSiteUrl("/live-courses", language),
                 },
                 {
                   "@type": "ListItem",
                   position: 3,
                   name: courseTitle,
-                  item: `https://edutech.study${canonicalPath}`,
+                  item: buildLocalizedSiteUrl(canonicalPath, language),
                 },
               ],
             },

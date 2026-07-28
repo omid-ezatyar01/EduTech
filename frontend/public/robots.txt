@@ -1,11 +1,4 @@
 User-agent: *
 Allow: /
-Disallow: /student/
-Disallow: /login
-Disallow: /register
-Disallow: /payment/success
-Disallow: /payment/failure
-Disallow: /payment/crypto
 
 Sitemap: https://edutech.study/sitemap.xml
-Host: https://edutech.study

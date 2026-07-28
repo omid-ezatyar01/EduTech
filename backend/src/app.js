@@ -165,6 +165,13 @@ app.use(
   }),
 );
 
+// API responses are machine endpoints, not searchable web pages. Keep them
+// crawlable so search engines can discover and honor this indexing directive.
+app.use((_req, res, next) => {
+  res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  next();
+});
+
 app.get("/", (req, res) => {
   res.json({
     message: "EduTech API is running",
