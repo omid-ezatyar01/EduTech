@@ -39,7 +39,6 @@ export default function SupportTeamChat({
   selectedConversation,
   onSelectConversation,
   onConversationRead,
-  refreshTeam,
   refreshToken = 0,
   onMobileDetailChange,
 }) {
@@ -83,6 +82,7 @@ export default function SupportTeamChat({
   const messagesRef = useRef(null);
   const composerRef = useRef(null);
   const typingTimerRef = useRef(null);
+  const typingActiveRef = useRef(false);
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
 
@@ -129,7 +129,6 @@ export default function SupportTeamChat({
       markSupportTeamConversationRead(selectedConversation)
         .then(() => {
           onConversationRead(selectedConversation);
-          refreshTeam();
         })
         .catch(() => {});
     }, 0);
@@ -142,7 +141,6 @@ export default function SupportTeamChat({
     desktopLayout,
     conversationCacheKey,
     mobileOpen,
-    refreshTeam,
     refreshToken,
     selectedConversation,
   ]);
@@ -294,7 +292,6 @@ export default function SupportTeamChat({
         markSupportTeamConversationRead(selectedConversation)
           .then(() => {
             onConversationRead(selectedConversation);
-            refreshTeam();
           })
           .catch(() => {});
       }
@@ -308,7 +305,6 @@ export default function SupportTeamChat({
     desktopLayout,
     mobileOpen,
     onConversationRead,
-    refreshTeam,
     selectedConversation,
   ]);
 
@@ -336,7 +332,6 @@ export default function SupportTeamChat({
         });
       }
       setReplyingTo(null);
-      refreshTeam();
     } catch (err) {
       setDraft(body);
       setError(err.message);
@@ -346,13 +341,17 @@ export default function SupportTeamChat({
   };
 
   const notifyTyping = (isTyping) => {
-    window.dispatchEvent(
-      new CustomEvent("edutech-support-team-typing-outgoing", {
-        detail: { conversationId: selectedConversation, isTyping },
-      }),
-    );
+    const nextTyping = Boolean(isTyping);
+    if (typingActiveRef.current !== nextTyping) {
+      typingActiveRef.current = nextTyping;
+      window.dispatchEvent(
+        new CustomEvent("edutech-support-team-typing-outgoing", {
+          detail: { conversationId: selectedConversation, isTyping: nextTyping },
+        }),
+      );
+    }
     window.clearTimeout(typingTimerRef.current);
-    if (isTyping) {
+    if (nextTyping) {
       typingTimerRef.current = window.setTimeout(
         () => notifyTyping(false),
         1200,
@@ -405,6 +404,8 @@ export default function SupportTeamChat({
   };
 
   const toggleSelected = (messageId) => {
+    const message = messages.find((row) => row.id === messageId);
+    if (!message || message.deletedForEveryone) return;
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(messageId)) next.delete(messageId);
@@ -414,8 +415,17 @@ export default function SupportTeamChat({
   };
 
   const deleteSelection = async (scope) => {
-    const messageIds = [...selectedIds];
+    const messageIds = [...selectedIds].filter((messageId) => {
+      const message = messages.find((row) => row.id === messageId);
+      return message && !message.deletedForEveryone;
+    });
     if (!messageIds.length) return;
+    const confirmed = window.confirm(
+      scope === "everyone"
+        ? isFa ? "پیام‌های انتخاب‌شده برای همه حذف شوند؟" : "Delete selected messages for everyone?"
+        : isFa ? "پیام‌های انتخاب‌شده فقط برای شما حذف شوند؟" : "Delete selected messages for you?",
+    );
+    if (!confirmed) return;
     setActionBusy("delete-selection");
     try {
       await deleteSelectedSupportTeamChatMessages(messageIds, scope);
@@ -450,6 +460,7 @@ export default function SupportTeamChat({
   );
   const canDeleteSelectionForEveryone =
     selectedMessages.length > 0 &&
+    selectedMessages.length === selectedIds.size &&
     selectedMessages.every(
       (message) =>
         message.sender?.id === agentId && !message.deletedForEveryone,
@@ -539,7 +550,7 @@ export default function SupportTeamChat({
             <>
               <button type="button" onClick={() => setSelectedIds(new Set())} className="grid h-9 w-9 place-items-center rounded-full hover:bg-slate-200" aria-label={isFa ? "لغو انتخاب" : "Cancel selection"}><X size={20} /></button>
               <strong className="me-auto text-sm">{selectedIds.size}</strong>
-              <button type="button" onClick={() => setSelectedIds(new Set(messages.map((message) => message.id)))} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm">{isFa ? "انتخاب همه" : "Select all"}</button>
+              <button type="button" onClick={() => setSelectedIds(new Set(messages.filter((message) => !message.deletedForEveryone).map((message) => message.id)))} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm">{isFa ? "انتخاب همه" : "Select all"}</button>
               <button type="button" disabled={actionBusy === "delete-selection"} onClick={() => deleteSelection("me")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm disabled:opacity-40">{isFa ? "حذف برای من" : "Delete for me"}</button>
               {canDeleteSelectionForEveryone ? <button type="button" disabled={actionBusy === "delete-selection"} onClick={() => deleteSelection("everyone")} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white shadow-sm disabled:opacity-40">{isFa ? "حذف برای همه" : "Delete for everyone"}</button> : null}
             </>
@@ -785,9 +796,10 @@ function TeamMessage({
 }) {
   const isAdmin = senderRole === "admin";
   return (
-    <div className={`flex items-center gap-1 ${own ? "justify-end" : "justify-start"} ${selected ? "rounded-xl bg-emerald-100/70" : ""}`}>
-      <button type="button" onClick={onSelect} className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${selected ? "text-emerald-600" : "text-slate-400 hover:bg-white/70"}`} aria-label={isFa ? "انتخاب پیام" : "Select message"}>{selected ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button>
+    <div dir="ltr" className={`flex items-center gap-1 ${own ? "justify-end" : "justify-start"} ${selected ? "rounded-xl bg-emerald-100/70" : ""}`}>
+      {!message.deletedForEveryone ? <button type="button" onClick={onSelect} className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${selected ? "text-emerald-600" : "text-slate-400 hover:bg-white/70"}`} aria-label={isFa ? "انتخاب پیام" : "Select message"}>{selected ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button> : <span className="h-7 w-7 shrink-0" />}
       <div
+        dir="auto"
         className={`relative max-w-[86%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[72%] ${
           own
             ? "bg-[#d9fdd3] text-slate-900"
@@ -825,25 +837,29 @@ function TeamMessage({
             </div>
           </div>
         ) : message.deletedForEveryone ? (
-          <p className="text-sm italic text-slate-500">
-            {isFa ? "این پیام حذف شده است." : "This message was deleted."}
+          <p dir="auto" className="text-sm italic text-slate-500">
+            {own
+              ? isFa ? "شما این پیام را حذف کردید." : "You deleted this message."
+              : isFa ? "این پیام حذف شده است." : "This message was deleted."}
           </p>
         ) : (
-          <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">
+          <p dir="auto" className="whitespace-pre-wrap text-start text-[13px] font-medium leading-5 sm:text-sm">
             {message.body}
           </p>
         )}
-        <p className="mt-1 text-end text-[9px] font-semibold text-slate-500">
-          {message.editedAt ? (isFa ? "ویرایش‌شده · " : "edited · ") : ""}
-          {formatMessageTime(message.createdAt, isFa)}
-          {own ? <CheckCheck className={`ms-1 inline ${message.deliveryStatus === "read" ? "text-sky-500" : "text-slate-400"}`} size={14} /> : null}
-        </p>
-        {!editing && !message.deletedForEveryone ? (
-          <div className="mt-1 flex justify-end gap-1 opacity-70 transition hover:opacity-100">
+        <div dir="ltr" className="mt-1 flex min-h-6 items-end justify-between gap-3">
+          {!editing && !message.deletedForEveryone ? (
+            <span className="flex items-center gap-0.5 text-slate-500 opacity-70 transition hover:opacity-100">
             <button type="button" disabled={busy} onClick={onReply} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "پاسخ" : "Reply"}><Reply size={12} /></button>
             {own ? <button type="button" disabled={busy} onClick={onStartEdit} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button> : null}
-          </div>
-        ) : null}
+            </span>
+          ) : <span />}
+          <span className="flex items-center gap-1 whitespace-nowrap text-[9px] font-semibold text-slate-500">
+            {message.editedAt ? (isFa ? "ویرایش‌شده · " : "edited · ") : ""}
+            {formatMessageTime(message.createdAt, isFa)}
+            {own ? <CheckCheck className={message.deliveryStatus === "read" ? "text-sky-500" : "text-slate-400"} size={14} /> : null}
+          </span>
+        </div>
       </div>
     </div>
   );

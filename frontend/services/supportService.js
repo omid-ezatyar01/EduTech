@@ -47,7 +47,8 @@ export const connectSupportSocket = () => {
   return io(origin, {
     path: "/api/support-socket",
     auth: { token: getToken() },
-    transports: ["polling", "websocket"],
+    transports: ["websocket", "polling"],
+    tryAllTransports: true,
     upgrade: true,
     reconnection: true,
   });

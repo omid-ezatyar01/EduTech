@@ -38,6 +38,7 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
   const composerRef = useRef(null);
   const socketRef = useRef(null);
   const typingTimerRef = useRef(null);
+  const typingActiveRef = useRef(false);
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
 
@@ -61,13 +62,23 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
       });
       setPageInfo(data.pageInfo || { hasMore: false, nextBefore: null });
       await markSupportTeamConversationRead(conversationId);
-      await refreshDirectory();
+      if (conversationId === "general") {
+        setGeneralUnread(0);
+      } else {
+        setMembers((current) =>
+          current.map((member) =>
+            member.id === conversationId
+              ? { ...member, unreadMessages: 0 }
+              : member,
+          ),
+        );
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       if (!before) setLoading(false);
     }
-  }, [refreshDirectory]);
+  }, []);
 
   const loadEarlier = async () => {
     if (!pageInfo.hasMore || loadingOlder || !messages[0]?.createdAt) return;
@@ -115,8 +126,25 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
     socket.on("connect", () => onLiveChange?.(true));
     socket.on("disconnect", () => onLiveChange?.(false));
     socket.on("support:team-message", ({ message }) => {
-      refreshDirectory().catch(() => {});
-      if (!belongsToConversation(message, selected, admin)) return;
+      const belongs = belongsToConversation(message, selected, admin);
+      if (!belongs && message?.sender?.id !== (admin.id || admin._id)) {
+        if (message?.conversationType === "channel") {
+          setGeneralUnread((count) => count + 1);
+        } else {
+          const senderId = String(message?.sender?.id || "");
+          setMembers((current) =>
+            current.map((member) =>
+              member.id === senderId
+                ? {
+                    ...member,
+                    unreadMessages: Number(member.unreadMessages || 0) + 1,
+                  }
+                : member,
+            ),
+          );
+        }
+      }
+      if (!belongs) return;
       setMessages((rows) =>
         rows.some((row) => row.id === message.id) ? rows : [...rows, message],
       );
@@ -130,7 +158,6 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
     });
     socket.on("support:team-message-deleted", ({ messageId }) => {
       setMessages((rows) => rows.filter((row) => row.id !== messageId));
-      refreshDirectory().catch(() => {});
     });
     socket.on("support:team-messages-deleted", ({ messageIds = [], scope }) => {
       const removed = new Set(messageIds.map(String));
@@ -149,7 +176,6 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
           : rows.filter((row) => !removed.has(String(row.id))),
       );
       setSelectedIds(new Set());
-      refreshDirectory().catch(() => {});
     });
     socket.on("support:team-messages-read", ({ messageIds = [] }) => {
       const readIds = new Set(messageIds.map(String));
@@ -179,10 +205,10 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
     });
     socket.on("support:team-general-cleared", () => {
       if (selected === "general") setMessages([]);
-      refreshDirectory().catch(() => {});
+      setGeneralUnread(0);
     });
     return () => { socketRef.current = null; socket.disconnect(); };
-  }, [admin, onLiveChange, refreshDirectory, selected]);
+  }, [admin, onLiveChange, selected]);
 
   const visibleMembers = members.filter((member) => {
     const value = search.trim().toLowerCase();
@@ -224,12 +250,16 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
   };
 
   const notifyTyping = (isTyping) => {
-    socketRef.current?.emit("support:team-typing", {
-      conversationId: selected,
-      isTyping,
-    });
+    const nextTyping = Boolean(isTyping);
+    if (typingActiveRef.current !== nextTyping) {
+      typingActiveRef.current = nextTyping;
+      socketRef.current?.emit("support:team-typing", {
+        conversationId: selected,
+        isTyping: nextTyping,
+      });
+    }
     window.clearTimeout(typingTimerRef.current);
-    if (isTyping) {
+    if (nextTyping) {
       typingTimerRef.current = window.setTimeout(() => notifyTyping(false), 1200);
     }
   };
@@ -261,7 +291,7 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
     try {
       await clearGeneralSupportTeamMessages();
       setMessages([]);
-      await refreshDirectory();
+      setGeneralUnread(0);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -270,6 +300,8 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
   };
 
   const toggleSelected = (messageId) => {
+    const message = messages.find((row) => row.id === messageId);
+    if (!message || message.deletedForEveryone) return;
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(messageId)) next.delete(messageId);
@@ -279,8 +311,17 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
   };
 
   const deleteSelection = async (scope) => {
-    const messageIds = [...selectedIds];
+    const messageIds = [...selectedIds].filter((messageId) => {
+      const message = messages.find((row) => row.id === messageId);
+      return message && !message.deletedForEveryone;
+    });
     if (!messageIds.length) return;
+    const confirmed = window.confirm(
+      scope === "everyone"
+        ? isFa ? "پیام‌های انتخاب‌شده برای همه حذف شوند؟" : "Delete selected messages for everyone?"
+        : isFa ? "پیام‌های انتخاب‌شده فقط برای شما حذف شوند؟" : "Delete selected messages for you?",
+    );
+    if (!confirmed) return;
     setActionBusy("delete-selection");
     try {
       await deleteSelectedSupportTeamMessages(messageIds, scope);
@@ -310,13 +351,12 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
   const selectedMessages = messages.filter((message) => selectedIds.has(message.id));
   const canDeleteForEveryone =
     selectedMessages.length > 0 &&
-    ((selected === "general" &&
-      selectedMessages.every((message) => !message.deletedForEveryone)) ||
-      selectedMessages.every(
-        (message) =>
-          message.sender?.id === (admin.id || admin._id) &&
-          !message.deletedForEveryone,
-      ));
+    selectedMessages.length === selectedIds.size &&
+    selectedMessages.every(
+      (message) =>
+        message.sender?.id === (admin.id || admin._id) &&
+        !message.deletedForEveryone,
+    );
 
   return (
     <section className="grid min-h-[68vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[340px_1fr]">
@@ -385,7 +425,7 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
           <div className="flex flex-wrap items-center gap-2 border-b bg-white px-3 py-2">
             <button type="button" onClick={() => setSelectedIds(new Set())} className="rounded-full p-2 hover:bg-slate-100"><X size={17} /></button>
             <strong className="me-auto text-sm">{selectedIds.size}</strong>
-            <button type="button" onClick={() => setSelectedIds(new Set(messages.map((message) => message.id)))} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "انتخاب همه" : "Select all"}</button>
+            <button type="button" onClick={() => setSelectedIds(new Set(messages.filter((message) => !message.deletedForEveryone).map((message) => message.id)))} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "انتخاب همه" : "Select all"}</button>
             <button type="button" disabled={actionBusy === "delete-selection"} onClick={() => deleteSelection("me")} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "حذف برای من" : "Delete for me"}</button>
             {canDeleteForEveryone ? <button type="button" disabled={actionBusy === "delete-selection"} onClick={() => deleteSelection("everyone")} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white">{isFa ? "حذف برای همه" : "Delete for everyone"}</button> : null}
           </div>
@@ -400,9 +440,9 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
               const own = message.sender?.id === (admin.id || admin._id);
               const sender = members.find((row) => row.id === message.sender?.id);
               return (
-                <div key={message.id} className={`flex items-center gap-1 ${own ? "justify-end" : "justify-start"} ${selectedIds.has(message.id) ? "rounded-xl bg-emerald-100/70" : ""}`}>
-                  <button type="button" onClick={() => toggleSelected(message.id)} className={selectedIds.has(message.id) ? "text-emerald-600" : "text-slate-400"}>{selectedIds.has(message.id) ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button>
-                  <div className={`max-w-[82%] rounded-xl px-4 py-3 shadow-sm ${own ? "bg-[#d9fdd3]" : "bg-white"}`}>
+                <div key={message.id} dir="ltr" className={`flex items-center gap-1 ${own ? "justify-end" : "justify-start"} ${selectedIds.has(message.id) ? "rounded-xl bg-emerald-100/70" : ""}`}>
+                  {!message.deletedForEveryone ? <button type="button" onClick={() => toggleSelected(message.id)} className={selectedIds.has(message.id) ? "text-emerald-600" : "text-slate-400"}>{selectedIds.has(message.id) ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button> : <span className="h-[18px] w-[18px] shrink-0" />}
+                  <div dir="auto" className={`max-w-[82%] rounded-xl px-4 py-3 shadow-sm ${own ? "bg-[#d9fdd3]" : "bg-white"}`}>
                     {selected === "general" && !own ? (
                       <p className="mb-1 text-[11px] font-black text-emerald-700">
                         {message.sender?.name} · {supportSpecializationLabel(sender?.specialization, language)}
@@ -417,18 +457,20 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
                           <button type="button" disabled={actionBusy === message.id || !editingBody.trim()} onClick={saveEdit} className="grid h-7 w-7 place-items-center rounded-full bg-emerald-600 text-white disabled:opacity-40"><Check size={14} /></button>
                         </div>
                       </div>
-                    ) : message.deletedForEveryone ? <p className="text-sm italic text-slate-500">{isFa ? "این پیام حذف شده است." : "This message was deleted."}</p> : <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p>}
-                    <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                      {message.editedAt ? (isFa ? "ویرایش‌شده · " : "edited · ") : ""}
-                      {new Date(message.createdAt).toLocaleString(isFa ? "fa-IR" : "en-US")}
-                      {own ? <CheckCheck className={`ms-1 inline ${message.deliveryStatus === "read" ? "text-sky-500" : "text-slate-400"}`} size={14} /> : null}
-                    </p>
-                    {editingId !== message.id && !message.deletedForEveryone ? (
-                      <div className="mt-1 flex justify-end gap-1">
+                    ) : message.deletedForEveryone ? <p dir="auto" className="text-sm italic text-slate-500">{own ? (isFa ? "شما این پیام را حذف کردید." : "You deleted this message.") : (isFa ? "این پیام حذف شده است." : "This message was deleted.")}</p> : <p dir="auto" className="whitespace-pre-wrap text-start text-sm leading-6">{message.body}</p>}
+                    <div dir="ltr" className="mt-1 flex min-h-6 items-end justify-between gap-3">
+                      {editingId !== message.id && !message.deletedForEveryone ? (
+                        <span className="flex items-center gap-0.5 text-slate-500">
                         <button type="button" disabled={actionBusy === message.id} onClick={() => setReplyingTo(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "پاسخ" : "Reply"}><Reply size={12} /></button>
                         {own ? <button type="button" disabled={actionBusy === message.id} onClick={() => { setEditingId(message.id); setEditingBody(message.body); }} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button> : null}
-                      </div>
-                    ) : null}
+                        </span>
+                      ) : <span />}
+                      <span className="flex items-center gap-1 whitespace-nowrap text-[10px] font-semibold text-slate-400">
+                        {message.editedAt ? (isFa ? "ویرایش‌شده · " : "edited · ") : ""}
+                        {new Date(message.createdAt).toLocaleTimeString(isFa ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })}
+                        {own ? <CheckCheck className={message.deliveryStatus === "read" ? "text-sky-500" : "text-slate-400"} size={14} /> : null}
+                      </span>
+                    </div>
                   </div>
                 </div>
               );

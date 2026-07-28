@@ -597,7 +597,7 @@ export const deleteSelectedSupportTeamMessages = asyncHandler(async (req, res) =
   if (payload.scope === "everyone") {
     const cannotDelete = messages.some(
       (message) =>
-        !canDeleteSupportTeamMessage(req.user, message) ||
+        String(message.sender) !== String(req.user._id) ||
         Boolean(message.deletedForEveryoneAt),
     );
     if (cannotDelete) {

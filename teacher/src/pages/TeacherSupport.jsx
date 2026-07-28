@@ -87,6 +87,7 @@ export default function TeacherSupport() {
   const composerRef = useRef(null);
   const socketRef = useRef(null);
   const typingTimerRef = useRef(null);
+  const typingActiveRef = useRef(false);
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
 
@@ -204,6 +205,10 @@ export default function TeacherSupport() {
       markSupportTicketRead(eventTicket.id).catch(() => {});
     };
     const refresh = (payload) => {
+      const removedIds = new Set([...(payload?.messageIds || []), payload?.messageId].filter(Boolean).map(String));
+      if (removedIds.size) {
+        setSelectedMessageIds((current) => new Set([...current].filter((id) => !removedIds.has(String(id)))));
+      }
       loadList().catch(() => {});
       if (payload?.ticket?.id === selectedId && !payload?.message?.id) {
         loadChat(selectedId).catch(() => {});
@@ -241,10 +246,10 @@ export default function TeacherSupport() {
     socket.on("support:ticket-deleted", refresh);
     if (selectedId) socket.emit("support:join", selectedId);
     const timer = setInterval(() => {
-      if (document.hidden) return;
+      if (document.hidden || socket.connected) return;
       loadList().catch(() => {});
       if (selectedId) loadChat(selectedId).catch(() => {});
-    }, 15_000);
+    }, 60_000);
     return () => { clearInterval(timer); socketRef.current = null; socket.disconnect(); };
   }, [selectedId, loadChat, loadList, teacherId]);
 
@@ -263,14 +268,36 @@ export default function TeacherSupport() {
     event.preventDefault();
     const body = draft.trim(); if (!body) return;
     setBusy(true); setDraft(""); notifyTyping(false);
-    try { await sendSupportMessage(selectedId, body, replyingTo?.id || null); setReplyingTo(null); await Promise.all([loadChat(selectedId), loadList()]); }
+    try {
+      const data = await sendSupportMessage(selectedId, body, replyingTo?.id || null);
+      setReplyingTo(null);
+      if (data?.message?.id) {
+        setChat((current) => {
+          if (!current || current.ticket?.id !== selectedId) return current;
+          const messages = current.messages.some((message) => message.id === data.message.id)
+            ? current.messages
+            : [...current.messages, data.message];
+          return { ...current, ticket: { ...current.ticket, ...data.ticket }, messages };
+        });
+      }
+      if (data?.ticket?.id) {
+        setTickets((current) => {
+          const existing = current.find((ticket) => ticket.id === data.ticket.id);
+          return existing ? [{ ...existing, ...data.ticket }, ...current.filter((ticket) => ticket.id !== data.ticket.id)] : current;
+        });
+      }
+    }
     catch (err) { setDraft(body); setError(err.message); } finally { setBusy(false); }
   };
   const notifyTyping = (isTyping) => {
     if (!selectedId) return;
-    socketRef.current?.emit("support:typing", { ticketId: selectedId, isTyping });
+    const nextTyping = Boolean(isTyping);
+    if (typingActiveRef.current !== nextTyping) {
+      typingActiveRef.current = nextTyping;
+      socketRef.current?.emit("support:typing", { ticketId: selectedId, isTyping: nextTyping });
+    }
     window.clearTimeout(typingTimerRef.current);
-    if (isTyping) {
+    if (nextTyping) {
       typingTimerRef.current = window.setTimeout(() => notifyTyping(false), 1200);
     }
   };
@@ -282,6 +309,8 @@ export default function TeacherSupport() {
     catch (err) { setError(err.message); } finally { setBusy(false); }
   };
   const toggleMessageSelection = (messageId) => {
+    const message = chat?.messages?.find((row) => row.id === messageId);
+    if (!message || message.deletedForEveryone) return;
     setSelectedMessageIds((current) => {
       const next = new Set(current);
       if (next.has(messageId)) next.delete(messageId);
@@ -290,13 +319,27 @@ export default function TeacherSupport() {
     });
   };
   const deleteSelection = async (scope) => {
-    const messageIds = [...selectedMessageIds];
+    const messageIds = [...selectedMessageIds].filter((messageId) => {
+      const message = chat?.messages?.find((row) => row.id === messageId);
+      return message && !message.deletedForEveryone;
+    });
     if (!messageIds.length) return;
+    const confirmed = window.confirm(scope === "everyone"
+      ? language === "fa" ? "پیام‌های انتخاب‌شده برای همه حذف شوند؟" : "Delete selected messages for everyone?"
+      : language === "fa" ? "پیام‌های انتخاب‌شده فقط برای شما حذف شوند؟" : "Delete selected messages for you?");
+    if (!confirmed) return;
     setBusy(true);
     try {
-      await deleteSelectedSupportMessages(selectedId, messageIds, scope);
+      const data = await deleteSelectedSupportMessages(selectedId, messageIds, scope);
+      const removed = new Set(messageIds.map(String));
+      setChat((current) => current ? {
+        ...current,
+        ticket: data?.ticket ? { ...current.ticket, ...data.ticket } : current.ticket,
+        messages: scope === "everyone"
+          ? current.messages.map((message) => removed.has(String(message.id)) ? { ...message, body: "", deletedForEveryone: true, deletedForEveryoneAt: new Date().toISOString() } : message)
+          : current.messages.filter((message) => !removed.has(String(message.id))),
+      } : current);
       setSelectedMessageIds(new Set());
-      await Promise.all([loadChat(selectedId), loadList()]);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
   const openTicket = (ticketId) => {
@@ -314,19 +357,21 @@ export default function TeacherSupport() {
       <div className="flex min-h-[540px] flex-col">
         {!chat ? <div className="grid flex-1 place-items-center text-slate-400"><div className="text-center"><MessageCircle className="mx-auto" size={48}/><p className="mt-3 font-bold">{t.select}</p></div></div> : <>
           <header className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="font-black">{chat.ticket.subject}</h2><p className="text-xs font-bold text-slate-400" dir="ltr">{chat.ticket.ticketNumber}</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700">{t.statuses[chat.ticket.status]}</span></header>
-          {selectedMessageIds.size ? <div className="flex flex-wrap items-center gap-2 border-b bg-white px-3 py-2"><button type="button" onClick={() => setSelectedMessageIds(new Set())} className="rounded-full p-2"><X size={17}/></button><strong className="me-auto text-sm">{selectedMessageIds.size}</strong><button type="button" onClick={() => setSelectedMessageIds(new Set(chat.messages.map((message) => message.id)))} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{language === "fa" ? "انتخاب همه" : "Select all"}</button><button type="button" disabled={busy} onClick={() => deleteSelection("me")} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{language === "fa" ? "حذف برای من" : "Delete for me"}</button>{chat.messages.filter((message) => selectedMessageIds.has(message.id)).every((message) => message.senderRole === "teacher" && !message.deletedForEveryone) ? <button type="button" disabled={busy} onClick={() => deleteSelection("everyone")} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white">{language === "fa" ? "حذف برای همه" : "Delete for everyone"}</button> : null}</div> : null}
+          {selectedMessageIds.size ? <div className="flex flex-wrap items-center gap-2 border-b bg-white px-3 py-2"><button type="button" onClick={() => setSelectedMessageIds(new Set())} className="rounded-full p-2"><X size={17}/></button><strong className="me-auto text-sm">{selectedMessageIds.size}</strong><button type="button" onClick={() => setSelectedMessageIds(new Set(chat.messages.filter((message) => !message.deletedForEveryone).map((message) => message.id)))} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{language === "fa" ? "انتخاب همه" : "Select all"}</button><button type="button" disabled={busy} onClick={() => deleteSelection("me")} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{language === "fa" ? "حذف برای من" : "Delete for me"}</button>{chat.messages.filter((message) => selectedMessageIds.has(message.id)).length === selectedMessageIds.size && chat.messages.filter((message) => selectedMessageIds.has(message.id)).every((message) => message.senderRole === "teacher" && !message.deletedForEveryone) ? <button type="button" disabled={busy} onClick={() => deleteSelection("everyone")} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white">{language === "fa" ? "حذف برای همه" : "Delete for everyone"}</button> : null}</div> : null}
           <div ref={messagesRef} className="chat-scrollbar-side edutech-scrollbar flex-1 space-y-3 overflow-y-auto bg-slate-50/60 p-4">
             {pageInfo.hasMore ? <div className="flex justify-center"><button type="button" disabled={loadingOlder} onClick={loadEarlierMessages} className="rounded-full bg-white px-4 py-2 text-xs font-black text-blue-700 shadow-sm disabled:opacity-50">{loadingOlder ? (language === "fa" ? "در حال بارگذاری…" : "Loading…") : (language === "fa" ? "نمایش پیام‌های قبلی" : "Load earlier messages")}</button></div> : null}
             {chat.messages.map((message) => {
               const own = message.senderRole === "teacher";
               const selected = selectedMessageIds.has(message.id);
-              return <div key={message.id} className={`flex items-center gap-1 ${own ? "justify-end" : "justify-start"} ${selected ? "rounded-xl bg-blue-100/70" : ""}`}>
-                <button type="button" onClick={() => toggleMessageSelection(message.id)} className={selected ? "text-blue-600" : "text-slate-400"}>{selected ? <CheckCircle2 size={18}/> : <Circle size={18}/>}</button>
-                <div className={`max-w-[82%] rounded-2xl px-4 py-3 ${own ? "bg-[#0B4FD8] text-white" : "border border-slate-200 bg-white"}`}>
+              return <div key={message.id} dir="ltr" className={`flex items-center gap-1 ${own ? "justify-end" : "justify-start"} ${selected ? "rounded-xl bg-blue-100/70" : ""}`}>
+                {!message.deletedForEveryone ? <button type="button" onClick={() => toggleMessageSelection(message.id)} className={selected ? "text-blue-600" : "text-slate-400"}>{selected ? <CheckCircle2 size={18}/> : <Circle size={18}/>}</button> : <span className="h-[18px] w-[18px] shrink-0" />}
+                <div dir="auto" className={`max-w-[82%] rounded-2xl px-4 py-3 ${own ? "bg-[#0B4FD8] text-white" : "border border-slate-200 bg-white"}`}>
                   {message.replyTo ? <TeacherReplyQuote message={message.replyTo} language={language}/> : null}
-                  {message.deletedForEveryone ? <p className={`text-sm italic ${own ? "text-blue-100" : "text-slate-500"}`}>{language === "fa" ? "این پیام حذف شده است." : "This message was deleted."}</p> : <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p>}
-                  <p className={`mt-1 text-[10px] font-bold ${own ? "text-blue-100" : "text-slate-400"}`}>{message.editedAt ? (language === "fa" ? "ویرایش‌شده · " : "edited · ") : ""}{new Date(message.createdAt).toLocaleString(language === "fa" ? "fa-AF" : "en-US")}{own ? <CheckCheck className={`ms-1 inline ${message.deliveryStatus === "read" ? "text-sky-300" : "text-blue-200"}`} size={14}/> : null}</p>
-                  {!message.deletedForEveryone ? <div className="mt-1 flex justify-end gap-1"><button type="button" disabled={busy} onClick={() => setReplyingTo(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-white/10"><Reply size={12}/></button>{own ? <button type="button" disabled={busy} onClick={() => editMessage(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-white/10"><Pencil size={12}/></button> : null}</div> : null}
+                  {message.deletedForEveryone ? <p dir="auto" className={`text-sm italic ${own ? "text-blue-100" : "text-slate-500"}`}>{own ? (language === "fa" ? "شما این پیام را حذف کردید." : "You deleted this message.") : (language === "fa" ? "این پیام حذف شده است." : "This message was deleted.")}</p> : <p dir="auto" className="whitespace-pre-wrap text-start text-sm leading-6">{message.body}</p>}
+                  <div dir="ltr" className="mt-1 flex min-h-6 items-end justify-between gap-3">
+                    {!message.deletedForEveryone ? <span className={`flex items-center gap-0.5 ${own ? "text-blue-100" : "text-slate-500"}`}><button type="button" disabled={busy} onClick={() => setReplyingTo(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-white/10"><Reply size={12}/></button>{own ? <button type="button" disabled={busy} onClick={() => editMessage(message)} className="grid h-6 w-6 place-items-center rounded-full hover:bg-white/10"><Pencil size={12}/></button> : null}</span> : <span />}
+                    <span className={`flex items-center gap-1 whitespace-nowrap text-[10px] font-bold ${own ? "text-blue-100" : "text-slate-400"}`}>{message.editedAt ? (language === "fa" ? "ویرایش‌شده · " : "edited · ") : ""}{new Date(message.createdAt).toLocaleTimeString(language === "fa" ? "fa-AF" : "en-US", { hour: "2-digit", minute: "2-digit" })}{own ? <CheckCheck className={message.deliveryStatus === "read" ? "text-sky-300" : "text-blue-200"} size={14}/> : null}</span>
+                  </div>
                 </div>
               </div>;
             })}

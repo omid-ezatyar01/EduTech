@@ -205,6 +205,7 @@ function SupportStaffWorkspaceContent() {
   const composerRef = useRef(null);
   const socketRef = useRef(null);
   const typingTimerRef = useRef(null);
+  const typingActiveRef = useRef(false);
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
 
@@ -413,10 +414,6 @@ function SupportStaffWorkspaceContent() {
     socketRef.current = socket;
     socket.on("connect", () => {
       setLive(true);
-      loadQueue().catch(() => {});
-      if (selectedId && (desktopLayout || mobileTicketOpen)) {
-        loadChat(selectedId).catch(() => {});
-      }
     });
     socket.on("disconnect", () => setLive(false));
     socket.on("connect_error", () => setLive(false));
@@ -445,19 +442,29 @@ function SupportStaffWorkspaceContent() {
       }
     };
     const refresh = (payload) => {
+      const removedIds = new Set(
+        [...(payload?.messageIds || []), payload?.messageId]
+          .filter(Boolean)
+          .map(String),
+      );
+      if (removedIds.size) {
+        setSelectedMessageIds((current) =>
+          new Set([...current].filter((id) => !removedIds.has(String(id)))),
+        );
+      }
       mergeRealtimeMessage(payload);
       loadQueue().catch(() => {});
       if (payload?.ticket?.id === selectedId) {
         loadChat(selectedId).catch(() => {});
       }
     };
+    socket.on("support:message", mergeRealtimeMessage);
+    socket.on("support:internal-note", mergeRealtimeMessage);
     [
       "support:ticket-created",
-      "support:message",
       "support:message-updated",
       "support:message-deleted",
       "support:messages-deleted",
-      "support:internal-note",
       "support:ticket-updated",
       "support:ticket-deleted",
     ].forEach((event) => socket.on(event, refresh));
@@ -479,7 +486,6 @@ function SupportStaffWorkspaceContent() {
           }),
         );
       }
-      loadTeam().catch(() => {});
     });
     socket.on("support:team-message-updated", (payload) => {
       window.dispatchEvent(
@@ -494,7 +500,6 @@ function SupportStaffWorkspaceContent() {
           detail: payload,
         }),
       );
-      loadTeam().catch(() => {});
     });
     socket.on("support:team-messages-deleted", (payload) => {
       window.dispatchEvent(
@@ -502,7 +507,6 @@ function SupportStaffWorkspaceContent() {
           detail: payload,
         }),
       );
-      loadTeam().catch(() => {});
     });
     socket.on("support:team-messages-read", (payload) => {
       window.dispatchEvent(
@@ -558,17 +562,16 @@ function SupportStaffWorkspaceContent() {
           detail: payload,
         }),
       );
-      loadTeam().catch(() => {});
     });
     if (selectedId) socket.emit("support:join", selectedId);
     const timer = setInterval(() => {
-      if (document.hidden) return;
+      if (document.hidden || socket.connected) return;
       loadQueue().catch(() => {});
       loadTeam().catch(() => {});
       if (selectedId && (desktopLayout || mobileTicketOpen)) {
         loadChat(selectedId).catch(() => {});
       }
-    }, 15_000);
+    }, 60_000);
     return () => {
       clearInterval(timer);
       window.removeEventListener(
@@ -639,14 +642,30 @@ function SupportStaffWorkspaceContent() {
     notifyTicketTyping(false);
     setDraft("");
     try {
-      await sendSupportStaffMessage(
+      const data = await sendSupportStaffMessage(
         selectedId,
         body,
         internalNote,
         replyingTo?.id || null,
       );
       setReplyingTo(null);
-      await Promise.all([loadQueue(), loadChat(selectedId)]);
+      if (data?.message?.id) {
+        setChat((current) => {
+          if (!current || current.ticket?.id !== selectedId) return current;
+          const messages = current.messages.some((message) => message.id === data.message.id)
+            ? current.messages
+            : [...current.messages, data.message];
+          return { ...current, ticket: { ...current.ticket, ...data.ticket }, messages };
+        });
+      }
+      if (data?.ticket?.id) {
+        setTickets((current) => {
+          const existing = current.find((ticket) => ticket.id === data.ticket.id);
+          return existing
+            ? [{ ...existing, ...data.ticket }, ...current.filter((ticket) => ticket.id !== data.ticket.id)]
+            : current;
+        });
+      }
     } catch (err) {
       setDraft(body);
       setError(err.message);
@@ -657,9 +676,16 @@ function SupportStaffWorkspaceContent() {
 
   const notifyTicketTyping = (isTyping) => {
     if (!selectedId) return;
-    socketRef.current?.emit("support:typing", { ticketId: selectedId, isTyping });
+    const nextTyping = Boolean(isTyping);
+    if (typingActiveRef.current !== nextTyping) {
+      typingActiveRef.current = nextTyping;
+      socketRef.current?.emit("support:typing", {
+        ticketId: selectedId,
+        isTyping: nextTyping,
+      });
+    }
     window.clearTimeout(typingTimerRef.current);
-    if (isTyping) {
+    if (nextTyping) {
       typingTimerRef.current = window.setTimeout(
         () => notifyTicketTyping(false),
         1200,
@@ -685,6 +711,8 @@ function SupportStaffWorkspaceContent() {
   };
 
   const toggleMessageSelection = (messageId) => {
+    const message = chat?.messages?.find((row) => row.id === messageId);
+    if (!message || message.deletedForEveryone) return;
     setSelectedMessageIds((current) => {
       const next = new Set(current);
       if (next.has(messageId)) next.delete(messageId);
@@ -694,13 +722,29 @@ function SupportStaffWorkspaceContent() {
   };
 
   const deleteSelectedMessages = async (scope) => {
-    const messageIds = [...selectedMessageIds];
+    const messageIds = [...selectedMessageIds].filter((messageId) => {
+      const message = chat?.messages?.find((row) => row.id === messageId);
+      return message && !message.deletedForEveryone;
+    });
     if (!messageIds.length) return;
+    const confirmed = window.confirm(
+      scope === "everyone"
+        ? isFa ? "پیام‌های انتخاب‌شده برای همه حذف شوند؟" : "Delete selected messages for everyone?"
+        : isFa ? "پیام‌های انتخاب‌شده فقط برای شما حذف شوند؟" : "Delete selected messages for you?",
+    );
+    if (!confirmed) return;
     setBusy(true);
     try {
-      await deleteSelectedSupportStaffMessages(selectedId, messageIds, scope);
+      const data = await deleteSelectedSupportStaffMessages(selectedId, messageIds, scope);
+      const removed = new Set(messageIds.map(String));
+      setChat((current) => current ? {
+        ...current,
+        ticket: data?.ticket ? { ...current.ticket, ...data.ticket } : current.ticket,
+        messages: scope === "everyone"
+          ? current.messages.map((message) => removed.has(String(message.id)) ? { ...message, body: "", deletedForEveryone: true, deletedForEveryoneAt: new Date().toISOString() } : message)
+          : current.messages.filter((message) => !removed.has(String(message.id))),
+      } : current);
       setSelectedMessageIds(new Set());
-      await Promise.all([loadQueue(), loadChat(selectedId)]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -959,7 +1003,6 @@ function SupportStaffWorkspaceContent() {
             selectedConversation={selectedConversation}
             onSelectConversation={setSelectedConversation}
             onConversationRead={markConversationReadLocally}
-            refreshTeam={loadTeam}
             refreshToken={teamRefreshToken}
             onMobileDetailChange={setMobileTeamChatOpen}
           />
@@ -1098,9 +1141,9 @@ function SupportStaffWorkspaceContent() {
                   <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">
                     <button type="button" onClick={() => setSelectedMessageIds(new Set())} className="rounded-full p-2 hover:bg-slate-100"><Circle size={18} /></button>
                     <strong className="me-auto text-sm">{selectedMessageIds.size} {isFa ? "پیام انتخاب شد" : "selected"}</strong>
-                    <button type="button" onClick={() => setSelectedMessageIds(new Set(chat.messages.map((message) => message.id)))} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "انتخاب همه" : "Select all"}</button>
+                    <button type="button" onClick={() => setSelectedMessageIds(new Set(chat.messages.filter((message) => !message.deletedForEveryone).map((message) => message.id)))} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "انتخاب همه" : "Select all"}</button>
                     <button type="button" disabled={busy} onClick={() => deleteSelectedMessages("me")} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">{isFa ? "حذف برای من" : "Delete for me"}</button>
-                    {chat.messages.filter((message) => selectedMessageIds.has(message.id)).every((message) => message.sender?.id === agentId && !message.deletedForEveryone) ? (
+                    {chat.messages.filter((message) => selectedMessageIds.has(message.id)).length === selectedMessageIds.size && chat.messages.filter((message) => selectedMessageIds.has(message.id)).every((message) => message.sender?.id === agentId && !message.deletedForEveryone) ? (
                       <button type="button" disabled={busy} onClick={() => deleteSelectedMessages("everyone")} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white">{isFa ? "حذف برای همه" : "Delete for everyone"}</button>
                     ) : null}
                   </div>
@@ -1257,16 +1300,17 @@ function MessageBubble({ message, isFa, own, busy, onEdit, selected, onSelect, o
         ? `${message.sender?.name || (isFa ? "مدرس" : "Teacher")} · ${isFa ? "مدرس" : "Teacher"}`
       : message.sender?.name;
   return (
-    <div className={`flex items-center gap-1 ${fromTeam ? "justify-end" : "justify-start"} ${selected ? "rounded-xl bg-emerald-100/70" : ""}`}>
-      <button type="button" onClick={onSelect} className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${selected ? "text-emerald-600" : "text-slate-400"}`} aria-label={isFa ? "انتخاب پیام" : "Select message"}>{selected ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button>
-      <div className={`relative max-w-[86%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[72%] ${message.internalNote ? "border border-amber-300 bg-amber-50" : fromTeam ? "bg-[#d9fdd3] text-slate-900" : "bg-white text-slate-900"}`}>
+    <div dir="ltr" className={`flex items-center gap-1 ${fromTeam ? "justify-end" : "justify-start"} ${selected ? "rounded-xl bg-emerald-100/70" : ""}`}>
+      {!message.deletedForEveryone ? <button type="button" onClick={onSelect} className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${selected ? "text-emerald-600" : "text-slate-400"}`} aria-label={isFa ? "انتخاب پیام" : "Select message"}>{selected ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button> : <span className="h-7 w-7 shrink-0" />}
+      <div dir="auto" className={`relative max-w-[86%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[72%] ${message.internalNote ? "border border-amber-300 bg-amber-50" : fromTeam ? "bg-[#d9fdd3] text-slate-900" : "bg-white text-slate-900"}`}>
         {message.internalNote ? <p className="mb-1 flex items-center gap-1 text-[10px] font-black uppercase"><StickyNote size={12} /> {isFa ? "یادداشت داخلی" : "Internal note"}</p> : null}
         <p className="mb-0.5 text-[10px] font-black text-[#00a884]">{senderLabel}</p>
         {message.replyTo ? <TicketReplyQuote message={message.replyTo} isFa={isFa} /> : null}
-        {message.deletedForEveryone ? <p className="text-sm italic text-slate-500">{isFa ? "این پیام حذف شده است." : "This message was deleted."}</p> : <p className="whitespace-pre-wrap text-[13px] font-medium leading-5 sm:text-sm">{message.body}</p>}
-        <p className="mt-1 text-end text-[9px] font-semibold text-slate-500">{message.editedAt ? (isFa ? "ویرایش‌شده · " : "edited · ") : ""}{new Date(message.createdAt).toLocaleTimeString(isFa ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })}</p>
-        {own ? <span className="absolute bottom-1 end-2"><CheckCheck size={14} className={message.deliveryStatus === "read" ? "text-sky-500" : "text-slate-400"} /></span> : null}
-        {!message.deletedForEveryone ? <div className="mt-1 flex justify-end gap-1"><button type="button" disabled={busy} onClick={onReply} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "پاسخ" : "Reply"}><Reply size={12} /></button>{own ? <button type="button" disabled={busy} onClick={onEdit} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button> : null}</div> : null}
+        {message.deletedForEveryone ? <p dir="auto" className="text-sm italic text-slate-500">{own ? (isFa ? "شما این پیام را حذف کردید." : "You deleted this message.") : (isFa ? "این پیام حذف شده است." : "This message was deleted.")}</p> : <p dir="auto" className="whitespace-pre-wrap text-start text-[13px] font-medium leading-5 sm:text-sm">{message.body}</p>}
+        <div dir="ltr" className="mt-1 flex min-h-6 items-end justify-between gap-3">
+          {!message.deletedForEveryone ? <span className="flex items-center gap-0.5 text-slate-500"><button type="button" disabled={busy} onClick={onReply} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "پاسخ" : "Reply"}><Reply size={12} /></button>{own ? <button type="button" disabled={busy} onClick={onEdit} className="grid h-6 w-6 place-items-center rounded-full hover:bg-black/5" aria-label={isFa ? "ویرایش" : "Edit"}><Pencil size={12} /></button> : null}</span> : <span />}
+          <span className="flex items-center gap-1 whitespace-nowrap text-[9px] font-semibold text-slate-500">{message.editedAt ? (isFa ? "ویرایش‌شده · " : "edited · ") : ""}{new Date(message.createdAt).toLocaleTimeString(isFa ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })}{own ? <CheckCheck size={14} className={message.deliveryStatus === "read" ? "text-sky-500" : "text-slate-400"} /> : null}</span>
+        </div>
       </div>
     </div>
   );
