@@ -4,6 +4,7 @@ import { BookOpen, ExternalLink, Eye, EyeOff, FileText, ImagePlus, Pencil, Plus,
 import TeacherLayout from "../layouts/TeacherLayout.jsx";
 import TeacherPageLoader from "../components/common/TeacherPageLoader.jsx";
 import useTeacherLanguage from "../hooks/useTeacherLanguage.js";
+import usePersistentFormDraft, { clearTeacherFormDraft } from "../hooks/usePersistentFormDraft.js";
 import { getAuthUser } from "../../services/portal.js";
 import { createTeacherArticle, deleteTeacherArticle, fetchTeacherArticles, resolveArticleCoverUrl, updateTeacherArticle, uploadTeacherArticleCover } from "../../services/articleService.js";
 import { compressImageFileToLimit } from "../utils/imageCrop.js";
@@ -64,6 +65,13 @@ export default function TeacherArticles() {
   const [editorLanguage, setEditorLanguage] = useState(language === "fa" ? "fa" : "en");
   const [form, setForm] = useState(EMPTY);
   const [coverSelection, setCoverSelection] = useState(null);
+  const articleDraftId = `article:${editingId || "create"}`;
+  usePersistentFormDraft({
+    draftId: articleDraftId,
+    value: form,
+    setValue: setForm,
+    enabled: open,
+  });
   const counts = useMemo(() => ({ published: articles.filter((item) => item.status === "published").length, drafts: articles.filter((item) => item.status === "draft").length }), [articles]);
 
   const load = async () => { setLoading(true); setError(""); try { setArticles(await fetchTeacherArticles({ status, search })); } catch (err) { setError(err.message || text.loadError); } finally { setLoading(false); } };
@@ -87,7 +95,7 @@ export default function TeacherArticles() {
       seoDescription: { fa: form.seoDescriptionFa.trim(), en: form.seoDescriptionEn.trim() },
     };
     setSaving(true); setError("");
-    try { if (editingId) await updateTeacherArticle(editingId, payload); else await createTeacherArticle(payload); close(); await load(); }
+    try { if (editingId) await updateTeacherArticle(editingId, payload); else await createTeacherArticle(payload); clearTeacherFormDraft(articleDraftId); close(); await load(); }
     catch (err) { setError(err.message || text.saveError); } finally { setSaving(false); }
   };
   const toggle = async (item) => { try { await updateTeacherArticle(item._id, { status: item.status === "published" ? "draft" : "published" }); await load(); } catch (err) { setError(err.message || text.saveError); } };

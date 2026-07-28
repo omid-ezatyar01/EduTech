@@ -1,4 +1,5 @@
 import { useState } from "react";
+import usePersistentFormDraft, { clearTeacherFormDraft } from "../../hooks/usePersistentFormDraft";
 
 const initialForm = {
   course: "همه کورس‌ها",
@@ -8,6 +9,12 @@ const initialForm = {
 
 export default function GroupMessageModal({ open, onClose, onSubmit }) {
   const [form, setForm] = useState(initialForm);
+  usePersistentFormDraft({
+    draftId: "student:group-message",
+    value: form,
+    setValue: setForm,
+    enabled: open,
+  });
 
   if (!open) {
     return null;
@@ -20,6 +27,7 @@ export default function GroupMessageModal({ open, onClose, onSubmit }) {
   const handleSubmit = (event) => {
     event.preventDefault();
     onSubmit(form);
+    clearTeacherFormDraft("student:group-message");
     setForm(initialForm);
   };
 

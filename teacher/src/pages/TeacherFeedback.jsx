@@ -13,6 +13,7 @@ import {
 import TeacherLayout from "../layouts/TeacherLayout.jsx";
 import TeacherPageLoader from "../components/common/TeacherPageLoader.jsx";
 import useTeacherLanguage from "../hooks/useTeacherLanguage.js";
+import usePersistentFormDraft from "../hooks/usePersistentFormDraft.js";
 import { getAuthUser } from "../../services/portal.js";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http.js";
 
@@ -74,6 +75,11 @@ export default function TeacherFeedback() {
   const [busyAction, setBusyAction] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  usePersistentFormDraft({
+    draftId: "feedback:replies",
+    value: drafts,
+    setValue: setDrafts,
+  });
 
   const load = useCallback(async () => {
     try {
@@ -136,6 +142,11 @@ export default function TeacherFeedback() {
       body: JSON.stringify({ reply: drafts[review._id] ?? review.teacherReply ?? "" }),
     });
     await parseJsonResponse(response);
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[review._id];
+      return next;
+    });
   });
 
   const setVisibility = (review) => runAction(`visibility-${review._id}`, async () => {

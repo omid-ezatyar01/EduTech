@@ -1,4 +1,5 @@
 import { useState } from "react";
+import usePersistentFormDraft, { clearTeacherFormDraft } from "../../hooks/usePersistentFormDraft";
 
 const getTodayInputDate = () => {
   const now = new Date();
@@ -67,6 +68,12 @@ export default function CreateLiveClassModal({
   defaultCourseId = "",
 }) {
   const [form, setForm] = useState(getInitialForm());
+  usePersistentFormDraft({
+    draftId: "live-class:create",
+    value: form,
+    setValue: setForm,
+    enabled: open,
+  });
   const firstCourseId =
     courses.find((item) => item._id === defaultCourseId)?._id ||
     courses[0]?._id ||
@@ -97,6 +104,7 @@ export default function CreateLiveClassModal({
       startTime: resolvedTimes.startTime,
       endTime: resolvedTimes.endTime,
     });
+    clearTeacherFormDraft("live-class:create");
     setForm(getInitialForm());
   };
 

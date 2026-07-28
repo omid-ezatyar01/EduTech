@@ -1,4 +1,5 @@
 import { useState } from "react";
+import usePersistentFormDraft, { clearTeacherFormDraft } from "../../hooks/usePersistentFormDraft";
 
 const initialForm = {
   title: "",
@@ -18,6 +19,12 @@ const initialForm = {
 
 export default function CreateAssignmentModal({ open, onClose, onSubmit }) {
   const [form, setForm] = useState(initialForm);
+  usePersistentFormDraft({
+    draftId: "assignment:legacy-create",
+    value: form,
+    setValue: setForm,
+    enabled: open,
+  });
 
   if (!open) {
     return null;
@@ -28,6 +35,7 @@ export default function CreateAssignmentModal({ open, onClose, onSubmit }) {
   const submit = (event) => {
     event.preventDefault();
     onSubmit(form);
+    clearTeacherFormDraft("assignment:legacy-create");
     setForm(initialForm);
   };
 

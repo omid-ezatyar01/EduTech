@@ -3,6 +3,7 @@ import { Eye, EyeOff, Pencil, Plus, Trash2, Video, X } from "lucide-react";
 import TeacherLayout from "../layouts/TeacherLayout.jsx";
 import TeacherPageLoader from "../components/common/TeacherPageLoader.jsx";
 import useTeacherLanguage from "../hooks/useTeacherLanguage.js";
+import usePersistentFormDraft, { clearTeacherFormDraft } from "../hooks/usePersistentFormDraft.js";
 import { getAuthUser } from "../../services/portal.js";
 import { createTeacherVideo, deleteTeacherVideo, fetchTeacherVideos, updateTeacherVideo } from "../../services/videoService.js";
 
@@ -23,6 +24,13 @@ export default function TeacherVideos() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState("");
   const [form, setForm] = useState(EMPTY);
+  const videoDraftId = `video:${editingId || "create"}`;
+  usePersistentFormDraft({
+    draftId: videoDraftId,
+    value: form,
+    setValue: setForm,
+    enabled: open,
+  });
   const publishedCount = videos.filter((item) => item.isPublished !== false).length;
   const hiddenCount = videos.length - publishedCount;
   const stats = [
@@ -35,7 +43,7 @@ export default function TeacherVideos() {
   useEffect(() => { let active = true; fetchTeacherVideos().then((rows) => { if (active) setVideos(rows); }).catch((err) => { if (active) setError(err.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
   const close = () => { setOpen(false); setEditingId(""); setForm(EMPTY); };
   const edit = (item) => { setEditingId(item._id); setForm({ title: item.title, url: item.url, sortOrder: item.sortOrder || 0, isPublished: item.isPublished !== false }); setOpen(true); };
-  const submit = async (event) => { event.preventDefault(); if (!form.title.trim() || !form.url.trim()) { setError(text.required); return; } if (form.title.trim().length > 80) { setError(text.titleLong); return; } setSaving(true); setError(""); try { const payload = { ...form, title: form.title.trim(), url: form.url.trim(), sortOrder: Number(form.sortOrder) || 0 }; if (editingId) await updateTeacherVideo(editingId, payload); else await createTeacherVideo(payload); close(); await load(); } catch (err) { setError(err.message); } finally { setSaving(false); } };
+  const submit = async (event) => { event.preventDefault(); if (!form.title.trim() || !form.url.trim()) { setError(text.required); return; } if (form.title.trim().length > 80) { setError(text.titleLong); return; } setSaving(true); setError(""); try { const payload = { ...form, title: form.title.trim(), url: form.url.trim(), sortOrder: Number(form.sortOrder) || 0 }; if (editingId) await updateTeacherVideo(editingId, payload); else await createTeacherVideo(payload); clearTeacherFormDraft(videoDraftId); close(); await load(); } catch (err) { setError(err.message); } finally { setSaving(false); } };
   const toggle = async (item) => { try { await updateTeacherVideo(item._id, { isPublished: !item.isPublished }); await load(); } catch (err) { setError(err.message); } };
   const remove = async (item) => { if (!window.confirm(text.confirm)) return; try { await deleteTeacherVideo(item._id); setVideos((rows) => rows.filter((row) => row._id !== item._id)); } catch (err) { setError(err.message); } };
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import usePersistentFormDraft, { clearTeacherFormDraft } from "../../hooks/usePersistentFormDraft";
 
 const initialForm = {
   fullName: "",
@@ -10,6 +11,12 @@ const initialForm = {
 
 export default function AddStudentModal({ open, onClose, onSubmit }) {
   const [form, setForm] = useState(initialForm);
+  usePersistentFormDraft({
+    draftId: "student:add",
+    value: form,
+    setValue: setForm,
+    enabled: open,
+  });
 
   if (!open) {
     return null;
@@ -22,6 +29,7 @@ export default function AddStudentModal({ open, onClose, onSubmit }) {
   const handleSubmit = (event) => {
     event.preventDefault();
     onSubmit(form);
+    clearTeacherFormDraft("student:add");
     setForm(initialForm);
   };
 

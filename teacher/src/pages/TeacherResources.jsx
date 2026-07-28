@@ -5,6 +5,10 @@ import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPageLoader from "../components/common/TeacherPageLoader";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
 import useLiveDataRefresh from "../hooks/useLiveDataRefresh";
+import usePersistentFormDraft, {
+  clearTeacherFormDraft,
+  mergeTeacherFormDraft,
+} from "../hooks/usePersistentFormDraft";
 import { getAuthUser } from "../../services/portal";
 import {
   createTeacherCourseResource,
@@ -173,6 +177,14 @@ export default function TeacherResources() {
   const [loadingResources, setLoadingResources] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const resourceDraftId = `resource:${selectedCourseId || "unselected"}`;
+  usePersistentFormDraft({
+    draftId: resourceDraftId,
+    value: form,
+    setValue: setForm,
+    enabled: Boolean(selectedCourseId) && !editingResource,
+    restore: false,
+  });
 
   useLiveDataRefresh(() => setRefreshSeed((prev) => prev + 1), {
     intervalMs: 0,
@@ -425,6 +437,12 @@ export default function TeacherResources() {
   useEffect(() => {
     const timer = setTimeout(() => {
       resetForm(false);
+      setForm(
+        mergeTeacherFormDraft(
+          `resource:${selectedCourseId || "unselected"}`,
+          emptyForm,
+        ),
+      );
       loadResources(selectedCourseId);
       loadSessions(selectedCourseId);
     }, 0);
@@ -557,6 +575,7 @@ export default function TeacherResources() {
       }
 
       window.dispatchEvent(new Event("edutech_data_changed"));
+      clearTeacherFormDraft(resourceDraftId);
       resetForm();
       await loadResources(selectedCourseId);
     } catch (err) {

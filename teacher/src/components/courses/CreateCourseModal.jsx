@@ -21,6 +21,9 @@ import {
   isValidTimeZone,
   zonedDateTimeToUtc,
 } from "../../utils/timezone";
+import usePersistentFormDraft, {
+  clearTeacherFormDraft,
+} from "../../hooks/usePersistentFormDraft";
 
 const DAY_OPTIONS = [
   { key: "monday", enumKey: "MONDAY", labelFa: "دوشنبه", labelEn: "Monday" },
@@ -341,6 +344,12 @@ export default function CreateCourseModal({
   const [submissionSucceeded, setSubmissionSucceeded] = useState(false);
   const [activePolicyKey, setActivePolicyKey] = useState("");
   const formScrollRef = useRef(null);
+  usePersistentFormDraft({
+    draftId: "course:create",
+    value: form,
+    setValue: setForm,
+    enabled: open && !submissionSucceeded,
+  });
   const selectedCategory = form.category || firstCategory;
   const selectedSubcategory = categories.some(
     (item) => String(item._id) === String(form.subcategory || ""),
@@ -1259,6 +1268,7 @@ export default function CreateCourseModal({
         sessionCommitmentAccepted: Boolean(form.sessionCommitmentAccepted),
       },
       });
+      clearTeacherFormDraft("course:create");
       setForm(getInitialForm());
       setFieldErrors({});
       setMobileStep(1);

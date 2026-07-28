@@ -21,6 +21,10 @@ import {
   isValidTimeZone,
   zonedDateTimeToUtc,
 } from "../../utils/timezone";
+import usePersistentFormDraft, {
+  clearTeacherFormDraft,
+  mergeTeacherFormDraft,
+} from "../../hooks/usePersistentFormDraft";
 
 const DAY_OPTIONS = [
   { key: "monday", labelFa: "دوشنبه", labelEn: "Monday" },
@@ -511,6 +515,14 @@ export default function EditCourseModal({
   const [submissionSucceeded, setSubmissionSucceeded] = useState(false);
   const [pendingThumbnailFile, setPendingThumbnailFile] = useState(null);
   const formScrollRef = useRef(null);
+  const courseDraftId = `course:edit:${course?._id || course?.id || "unknown"}`;
+  usePersistentFormDraft({
+    draftId: courseDraftId,
+    value: form,
+    setValue: setForm,
+    enabled: open && Boolean(course) && !submissionSucceeded,
+    restore: false,
+  });
   const parentCategories = useMemo(() => getParentCategories(categories), [categories]);
   const courseLanguageOptions = useMemo(
     () => buildCourseLanguageOptions(teacherLanguages),
@@ -565,7 +577,12 @@ export default function EditCourseModal({
   useEffect(() => {
     if (!open || !course) return undefined;
     const timer = setTimeout(() => {
-      setForm(getInitialForm(course, categories, defaultTimeZone));
+      setForm(
+        mergeTeacherFormDraft(
+          `course:edit:${course?._id || course?.id || "unknown"}`,
+          getInitialForm(course, categories, defaultTimeZone),
+        ),
+      );
       setFormError("");
       setEditStep(1);
       setIsSaving(false);
@@ -1102,6 +1119,7 @@ export default function EditCourseModal({
       previewVideoUrls,
       thumbnailFile: thumbnail,
       });
+      clearTeacherFormDraft(courseDraftId);
       setSubmissionSucceeded(true);
     } catch (error) {
       setFormError(

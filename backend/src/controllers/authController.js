@@ -19,6 +19,7 @@ import {
 } from "../utils/bankPaymentInfo.js";
 import { notifyAdminTeacherApplicationReview } from "../services/webPush.service.js";
 import { encodeWebpUnderLimit } from "../utils/imageCompression.js";
+import { normalizeYouTubeUrl } from "../utils/youtubeUrl.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -110,37 +111,6 @@ const ensureStudentIdForUser = async (user) => {
 const normalizeText = (value) => {
   if (typeof value !== "string") return value;
   return value.trim();
-};
-
-const getYouTubeVideoKey = (value = "") => {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  try {
-    const url = new URL(raw);
-    const host = url.hostname.replace(/^www\./i, "").toLowerCase();
-    if (host === "youtu.be") {
-      const id = url.pathname.split("/").filter(Boolean)[0] || "";
-      return id ? `youtube:${id}` : "";
-    }
-    if (host === "youtube.com" || host.endsWith(".youtube.com")) {
-      if (url.pathname.startsWith("/watch")) {
-        const id = url.searchParams.get("v") || "";
-        return id ? `youtube:${id}` : "";
-      }
-      if (url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/embed/")) {
-        const id = url.pathname.split("/").filter(Boolean)[1] || "";
-        return id ? `youtube:${id}` : "";
-      }
-    }
-    return "";
-  } catch {
-    return "";
-  }
-};
-
-const isYouTubeUrl = (value = "") => {
-  const raw = String(value || "").trim();
-  return !raw || Boolean(getYouTubeVideoKey(raw));
 };
 
 const normalizeLocaleDigits = (value = "") =>
@@ -498,20 +468,21 @@ const updateProfileSchema = Joi.object({
       .trim()
       .max(250)
       .allow("")
-      .custom((value, helpers) =>
-        isYouTubeUrl(value)
-          ? value
-          : helpers.message("Intro video must be a YouTube link"),
-      ),
+      .custom((value, helpers) => {
+        if (!value) return "";
+        return (
+          normalizeYouTubeUrl(value) ||
+          helpers.message("Intro video must be a YouTube link")
+        );
+      }),
     courseIntroVideoUrls: Joi.array()
       .items(
         Joi.string()
           .trim()
           .max(250)
           .custom((value, helpers) =>
-            isYouTubeUrl(value)
-              ? value
-              : helpers.message("Course introduction video must be a YouTube link"),
+            normalizeYouTubeUrl(value) ||
+            helpers.message("Course introduction video must be a YouTube link"),
           ),
       )
       .max(8),

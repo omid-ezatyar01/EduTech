@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCheck, CheckCircle2, Circle, Headphones, MessageCircle, Pencil, Plus, Reply, Send, Wifi, WifiOff, X } from "lucide-react";
 import TeacherLayout from "../layouts/TeacherLayout";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
+import usePersistentFormDraft, {
+  clearTeacherFormDraft,
+} from "../hooks/usePersistentFormDraft";
 import { getAuthUser } from "../../services/portal";
 import {
   getTeacherPageCacheKey,
@@ -90,6 +93,18 @@ export default function TeacherSupport() {
   const typingActiveRef = useRef(false);
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
+  usePersistentFormDraft({
+    draftId: "support:new-ticket",
+    value: form,
+    setValue: setForm,
+    enabled: creating,
+  });
+  usePersistentFormDraft({
+    draftId: `support:reply:${selectedId || "unselected"}`,
+    value: draft,
+    setValue: setDraft,
+    enabled: Boolean(selectedId),
+  });
 
   const loadList = useCallback(async () => {
     const data = await fetchMySupportTickets();
@@ -264,6 +279,7 @@ export default function TeacherSupport() {
         ...form,
         subject: t.categories[form.category],
       });
+      clearTeacherFormDraft("support:new-ticket");
       setCreating(false); setForm({ category: "consultation", message: "" });
       await loadList(); setSelectedId(data.ticket.id);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
@@ -274,6 +290,7 @@ export default function TeacherSupport() {
     setBusy(true); setDraft(""); notifyTyping(false);
     try {
       const data = await sendSupportMessage(selectedId, body, replyingTo?.id || null);
+      clearTeacherFormDraft(`support:reply:${selectedId || "unselected"}`);
       setReplyingTo(null);
       if (data?.message?.id) {
         setChat((current) => {

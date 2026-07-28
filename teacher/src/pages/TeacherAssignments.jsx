@@ -13,6 +13,9 @@ import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPageLoader from "../components/common/TeacherPageLoader";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
 import useLiveDataRefresh from "../hooks/useLiveDataRefresh";
+import usePersistentFormDraft, {
+  clearTeacherFormDraft,
+} from "../hooks/usePersistentFormDraft";
 import { fetchTeacherCourses } from "../../services/courseService";
 import { getAuthUser } from "../../services/portal";
 import { getApiBase } from "../../services/http";
@@ -165,6 +168,13 @@ export default function TeacherAssignments() {
   const [selectedSubmissionDetail, setSelectedSubmissionDetail] = useState(null);
   const [downloadBusyId, setDownloadBusyId] = useState("");
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const assignmentDraftId = `assignment:${editing?.id || "create"}`;
+  usePersistentFormDraft({
+    draftId: assignmentDraftId,
+    value: form,
+    setValue: setForm,
+    enabled: openForm,
+  });
 
   useLiveDataRefresh(() => setRefreshSeed((prev) => prev + 1), {
     intervalMs: 0,
@@ -441,6 +451,7 @@ export default function TeacherAssignments() {
       }
 
       window.dispatchEvent(new Event("edutech_data_changed"));
+      clearTeacherFormDraft(assignmentDraftId);
       setOpenForm(false);
       resetForm();
       await loadAssignments(page);

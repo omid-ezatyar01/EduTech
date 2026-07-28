@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router";
 import { streamPlatformAiChatMessage } from "../../../services/aiChatService.js";
 import { getAuthUser } from "../../../services/portal.js";
+import usePersistentFormDraft, { clearTeacherFormDraft } from "../../hooks/usePersistentFormDraft.js";
 
 const MAX_MESSAGE_LENGTH = 1200;
 
@@ -54,6 +55,11 @@ export default function TeacherAiChatWidget({ language = "fa" }) {
   const [messages, setMessages] = useState([]);
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  usePersistentFormDraft({
+    draftId: "ai-chat",
+    value: draft,
+    setValue: setDraft,
+  });
   const scrollRef = useRef(null);
   const activeRequestRef = useRef(null);
   const user = useMemo(() => getAuthUser(), []);
@@ -111,6 +117,7 @@ export default function TeacherAiChatWidget({ language = "fa" }) {
       { id: assistantId, role: "assistant", content: "" },
     ];
     setMessages(nextMessages);
+    clearTeacherFormDraft("ai-chat");
     setDraft("");
     setErrorMessage("");
     setIsSending(true);

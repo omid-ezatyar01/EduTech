@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock3, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Clock3, ExternalLink, PlayCircle, Plus, Trash2, Upload } from "lucide-react";
 import { useLocation } from "react-router";
 import TeacherLayout from "../layouts/TeacherLayout";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
@@ -18,6 +18,10 @@ import {
   readTeacherPageCache,
   writeTeacherPageCache,
 } from "../utils/teacherPageCache";
+import usePersistentFormDraft, {
+  clearTeacherFormDraft,
+  mergeTeacherFormDraft,
+} from "../hooks/usePersistentFormDraft";
 
 const AVATAR_RAW_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 const AVATAR_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -30,8 +34,10 @@ const TEACHING_LANGUAGE_MAX_COUNT = 20;
 const TEACHING_LANGUAGE_MIN_CHARS = 2;
 const TEACHING_LANGUAGE_MAX_CHARS = 60;
 const COURSE_INTRO_VIDEO_MAX_COUNT = 8;
+const YOUTUBE_VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{6,20}$/;
 const PHONE_REGEX = /^\+?[0-9]{8,15}$/;
 const PROFILE_RESET_DRAFT_KEY = "edutech_teacher_profile_reset_form";
+const PROFILE_FORM_DRAFT_ID = "profile";
 const PROFILE_CACHE_KEY = getTeacherPageCacheKey("profile");
 const FIELD_MAX_LENGTHS = {
   name: 120,
@@ -1074,22 +1080,42 @@ const normalizeSkillRatings = (rows = []) =>
     }))
     .slice(0, SKILL_RATING_MAX_COUNT);
 
-const getYouTubeVideoKey = (value = "") => {
+const normalizeYouTubeInput = (value = "") => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const extractedUrl = raw.match(/https?:\/\/[^\s]+/i)?.[0] || raw;
+  const withoutTrailingPunctuation = extractedUrl.replace(/[),.;]+$/g, "");
+  return /^[a-z][a-z\d+.-]*:\/\//i.test(withoutTrailingPunctuation)
+    ? withoutTrailingPunctuation
+    : `https://${withoutTrailingPunctuation.replace(/^\/+/, "")}`;
+};
+
+const getYouTubeVideoId = (value = "") => {
   try {
-    const url = new URL(String(value || "").trim());
+    const url = new URL(normalizeYouTubeInput(value));
     const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
     if (hostname === "youtu.be") {
       const id = url.pathname.split("/").filter(Boolean)[0] || "";
-      return id ? `youtube:${id}` : "";
+      return YOUTUBE_VIDEO_ID_PATTERN.test(id) ? id : "";
     }
-    if (hostname === "youtube.com" || hostname.endsWith(".youtube.com")) {
+    if (
+      hostname === "youtube.com" ||
+      hostname.endsWith(".youtube.com") ||
+      hostname === "youtube-nocookie.com" ||
+      hostname.endsWith(".youtube-nocookie.com")
+    ) {
       if (url.pathname.startsWith("/watch")) {
         const id = url.searchParams.get("v") || "";
-        return id ? `youtube:${id}` : "";
+        return YOUTUBE_VIDEO_ID_PATTERN.test(id) ? id : "";
       }
-      if (url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/embed/")) {
+      if (
+        url.pathname.startsWith("/shorts/") ||
+        url.pathname.startsWith("/embed/") ||
+        url.pathname.startsWith("/live/") ||
+        url.pathname.startsWith("/v/")
+      ) {
         const id = url.pathname.split("/").filter(Boolean)[1] || "";
-        return id ? `youtube:${id}` : "";
+        return YOUTUBE_VIDEO_ID_PATTERN.test(id) ? id : "";
       }
     }
     return "";
@@ -1098,7 +1124,17 @@ const getYouTubeVideoKey = (value = "") => {
   }
 };
 
+const getYouTubeVideoKey = (value = "") => {
+  const id = getYouTubeVideoId(value);
+  return id ? `youtube:${id}` : "";
+};
+
 const hasYouTubeLink = (value = "") => Boolean(getYouTubeVideoKey(value));
+
+const normalizeYouTubeVideoUrl = (value = "") => {
+  const id = getYouTubeVideoId(value);
+  return id ? `https://www.youtube.com/watch?v=${encodeURIComponent(id)}` : "";
+};
 
 const PROFILE_TEXT_RULES = [
   { key: "name", min: 3, max: 120, required: true, fa: "نام کامل", en: "Full name" },
@@ -1225,7 +1261,10 @@ export default function TeacherProfile() {
     if (readLocalStorage(PROFILE_RESET_DRAFT_KEY) === "1") {
       return getEmptyForm(authEmail);
     }
-    return getInitialForm({ ...(teacher || {}), ...(cachedProfile || {}) });
+    return mergeTeacherFormDraft(
+      PROFILE_FORM_DRAFT_ID,
+      getInitialForm({ ...(teacher || {}), ...(cachedProfile || {}) }),
+    );
   });
   const [loading, setLoading] = useState(!cachedProfile);
   const [saving, setSaving] = useState(false);
@@ -1242,6 +1281,12 @@ export default function TeacherProfile() {
   const [isEditingApprovedProfile, setIsEditingApprovedProfile] = useState(false);
   const [customLanguageInput, setCustomLanguageInput] = useState("");
   const statusRef = useRef("draft");
+  usePersistentFormDraft({
+    draftId: PROFILE_FORM_DRAFT_ID,
+    value: form,
+    setValue: setForm,
+    restore: false,
+  });
   const getInputBorderClass = (fieldKey, defaultBorder = "border-[#E2E8F0]", errorBorder = "border-rose-300 bg-rose-50") =>
     fieldErrors[fieldKey] ? errorBorder : `${defaultBorder} bg-white`;
   const getTextInputClass = (fieldKey) =>
@@ -1271,7 +1316,11 @@ export default function TeacherProfile() {
         const accountEmail = String(merged?.email || authEmail || "").trim();
         const shouldUseResetDraft = readLocalStorage(PROFILE_RESET_DRAFT_KEY) === "1";
         setProfile(cached);
-        setForm(shouldUseResetDraft ? getEmptyForm(accountEmail) : getInitialForm(merged));
+        setForm(
+          shouldUseResetDraft
+            ? getEmptyForm(accountEmail)
+            : mergeTeacherFormDraft(PROFILE_FORM_DRAFT_ID, getInitialForm(merged)),
+        );
         setAvatarPreview(shouldUseResetDraft ? "" : resolveAssetUrl(merged.avatar || ""));
         setLoading(false);
       } else {
@@ -1287,7 +1336,11 @@ export default function TeacherProfile() {
         const merged = { ...(teacher || {}), ...(data || {}) };
         const accountEmail = String(merged?.email || authEmail || "").trim();
         const shouldUseResetDraft = readLocalStorage(PROFILE_RESET_DRAFT_KEY) === "1";
-        setForm(shouldUseResetDraft ? getEmptyForm(accountEmail) : getInitialForm(merged));
+        setForm(
+          shouldUseResetDraft
+            ? getEmptyForm(accountEmail)
+            : mergeTeacherFormDraft(PROFILE_FORM_DRAFT_ID, getInitialForm(merged)),
+        );
         setFieldErrors({});
         setAvatarPreview(shouldUseResetDraft ? "" : resolveAssetUrl(merged.avatar || ""));
         const cvUrl = resolveAssetUrl(merged?.teacherApplication?.cvUrl || "");
@@ -1364,6 +1417,11 @@ export default function TeacherProfile() {
   );
   const approvedApplication = merged?.teacherApplication || {};
   const showEditForm = !isApproved || isEditingApprovedProfile;
+  const introVideoId = getYouTubeVideoId(form.introVideoUrl);
+  const normalizedIntroVideoUrl = normalizeYouTubeVideoUrl(form.introVideoUrl);
+  const introVideoEmbedUrl = introVideoId
+    ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(introVideoId)}`
+    : "";
 
   useEffect(() => {
     statusRef.current = applicationStatus;
@@ -1391,7 +1449,14 @@ export default function TeacherProfile() {
         if (nextStatus !== prevStatus && (nextStatus === "rejected" || nextStatus === "draft")) {
           const shouldUseResetDraft = readLocalStorage(PROFILE_RESET_DRAFT_KEY) === "1";
           const accountEmail = String((nextTeacherSnapshot || data)?.email || authEmail || "").trim();
-          setForm(shouldUseResetDraft ? getEmptyForm(accountEmail) : getInitialForm(nextTeacherSnapshot || data));
+          setForm(
+            shouldUseResetDraft
+              ? getEmptyForm(accountEmail)
+              : mergeTeacherFormDraft(
+                  PROFILE_FORM_DRAFT_ID,
+                  getInitialForm(nextTeacherSnapshot || data),
+                ),
+          );
         }
 
         setError((prev) => {
@@ -1800,30 +1865,33 @@ export default function TeacherProfile() {
       }
     }
 
-    if (form.introVideoUrl.trim() && !hasYouTubeLink(form.introVideoUrl)) {
+    if (form.introVideoUrl.trim() && !normalizedIntroVideoUrl) {
       nextFieldErrors.introVideoUrl = isFa
         ? "لینک ویدیوی معرفی باید از YouTube باشد."
         : "Intro video must be a YouTube link.";
     }
 
-    const courseIntroVideoUrls = (Array.isArray(form.courseIntroVideoUrls)
+    const rawCourseIntroVideoUrls = (Array.isArray(form.courseIntroVideoUrls)
       ? form.courseIntroVideoUrls
       : []
     )
       .map((value) => String(value || "").trim())
       .filter(Boolean);
+    const courseIntroVideoUrls = rawCourseIntroVideoUrls
+      .map((value) => normalizeYouTubeVideoUrl(value))
+      .filter(Boolean);
     const uniqueCourseIntroVideoKeys = new Set(
-      courseIntroVideoUrls.map((value) => getYouTubeVideoKey(value)),
+      rawCourseIntroVideoUrls.map((value) => getYouTubeVideoKey(value)),
     );
-    if (courseIntroVideoUrls.some((value) => !hasYouTubeLink(value))) {
+    if (rawCourseIntroVideoUrls.some((value) => !hasYouTubeLink(value))) {
       nextFieldErrors.courseIntroVideoUrls = isFa
         ? "همه لینک‌های معرفی کورس باید از YouTube باشند."
         : "All course introduction videos must be YouTube links.";
-    } else if (uniqueCourseIntroVideoKeys.size !== courseIntroVideoUrls.length) {
+    } else if (uniqueCourseIntroVideoKeys.size !== rawCourseIntroVideoUrls.length) {
       nextFieldErrors.courseIntroVideoUrls = isFa
         ? "لینک تکراری را حذف کنید."
         : "Remove the duplicate video link.";
-    } else if (courseIntroVideoUrls.length > COURSE_INTRO_VIDEO_MAX_COUNT) {
+    } else if (rawCourseIntroVideoUrls.length > COURSE_INTRO_VIDEO_MAX_COUNT) {
       nextFieldErrors.courseIntroVideoUrls = isFa
         ? `حداکثر ${COURSE_INTRO_VIDEO_MAX_COUNT} ویدیو مجاز است.`
         : `You can add up to ${COURSE_INTRO_VIDEO_MAX_COUNT} videos.`;
@@ -1885,7 +1953,7 @@ export default function TeacherProfile() {
           languages: normalizedTeachingLanguages,
           skillRatings: normalizedSkillRatings,
           portfolioUrl: form.portfolioUrl,
-          introVideoUrl: form.introVideoUrl,
+          introVideoUrl: normalizedIntroVideoUrl,
           courseIntroVideoUrls,
           motivation: form.motivation,
         },
@@ -1898,6 +1966,7 @@ export default function TeacherProfile() {
       const response = await updateTeacherProfile(payload);
       const updatedUser = response?.user || {};
       removeLocalStorage(PROFILE_RESET_DRAFT_KEY);
+      clearTeacherFormDraft(PROFILE_FORM_DRAFT_ID);
       const nextTeacher = { ...(teacher || {}), ...updatedUser };
       const nextProfile = { ...(profile || {}), ...updatedUser };
       setTeacher(nextTeacher);
@@ -1976,6 +2045,7 @@ export default function TeacherProfile() {
 
   const handleResetForm = () => {
     writeLocalStorage(PROFILE_RESET_DRAFT_KEY, "1");
+    clearTeacherFormDraft(PROFILE_FORM_DRAFT_ID);
     setForm(getEmptyForm(lockedEmail));
     setFieldErrors({});
     setError("");
@@ -1997,16 +2067,16 @@ export default function TeacherProfile() {
   return (
     <TeacherLayout teacher={teacher} language={language} onLanguageChange={setLanguage}>
       <section
-        className={`rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-sm ${
+        className={`mx-auto w-full max-w-[1280px] overflow-hidden rounded-3xl border border-[#E2E8F0] bg-slate-50 p-3 shadow-sm sm:p-5 lg:p-6 ${
           isRTL ? "text-right [&_input]:text-right [&_textarea]:text-right [&_select]:text-right" : "text-left"
         }`}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-black text-[#0F172A]">
+        <div className="flex flex-col gap-4 rounded-2xl border border-blue-100 bg-[linear-gradient(135deg,#EFF6FF_0%,#FFFFFF_55%,#F0FDFA_100%)] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-black text-[#0F172A] sm:text-3xl">
               {isFa ? "پروفایل مدرس" : "Teacher Profile"}
             </h1>
-            <p className="mt-1 text-sm font-medium text-slate-600">
+            <p className="mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-600">
               {isApproved
                 ? isFa
                   ? "پروفایل شما تایید شده است."
@@ -2020,7 +2090,7 @@ export default function TeacherProfile() {
                   : "Only complete and submit the teacher application form."}
             </p>
           </div>
-          <span className={`inline-flex rounded-full px-3 py-1.5 text-xs font-black ${statusBadge.cls}`}>
+          <span className={`inline-flex w-fit shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${statusBadge.cls}`}>
             {statusBadge.label}
           </span>
         </div>
@@ -2063,9 +2133,9 @@ export default function TeacherProfile() {
         ) : null}
 
         {showEditForm ? (
-          <form className="mt-6 space-y-6" onSubmit={handleSave} noValidate>
+          <form className="mt-5 space-y-5 sm:mt-6 sm:space-y-6" onSubmit={handleSave} noValidate>
             <fieldset disabled={isUnderReview} className="space-y-6 disabled:opacity-100">
-              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 lg:p-5">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-white p-3 shadow-sm sm:p-4 lg:p-5">
                 <h2 className="mb-3 text-sm font-black text-[#0F172A]">
                   {isUnderReview
                     ? isFa
@@ -2077,7 +2147,7 @@ export default function TeacherProfile() {
                 </h2>
                 <div className="space-y-4">
                 <div className="flex flex-col items-center gap-3 text-center">
-                  <div className="relative mx-auto h-36 w-36 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-sm">
+                  <div className="relative mx-auto h-28 w-28 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-sm sm:h-36 sm:w-36">
                     {avatarPreview ? (
                       <img src={avatarPreview} alt={displayName} className="h-full w-full object-cover" />
                     ) : (
@@ -2413,46 +2483,107 @@ export default function TeacherProfile() {
                       </div>
                     </>
                   ) : null}
-                  <div className="rounded-2xl border border-[#BFDBFE] bg-blue-50/70 p-4 md:col-span-2">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <p className="text-sm font-black text-[#0B4FD8]">
-                          {isFa ? "ویدیوی معرفی برای شاگردان" : "Teacher Intro Video For Students"}
-                        </p>
-                        <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
-                          {isFa
-                            ? "لینک YouTube خود را وارد کنید تا در صفحه عمومی پروفایل شما به شکل واضح برای شاگردان نمایش داده شود."
-                            : "Add your YouTube link here so students can watch a clear introduction on your public teacher profile."}
-                        </p>
+                  <div className="overflow-hidden rounded-2xl border border-red-100 bg-white shadow-sm md:col-span-2">
+                    <div className="bg-gradient-to-r from-red-50 via-white to-blue-50 p-4 sm:p-5">
+                      <div className="flex items-start gap-3">
+                        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-red-600 text-white shadow-sm">
+                          <PlayCircle size={22} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-950 sm:text-base">
+                            {isFa ? "ویدیوی معرفی برای شاگردان" : "Teacher Intro Video For Students"}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-600 sm:text-sm sm:leading-6">
+                            {isFa
+                              ? "لینک ویدیوی YouTube را وارد کنید. لینک‌های معمولی، کوتاه، Shorts، Live و Embed پذیرفته می‌شوند."
+                              : "Paste a YouTube video link. Standard, short, Shorts, Live, and Embed links are accepted."}
+                          </p>
+                        </div>
                       </div>
-                      {form.introVideoUrl?.trim() ? (
-                        <a
-                          href={form.introVideoUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex h-9 shrink-0 items-center justify-center rounded-lg bg-white px-3 text-xs font-black text-[#0B4FD8] ring-1 ring-blue-200"
+
+                      <label className="mt-4 block space-y-1.5">
+                        <span className="text-xs font-bold text-slate-700">
+                          {isFa ? "لینک YouTube ویدیوی معرفی" : "YouTube intro video link"}
+                        </span>
+                        <div
+                          className={`flex min-w-0 items-center gap-2 rounded-xl border bg-white px-3 transition focus-within:ring-4 ${
+                            fieldErrors.introVideoUrl || (form.introVideoUrl.trim() && !introVideoId)
+                              ? "border-rose-300 focus-within:border-rose-400 focus-within:ring-rose-50"
+                              : introVideoId
+                                ? "border-emerald-300 focus-within:border-emerald-400 focus-within:ring-emerald-50"
+                                : "border-slate-200 focus-within:border-[#0B4FD8] focus-within:ring-blue-50"
+                          }`}
                         >
-                          {isFa ? "باز کردن ویدیو" : "Open Video"}
-                        </a>
-                      ) : null}
+                          <PlayCircle size={18} className="shrink-0 text-red-600" />
+                          <input
+                            type="url"
+                            inputMode="url"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            value={form.introVideoUrl}
+                            maxLength={250}
+                            onChange={(e) => handleFieldChange("introVideoUrl", e.target.value)}
+                            onBlur={() => {
+                              if (normalizedIntroVideoUrl) {
+                                handleFieldChange("introVideoUrl", normalizedIntroVideoUrl);
+                              }
+                            }}
+                            placeholder="https://youtu.be/..."
+                            className="h-11 min-w-0 flex-1 bg-transparent text-left text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400"
+                            dir="ltr"
+                          />
+                          {introVideoId ? (
+                            <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
+                          ) : null}
+                        </div>
+                      </label>
+
+                      {fieldErrors.introVideoUrl ? (
+                        <p className="mt-2 text-xs font-semibold text-rose-600">{fieldErrors.introVideoUrl}</p>
+                      ) : form.introVideoUrl.trim() && !introVideoId ? (
+                        <p className="mt-2 text-xs font-semibold text-rose-600">
+                          {isFa
+                            ? "این لینک ویدیوی YouTube شناخته نشد. لینک را مستقیماً از گزینه Share در YouTube کپی کنید."
+                            : "This YouTube video link was not recognized. Copy it directly from YouTube’s Share option."}
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-[11px] font-semibold text-slate-500">
+                          {isFa
+                            ? "نمونه: youtube.com/watch، youtu.be، youtube.com/shorts یا youtube.com/live"
+                            : "Examples: youtube.com/watch, youtu.be, youtube.com/shorts, or youtube.com/live"}
+                        </p>
+                      )}
                     </div>
-                    <label className="mt-3 block space-y-1.5">
-                      <span className="text-xs font-bold text-slate-600">
-                        {isFa ? "لینک YouTube ویدیوی معرفی" : "YouTube intro video link"}
-                      </span>
-                      <input
-                        value={form.introVideoUrl}
-                        maxLength={250}
-                        onChange={(e) => handleFieldChange("introVideoUrl", e.target.value)}
-                        placeholder={isFa ? "https://youtube.com/watch?v=... یا https://youtu.be/..." : "https://youtube.com/watch?v=... or https://youtu.be/..."}
-                        className={`w-full rounded-xl border px-3 py-2.5 text-sm font-semibold outline-none focus:border-[#0B4FD8] ${fieldErrors.introVideoUrl ? "border-rose-300 bg-rose-50" : "border-blue-200 bg-white"}`}
-                        dir="ltr"
-                      />
-                      {fieldErrors.introVideoUrl ? <p className="text-xs font-semibold text-rose-600">{fieldErrors.introVideoUrl}</p> : null}
-                      <span className="block text-[11px] font-semibold text-slate-500">
-                        {isFa ? "فقط لینک‌های YouTube پشتیبانی می‌شود." : "Only YouTube links are supported."}
-                      </span>
-                    </label>
+
+                    {introVideoEmbedUrl ? (
+                      <div className="border-t border-slate-100 p-3 sm:p-4">
+                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950">
+                          <iframe
+                            src={`${introVideoEmbedUrl}?rel=0`}
+                            title={isFa ? "پیش‌نمایش ویدیوی معرفی" : "Intro video preview"}
+                            className="aspect-video w-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                          />
+                        </div>
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="inline-flex items-center gap-2 text-xs font-black text-emerald-700">
+                            <CheckCircle2 size={15} />
+                            {isFa ? "لینک معتبر است و برای شاگردان نمایش داده می‌شود." : "Valid link — students will be able to watch it."}
+                          </p>
+                          <a
+                            href={normalizedIntroVideoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-xs font-black text-red-700 transition hover:bg-red-50"
+                          >
+                            <ExternalLink size={15} />
+                            {isFa ? "باز کردن در YouTube" : "Open on YouTube"}
+                          </a>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 md:col-span-2">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2580,13 +2711,13 @@ export default function TeacherProfile() {
             ) : null}
 
             {!isUnderReview ? (
-              <div className="flex flex-wrap justify-end gap-2">
+              <div className="sticky bottom-0 z-20 -mx-3 flex flex-col-reverse gap-2 border-t border-slate-200 bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-12px_28px_rgba(15,23,42,0.08)] backdrop-blur sm:static sm:mx-0 sm:flex-row sm:flex-wrap sm:justify-end sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
                 {isApproved ? (
                   <button
                     type="button"
                     onClick={() => setIsEditingApprovedProfile(false)}
                     disabled={loading || saving}
-                    className="inline-flex h-11 items-center justify-center rounded-xl border border-[#0B4FD8] bg-white px-6 text-sm font-black text-[#0B4FD8] transition hover:bg-[#EFF6FF] disabled:opacity-70"
+                    className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-[#0B4FD8] bg-white px-6 text-sm font-black text-[#0B4FD8] transition hover:bg-[#EFF6FF] disabled:opacity-70 sm:w-auto"
                   >
                     {isFa ? "لغو" : "Cancel"}
                   </button>
@@ -2595,27 +2726,27 @@ export default function TeacherProfile() {
                     type="button"
                     onClick={handleResetForm}
                     disabled={loading || saving}
-                    className="inline-flex h-11 items-center justify-center rounded-xl border border-[#0B4FD8] bg-white px-6 text-sm font-black text-[#0B4FD8] transition hover:bg-[#EFF6FF] disabled:opacity-70"
+                    className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-[#0B4FD8] bg-white px-6 text-sm font-black text-[#0B4FD8] transition hover:bg-[#EFF6FF] disabled:opacity-70 sm:w-auto"
                   >
                     {isFa ? "ریست فرم" : "Reset Form"}
                   </button>
                 )}
-                <button type="submit" name="teacherApplicationAction" value="submit_for_review" disabled={loading || saving} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#0B4FD8] px-6 text-sm font-black text-white transition hover:bg-[#083FAA] disabled:opacity-70">
+                <button type="submit" name="teacherApplicationAction" value="submit_for_review" disabled={loading || saving} className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-[#0B4FD8] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#083FAA] disabled:opacity-70 sm:h-11 sm:w-auto">
                   {saving
                     ? isFa
                       ? "در حال ارسال"
                       : "Submitting"
                     : isApproved
-                        ? isFa
-                          ? "ذخیره تغییرات"
-                          : "Save Changes"
-                    : isRejected
+                      ? isFa
+                        ? "ذخیره تغییرات"
+                        : "Save Changes"
+                      : isRejected
                         ? isFa
                           ? "ارسال دوباره برای بررسی"
                           : "Submit Again For Review"
-                      : isFa
-                        ? "ارسال برای بررسی"
-                        : "Submit For Review"}
+                        : isFa
+                          ? "ارسال برای بررسی"
+                          : "Submit For Review"}
                 </button>
               </div>
             ) : null}

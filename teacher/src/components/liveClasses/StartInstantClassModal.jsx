@@ -1,4 +1,5 @@
 import { useState } from "react";
+import usePersistentFormDraft, { clearTeacherFormDraft } from "../../hooks/usePersistentFormDraft";
 
 const initialForm = {
   course: "MERN Stack",
@@ -8,6 +9,12 @@ const initialForm = {
 
 export default function StartInstantClassModal({ open, onClose, onSubmit }) {
   const [form, setForm] = useState(initialForm);
+  usePersistentFormDraft({
+    draftId: "live-class:instant",
+    value: form,
+    setValue: setForm,
+    enabled: open,
+  });
 
   if (!open) {
     return null;
@@ -18,6 +25,7 @@ export default function StartInstantClassModal({ open, onClose, onSubmit }) {
   const handleSubmit = (event) => {
     event.preventDefault();
     onSubmit(form);
+    clearTeacherFormDraft("live-class:instant");
     setForm(initialForm);
   };
 
