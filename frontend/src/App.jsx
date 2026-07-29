@@ -48,6 +48,7 @@ const loadBlogArticlePage = () => import("./pages/BlogArticlePage.jsx");
 const loadRoadmapsPage = () => import("./pages/BlogPage.jsx");
 const loadEnglishRoadmapPage = () => import("./pages/EnglishRoadmapPage.jsx");
 const loadVideosPage = () => import("./pages/VideosPage.jsx");
+const loadGalleryPage = () => import("./pages/GalleryPage.jsx");
 const loadSupportStaffLoginPage = () =>
   import("./features/supportStaff/pages/SupportStaffLoginPage.jsx");
 const loadSupportStaffWorkspacePage = () =>
@@ -79,6 +80,7 @@ const BlogArticlePage = lazy(loadBlogArticlePage);
 const RoadmapsPage = lazy(loadRoadmapsPage);
 const EnglishRoadmapPage = lazy(loadEnglishRoadmapPage);
 const VideosPage = lazy(loadVideosPage);
+const GalleryPage = lazy(loadGalleryPage);
 const SupportStaffLoginPage = lazy(loadSupportStaffLoginPage);
 const SupportStaffWorkspacePage = lazy(loadSupportStaffWorkspacePage);
 const SupportStaffGuard = lazy(loadSupportStaffGuard);
@@ -129,6 +131,7 @@ const preloadRoutes = [
   { key: "blog-article", test: (path) => path.startsWith("/blog/") && path !== "/blog/english", load: loadBlogArticlePage },
   { key: "roadmaps", test: (path) => path === "/roadmaps", load: loadRoadmapsPage },
   { key: "videos", test: (path) => path === "/videos", load: loadVideosPage },
+  { key: "gallery", test: (path) => path === "/gallery" || path.startsWith("/gallery/"), load: loadGalleryPage },
   { key: "english-roadmap", test: (path) => path === "/roadmaps/english" || path === "/blog/english", load: loadEnglishRoadmapPage },
   { key: "verify", test: (path) => path === "/verify", load: loadVerifyCertificatePage },
   { key: "privacy-policy", test: (path) => path === "/privacy-policy", load: loadPrivacyPolicyPage },
@@ -401,6 +404,7 @@ export default function App() {
   else if (path.startsWith("/blog")) activeHref = "/blog";
   else if (path.startsWith("/roadmaps")) activeHref = "/roadmaps";
   else if (path === "/videos") activeHref = "/videos";
+  else if (path.startsWith("/gallery")) activeHref = "/gallery";
 
   return (
     <RegionalPricingProvider>
@@ -447,6 +451,8 @@ export default function App() {
             <Route path="/blog/:slug" element={<BlogArticlePage language={language} />} />
             <Route path="/roadmaps" element={<RoadmapsPage language={language} />} />
             <Route path="/videos" element={<VideosPage language={language} />} />
+            <Route path="/gallery" element={<GalleryPage language={language} />} />
+            <Route path="/gallery/:category" element={<GalleryPage language={language} />} />
             <Route
               path="/roadmaps/english"
               element={<EnglishRoadmapPage language={language} />}

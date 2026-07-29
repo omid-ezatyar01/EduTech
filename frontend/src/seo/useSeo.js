@@ -171,6 +171,14 @@ function getSeoConfig(pathname, language) {
       keywords: ["learning videos", "educational videos", "ویدیو آموزشی", "آموزش ویدیویی"],
     },
     {
+      match: /^\/gallery(?:\/[^/]+)?\/?$/,
+      title: isFa ? "گالری تصاویر | آکادمی ایجوتک" : "Image Gallery | EduTech Academy",
+      description: isFa
+        ? "تصاویر صنف‌ها، رویدادها و فعالیت‌های جامعه آموزشی ایجوتک را ببینید."
+        : "Explore photos from EduTech classes, events, and learning community activities.",
+      keywords: ["EduTech gallery", "class photos", "گالری ایجوتک", "تصاویر رویدادها"],
+    },
+    {
       match: /^\/roadmaps\/english\/?$/,
       title: isFa
         ? "نقشه راه یادگیری انگلیسی | آکادمی ایجوتک"

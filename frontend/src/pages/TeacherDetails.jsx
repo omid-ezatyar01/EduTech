@@ -21,7 +21,7 @@ import {
 import { Link, useNavigate, useParams } from "react-router";
 import TeacherHero from "../components/TeacherHero.jsx";
 import TeacherStats from "../components/TeacherStats.jsx";
-import CourseCard from "../components/CourseCard.jsx";
+import CourseCatalogCard from "../components/CourseCatalogCard.jsx";
 import SkillBadge from "../components/SkillBadge.jsx";
 import ProgressSkill from "../components/ProgressSkill.jsx";
 import TeacherScheduleTable from "../components/TeacherScheduleTable.jsx";
@@ -34,7 +34,12 @@ import {
   getCachedPublicTeacherById,
   invalidatePublicTeacherCaches,
 } from "../../services/teacherService.js";
-import { fetchPendingTeacherRatings, fetchStudentEnrollments, fetchStudentTeacherRatings } from "../../services/courseService.js";
+import {
+  fetchPendingTeacherRatings,
+  fetchPublishedCourseBySlug,
+  fetchStudentEnrollments,
+  fetchStudentTeacherRatings,
+} from "../../services/courseService.js";
 import { buildCoursePath, buildTeacherPath, extractRouteIdentifier } from "../utils/routePaths.js";
 import { buildLocalizedSiteUrl } from "../utils/localizedRoutes.js";
 import {
@@ -95,6 +100,33 @@ function hasActiveEnrollmentAccess(row = {}) {
   if (!row?.accessExpiresAt) return true;
   const expiresAt = new Date(row.accessExpiresAt);
   return Number.isNaN(expiresAt.getTime()) || expiresAt > new Date();
+}
+
+async function refreshTeacherCourses(teacher = {}) {
+  const refreshRows = async (rows = []) =>
+    Promise.all(
+      (Array.isArray(rows) ? rows : []).map(async (course) => {
+        const identifier = String(course?.slug || course?._id || course?.id || "").trim();
+        if (!identifier) return course;
+
+        try {
+          return await fetchPublishedCourseBySlug(identifier, { force: true });
+        } catch {
+          return course;
+        }
+      }),
+    );
+
+  const [publishedCourses, endedCourses] = await Promise.all([
+    refreshRows(teacher?.publishedCourses),
+    refreshRows(teacher?.endedCourses),
+  ]);
+
+  return {
+    ...teacher,
+    publishedCourses: publishedCourses.filter(Boolean),
+    endedCourses: endedCourses.filter(Boolean),
+  };
 }
 
 function getYouTubeEmbedUrl(value = "") {
@@ -580,7 +612,8 @@ export default function TeacherDetails({ language = "fa" }) {
         }
         setError("");
         setNotFound(false);
-        const row = initialTeacher || await fetchPublicTeacherById(teacherIdParam);
+        const freshTeacher = await fetchPublicTeacherById(teacherIdParam, { force: true });
+        const row = freshTeacher ? await refreshTeacherCourses(freshTeacher) : null;
         if (!mounted) return;
         if (!row) {
           setError(isFa ? "استاد یافت نشد." : "Teacher not found.");
@@ -1329,7 +1362,7 @@ export default function TeacherDetails({ language = "fa" }) {
   };
 
   useEffect(() => {
-    ["featured-courses", "ended-courses"].forEach((key) => {
+    ["ended-courses"].forEach((key) => {
       const element = sectionRowRefs.current[key];
       if (element) {
         updateSectionRowNav(key, element);
@@ -1747,50 +1780,21 @@ export default function TeacherDetails({ language = "fa" }) {
                 : "This teacher has no published courses yet."}
             </p>
           ) : (
-            <div className="relative mt-6">
-              <div
-                ref={(element) => {
-                  sectionRowRefs.current["featured-courses"] = element;
-                }}
-                onScroll={(event) => updateSectionRowNav("featured-courses", event.currentTarget)}
-                className="edutech-scrollbar flex gap-4 overflow-x-auto px-2 pb-2 sm:gap-5"
-                dir={dir}
-              >
-                {data.sections.courses.map((course, index) => (
-                  <div
-                    key={course._id || course.id || course.slug || `${course.title}-${index}`}
-                    className="w-[calc(100vw-5.5rem)] min-w-[calc(100vw-5.5rem)] shrink-0 sm:w-[min(84vw,360px)] sm:min-w-[min(84vw,360px)]"
-                  >
-                    <CourseCard
-                      course={course}
-                      dir={dir}
-                      isEnrolled={enrolledCourseIds.has(resolveCourseId(course))}
-                      language={isFa ? "fa" : "en"}
-                      labels={courseCardLabels}
-                    />
-                  </div>
-                ))}
-              </div>
-              {sectionRowNav["featured-courses"]?.canPrev ? (
-                <button
-                  type="button"
-                  onClick={() => scrollRowBackward("featured-courses")}
-                  className="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
-                  aria-label={isFa ? "نمایش موارد قبلی" : "Show previous items"}
+            <div className="mt-6 grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {data.sections.courses.map((course, index) => (
+                <div
+                  key={course._id || course.id || course.slug || `${course.title}-${index}`}
+                  className="relative mx-auto h-full w-full max-w-[390px]"
                 >
-                  <ChevronLeft size={18} className={dir === "rtl" ? "rotate-180" : ""} />
-                </button>
-              ) : null}
-              {sectionRowNav["featured-courses"]?.canNext ? (
-                <button
-                  type="button"
-                  onClick={() => scrollRowForward("featured-courses")}
-                  className="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition hover:border-violet-200 hover:text-violet-700"
-                  aria-label={isFa ? "نمایش موارد بعدی" : "Show next items"}
-                >
-                  <ChevronRight size={18} className={dir === "rtl" ? "rotate-180" : ""} />
-                </button>
-              ) : null}
+                  <CourseCatalogCard
+                    course={course}
+                    dir={dir}
+                    isEnrolled={enrolledCourseIds.has(resolveCourseId(course))}
+                    language={isFa ? "fa" : "en"}
+                    labels={courseCardLabels}
+                  />
+                </div>
+              ))}
             </div>
           )}
         </section>
