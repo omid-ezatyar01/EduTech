@@ -186,7 +186,7 @@ export default function GalleryPage({ language = "fa" }) {
                     <img src={resolveGalleryImageUrl(item.image)} alt={alt} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
                     <span className="absolute end-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-slate-950/65 text-white opacity-0 backdrop-blur transition group-hover:opacity-100"><ZoomIn size={18} /></span>
                   </div>
-                  <div className="flex min-h-28 flex-1 flex-col p-4 sm:p-5">
+                  <div className="p-4 sm:px-5">
                     <h2 className="line-clamp-1 font-black text-slate-950">
                       {title || categoryLabels[locale][item.category] || item.category}
                     </h2>

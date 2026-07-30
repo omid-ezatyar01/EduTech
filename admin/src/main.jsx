@@ -3,6 +3,7 @@ import App from "./App.jsx";
 import "./index.css";
 import { AdminI18nProvider, getInitialAdminLanguage, readStoredAdminLanguage } from "./i18n/AdminI18nContext.jsx";
 import { installAdminFetchGuards } from "../services/http.js";
+import AdminAppErrorBoundary from "./components/common/AdminAppErrorBoundary.jsx";
 
 try {
   const lang = readStoredAdminLanguage() || getInitialAdminLanguage() || "fa";
@@ -34,7 +35,9 @@ try {
 installAdminFetchGuards();
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <AdminI18nProvider>
-    <App />
-  </AdminI18nProvider>,
+  <AdminAppErrorBoundary>
+    <AdminI18nProvider>
+      <App />
+    </AdminI18nProvider>
+  </AdminAppErrorBoundary>,
 );

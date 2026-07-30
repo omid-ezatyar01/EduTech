@@ -179,8 +179,6 @@ function AppContent() {
   const { language } = useAdminI18n();
   const location = useLocation();
   const prefetchedRoutesRef = useRef(new Set());
-  const shouldShowSuspenseFallback =
-    typeof document === "undefined" || !document.getElementById("app-boot-loader");
 
   const checkAuth = () => isAdminAuthenticated();
 
@@ -295,9 +293,10 @@ function AppContent() {
     <div className="font-sans" onErrorCapture={applyEduTechLogoFallback} onPointerEnterCapture={handleRouteIntent} onFocusCapture={handleRouteIntent}>
       <Suspense
         fallback={
-          shouldShowSuspenseFallback ? (
-            <AdminPageLoader fullScreen label={language === "fa" ? "در حال بارگذاری" : "Loading"} />
-          ) : null
+          <AdminPageLoader
+            fullScreen
+            label={language === "fa" ? "در حال بارگذاری" : "Loading"}
+          />
         }
       >
         <Routes>
