@@ -27,6 +27,16 @@ export const syncLegacyPaymentRecord = async ({ order, attempt, course, transact
     paymentAttemptId: attempt._id,
     enrollmentId: null,
     baseAmountUsdCents: attempt.baseAmountUsdCents,
+    originalBaseAmountUsdCents:
+      attempt.originalBaseAmountUsdCents ??
+      order.originalBaseAmountUsdCents ??
+      attempt.baseAmountUsdCents,
+    couponId: attempt.couponId || order.couponId || null,
+    couponCode: attempt.couponCode || order.couponCode || "",
+    couponType: attempt.couponType || order.couponType || null,
+    couponValue: attempt.couponValue ?? order.couponValue ?? null,
+    discountAmountUsdCents:
+      attempt.discountAmountUsdCents || order.discountAmountUsdCents || 0,
     pricingRegion: order.pricingRegion || "international",
     sourcePriceAmount: order.sourcePriceAmount ?? null,
     sourcePriceCurrency: order.sourcePriceCurrency || null,

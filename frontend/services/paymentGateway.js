@@ -4,6 +4,7 @@ const REQUEST_TIMEOUT_MS = 12_000;
 let paymentHistoryCache = null;
 let paymentHistoryRequest = null;
 let paymentHistoryRequestKey = "";
+let paymentHistoryEpoch = 0;
 const EVM_TX_HASH_PATTERN = /^0x[a-fA-F0-9]{64}$/;
 
 const cloneData = (value) => {
@@ -12,6 +13,13 @@ const cloneData = (value) => {
 };
 
 const getStudentToken = () => localStorage.getItem("edutech_token");
+
+export const invalidateStudentPaymentHistoryCache = () => {
+  paymentHistoryEpoch += 1;
+  paymentHistoryCache = null;
+  paymentHistoryRequest = null;
+  paymentHistoryRequestKey = "";
+};
 
 const makeHttpError = (fallback, response, data) => {
   const error = new Error(data?.message || fallback);
@@ -58,7 +66,12 @@ export const normalizeEvmTransactionHash = (value) => {
   );
 };
 
-export const createCheckout = async ({ courseId, paymentMethod, pricingRegion = "international" }) => {
+export const createCheckout = async ({
+  courseId,
+  paymentMethod,
+  pricingRegion = "international",
+  couponCode = "",
+}) => {
   const token = getStudentToken();
   if (!token) throw new Error("NOT_AUTHENTICATED");
 
@@ -70,7 +83,12 @@ export const createCheckout = async ({ courseId, paymentMethod, pricingRegion = 
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ courseId, paymentMethod, pricingRegion }),
+      body: JSON.stringify({
+        courseId,
+        paymentMethod,
+        pricingRegion,
+        couponCode: String(couponCode || "").trim().toUpperCase(),
+      }),
     });
   } catch (error) {
     if (error.name === "AbortError") {
@@ -90,6 +108,7 @@ export const createCheckout = async ({ courseId, paymentMethod, pricingRegion = 
     data?.payment?.url ||
     data?.payment?.paymentUrl;
 
+  invalidateStudentPaymentHistoryCache();
   if (!paymentUrl && !["NOWPAYMENTS", "BSC_DIRECT"].includes(String(data?.provider || "").toUpperCase())) {
     throw new Error("Payment URL not received from server");
   }
@@ -97,16 +116,49 @@ export const createCheckout = async ({ courseId, paymentMethod, pricingRegion = 
   return { ...data, paymentUrl };
 };
 
+export const validateCheckoutCoupon = async ({
+  courseId,
+  code,
+  pricingRegion = "international",
+}) => {
+  const token = getStudentToken();
+  if (!token) throw new Error("NOT_AUTHENTICATED");
+  const response = await fetchWithTimeout(
+    `${getApiBase()}/payments/coupons/validate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        courseId,
+        code: String(code || "").trim().toUpperCase(),
+        pricingRegion,
+      }),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.success) {
+    throw makeHttpError("Unable to validate coupon", response, data);
+  }
+  return data.coupon;
+};
+
 export const createHesabPaySession = async (courseId) => {
   return createCheckout({ courseId, paymentMethod: "HESABPAY_HOSTED" });
 };
 
-export const getCourseBankPaymentDetails = async (courseId, pricingRegion = "international") => {
+export const getCourseBankPaymentDetails = async (
+  courseId,
+  pricingRegion = "international",
+  couponCode = "",
+) => {
   const token = getStudentToken();
   if (!token) throw new Error("NOT_AUTHENTICATED");
 
   const response = await fetchWithTimeout(
-    `${getApiBase()}/payments/course-bank-details/${encodeURIComponent(courseId)}?pricingRegion=${encodeURIComponent(pricingRegion)}`,
+    `${getApiBase()}/payments/course-bank-details/${encodeURIComponent(courseId)}?pricingRegion=${encodeURIComponent(pricingRegion)}&couponCode=${encodeURIComponent(String(couponCode || "").trim().toUpperCase())}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -129,6 +181,7 @@ export const submitBankTransferPayment = async ({
   paymentProof,
   senderAccount = "",
   note = "",
+  couponCode = "",
 }) => {
   const token = getStudentToken();
   if (!token) throw new Error("NOT_AUTHENTICATED");
@@ -138,6 +191,7 @@ export const submitBankTransferPayment = async ({
   formData.append("countryCode", String(countryCode || "").trim().toUpperCase());
   formData.append("senderAccount", String(senderAccount || ""));
   formData.append("note", String(note || ""));
+  formData.append("couponCode", String(couponCode || "").trim().toUpperCase());
   if (paymentProof instanceof File) {
     formData.append("paymentProof", paymentProof);
   }
@@ -155,6 +209,7 @@ export const submitBankTransferPayment = async ({
     throw makeHttpError("Unable to submit bank transfer payment", response, data);
   }
 
+  invalidateStudentPaymentHistoryCache();
   return data;
 };
 
@@ -213,6 +268,11 @@ export const getStudentPaymentStatus = async (reference) => {
   if (!response.ok || !data?.success) {
     throw makeHttpError("Unable to fetch payment status", response, data);
   }
+  if (["paid", "succeeded", "failed", "expired", "refunded"].includes(
+    String(data?.payment?.status || "").toLowerCase(),
+  )) {
+    invalidateStudentPaymentHistoryCache();
+  }
   return data.payment;
 };
 
@@ -227,6 +287,11 @@ export const getPaymentAttemptStatus = async (paymentAttemptId) => {
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !data?.success) {
     throw makeHttpError("Unable to fetch payment status", response, data);
+  }
+  if (["succeeded", "failed", "expired", "refunded"].includes(
+    String(data?.status || data?.payment?.status || "").toLowerCase(),
+  )) {
+    invalidateStudentPaymentHistoryCache();
   }
   return data;
 };
@@ -252,6 +317,7 @@ export const verifyDirectCryptoPayment = async ({ paymentAttemptId, txHash }) =>
   if (!response.ok || !data?.success) {
     throw makeHttpError("Unable to verify payment", response, data);
   }
+  invalidateStudentPaymentHistoryCache();
   return data;
 };
 
@@ -294,6 +360,7 @@ export const confirmStudentPaymentRedirect = async (paymentReturn = {}) => {
   if (!response.ok || !data?.success) {
     throw makeHttpError("Unable to confirm payment", response, data);
   }
+  invalidateStudentPaymentHistoryCache();
   return data;
 };
 
@@ -334,8 +401,9 @@ export const getStudentPaymentHistory = async () => {
     return { response, data };
   };
 
+  const requestEpoch = paymentHistoryEpoch;
   paymentHistoryRequestKey = cacheKey;
-  paymentHistoryRequest = (async () => {
+  const request = (async () => {
     const primary = await doRequest("/student/payments");
     if (primary.response.ok) {
       return extractPayments(primary.data);
@@ -349,8 +417,18 @@ export const getStudentPaymentHistory = async () => {
     }
     return extractPayments(fallback.data);
   })();
+  paymentHistoryRequest = request;
 
-  const data = await paymentHistoryRequest;
-  paymentHistoryCache = { key: cacheKey, data, expiresAt: Date.now() + ttlMs };
-  return cloneData(data);
+  try {
+    const data = await request;
+    if (requestEpoch === paymentHistoryEpoch) {
+      paymentHistoryCache = { key: cacheKey, data, expiresAt: Date.now() + ttlMs };
+    }
+    return cloneData(data);
+  } finally {
+    if (paymentHistoryRequest === request) {
+      paymentHistoryRequest = null;
+      paymentHistoryRequestKey = "";
+    }
+  }
 };

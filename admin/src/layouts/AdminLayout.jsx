@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router";
 import AdminSidebar from "../components/AdminSidebar";
 import AdminHeader from "../components/AdminHeader";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -6,11 +7,31 @@ import { getAuthUser } from "../../services/portal.js";
 
 export default function AdminLayout({ children, onLogout }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const location = useLocation();
   const { isRTL } = useAdminI18n();
   const admin = useMemo(() => {
     const user = getAuthUser();
     return user || { name: "System Admin", email: "admin@edutech.com", role: "admin" };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setMobileSidebarOpen(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setMobileSidebarOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobileSidebarOpen]);
 
   return (
     <div dir={isRTL ? "rtl" : "ltr"} className="h-[100dvh] overflow-hidden bg-[#F8FAFC] font-sans">

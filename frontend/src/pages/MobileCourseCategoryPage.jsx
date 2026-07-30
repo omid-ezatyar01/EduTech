@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Loader2, Search, SlidersHorizontal, X } from "lucide-react";
 import { Link, useParams } from "react-router";
 import CourseCatalogCard from "../components/CourseCatalogCard.jsx";
@@ -42,6 +42,8 @@ export default function MobileCourseCategoryPage({ t }) {
   const [searchInput, setSearchInput] = useState("");
   const [selectedCategoryPath, setSelectedCategoryPath] = useState([]);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [retrySeed, setRetrySeed] = useState(0);
+  const loadedFilterKeyRef = useRef("");
 
   const rootCategories = useMemo(
     () => categories.filter((item) => !item?.parent),
@@ -137,7 +139,8 @@ export default function MobileCourseCategoryPage({ t }) {
   }, []);
 
   useEffect(() => {
-    loadEnrollments();
+    const timer = window.setTimeout(loadEnrollments, 0);
+    return () => window.clearTimeout(timer);
   }, [loadEnrollments]);
 
   useEffect(() => {
@@ -146,6 +149,12 @@ export default function MobileCourseCategoryPage({ t }) {
     const loadCourses = async () => {
       try {
         if (!resolvedCategoryId) return;
+        const filterKey = `${activeCategoryFilter}:${searchTerm}`;
+        if (loadedFilterKeyRef.current !== filterKey) {
+          loadedFilterKeyRef.current = filterKey;
+          setCourses([]);
+          setMeta({ totalPages: 1, total: 0 });
+        }
         setLoading(true);
         setError("");
 
@@ -199,15 +208,18 @@ export default function MobileCourseCategoryPage({ t }) {
     return () => {
       cancelled = true;
     };
-  }, [activeCategoryFilter, currentPage, language, resolvedCategoryId, searchTerm]);
+  }, [activeCategoryFilter, currentPage, language, resolvedCategoryId, retrySeed, searchTerm]);
 
   useEffect(() => {
-    setCurrentPage(INITIAL_PAGE_COUNT);
-    setCourses([]);
-    setSearchTerm("");
-    setSearchInput("");
-    setSelectedCategoryPath([]);
-    setIsLoadingMore(false);
+    const timer = window.setTimeout(() => {
+      setCurrentPage(INITIAL_PAGE_COUNT);
+      setCourses([]);
+      setSearchTerm("");
+      setSearchInput("");
+      setSelectedCategoryPath([]);
+      setIsLoadingMore(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [resolvedCategoryId]);
 
   const BackIcon = dir === "rtl" ? ArrowRight : ArrowLeft;
@@ -437,9 +449,16 @@ export default function MobileCourseCategoryPage({ t }) {
             </div>
           </div>
 
-          {error ? <p className="mt-4 text-sm font-bold text-rose-600">{error}</p> : null}
+          {error ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+              <span>{error}</span>
+              <button type="button" onClick={() => setRetrySeed((value) => value + 1)} className="rounded-xl bg-white px-4 py-2 text-xs font-black ring-1 ring-rose-200">
+                {language === "fa" ? "تلاش دوباره" : "Try again"}
+              </button>
+            </div>
+          ) : null}
 
-          {courses.length ? (
+          {!error && courses.length ? (
             <div className="mt-6">
               <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
                 <div className="min-w-0">
@@ -487,7 +506,7 @@ export default function MobileCourseCategoryPage({ t }) {
             />
           ) : null}
 
-          {!loading && courses.length === 0 ? (
+          {!loading && !error && courses.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-sm font-semibold text-slate-600">
               {language === "fa"
                 ? "برای این بخش هنوز کورسی پیدا نشد."

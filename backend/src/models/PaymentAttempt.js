@@ -52,6 +52,20 @@ const paymentAttemptSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    originalBaseAmountUsdCents: { type: Number, min: 0, default: null },
+    couponId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Coupon",
+      default: null,
+    },
+    couponCode: { type: String, uppercase: true, trim: true, default: "" },
+    couponType: {
+      type: String,
+      enum: ["percent", "fixed", null],
+      default: null,
+    },
+    couponValue: { type: Number, min: 0, default: null },
+    discountAmountUsdCents: { type: Number, min: 0, default: 0 },
     amount: {
       type: String,
       required: true,

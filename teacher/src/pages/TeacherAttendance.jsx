@@ -51,8 +51,9 @@ const getCourseId = (course) => String(course?._id || course?.id || "");
 
 const getSessionCourseId = (session) => String(session?.course?._id || session?.course?.id || session?.courseId || "");
 const normalizeSearchValue = (value = "") => String(value || "").trim().toLowerCase();
-const isCourseEnded = (course) => Boolean(course?.classEndedAt);
-const isSessionFromEndedCourse = (session) => Boolean(session?.course?.classEndedAt);
+const isCourseEnded = (course) => Boolean(course?.classEndedAt || course?.classCancelledAt);
+const isSessionFromEndedCourse = (session) =>
+  Boolean(session?.course?.classEndedAt || session?.course?.classCancelledAt);
 const sanitizeAttendanceOverview = (payload = {}) => {
   const nextCourses = Array.isArray(payload.courses) ? payload.courses.filter((course) => !isCourseEnded(course)) : [];
   const activeCourseIds = new Set(nextCourses.map((course) => getCourseId(course)).filter(Boolean));
@@ -135,6 +136,10 @@ export default function TeacherAttendance() {
     () => new URLSearchParams(location.search).get("courseId") || "",
     [location.search],
   );
+  const requestedSearch = useMemo(
+    () => new URLSearchParams(location.search).get("q") || "",
+    [location.search],
+  );
   const initialAttendanceCache = sanitizeAttendanceOverview(
     readTeacherPageCache(getAttendanceOverviewCacheKey(requestedCourseId)) || {},
   );
@@ -154,7 +159,7 @@ export default function TeacherAttendance() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [refreshSeed, setRefreshSeed] = useState(0);
-  const [attendeeSearch, setAttendeeSearch] = useState("");
+  const [attendeeSearch, setAttendeeSearch] = useState(requestedSearch);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -163,6 +168,11 @@ export default function TeacherAttendance() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [requestedCourseId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAttendeeSearch(requestedSearch), 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
 
   const sessions = useMemo(() => {
     if (!selectedCourseId) return allSessions;
@@ -273,15 +283,26 @@ export default function TeacherAttendance() {
 
       try {
         setError("");
-        const result = await fetchTeacherAttendanceOverview({
+        const requestQuery = {
           page: 1,
           limit: 100,
           ...(requestedCourseId ? { courseId: requestedCourseId } : {}),
-        });
+        };
+        const result = await fetchTeacherAttendanceOverview(requestQuery);
+        const sessionRows = [...(Array.isArray(result.sessions) ? result.sessions : [])];
+        const totalPages = Math.max(1, Number(result.meta?.totalPages || 1));
+        for (let nextPage = 2; nextPage <= totalPages; nextPage += 1) {
+          const nextResult = await fetchTeacherAttendanceOverview({
+            ...requestQuery,
+            page: nextPage,
+          });
+          if (!mounted) return;
+          sessionRows.push(...(Array.isArray(nextResult.sessions) ? nextResult.sessions : []));
+        }
         if (!mounted) return;
         const sanitizedResult = sanitizeAttendanceOverview({
           courses: result.courses,
-          sessions: result.sessions,
+          sessions: sessionRows,
           overviewStats: result.stats,
         });
         setCourses(sanitizedResult.courses);
@@ -472,6 +493,7 @@ export default function TeacherAttendance() {
     });
   }, [attendeeSearch, visibleAttendees]);
   const visibleSessionStats = selectedSessionId ? sessionStats : {};
+  const isSelectedSessionReadOnly = selectedSession?.status === "cancelled";
   const filteredCourseSummaries = useMemo(() => {
     if (!selectedCourseId) return courseSummaries;
     return courseSummaries.filter((course) => String(course.id) === String(selectedCourseId));
@@ -601,7 +623,13 @@ export default function TeacherAttendance() {
             <button
               type="button"
               onClick={saveAttendance}
-              disabled={saving || attendanceLoading || !selectedSessionId || !filteredAttendees.length}
+              disabled={
+                saving ||
+                attendanceLoading ||
+                !selectedSessionId ||
+                !attendees.length ||
+                isSelectedSessionReadOnly
+              }
               className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#0B4FD8] px-5 text-sm font-black text-white shadow-[0_12px_30px_rgba(11,79,216,0.22)] transition hover:bg-[#083FAA] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Save size={17} />
@@ -621,6 +649,13 @@ export default function TeacherAttendance() {
               </span>
             </div>
           ) : null}
+          {isSelectedSessionReadOnly ? (
+            <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+              {isFa
+                ? "این جلسه لغو شده است؛ معلومات حضور فقط قابل مشاهده است."
+                : "This session was cancelled; attendance is read-only."}
+            </p>
+          ) : null}
 
           <div className="mt-5 flex flex-wrap gap-2">
             {STATUS_OPTIONS.map((option) => {
@@ -630,7 +665,7 @@ export default function TeacherAttendance() {
                   key={option.key}
                   type="button"
                   onClick={() => markAll(option.key)}
-                  disabled={!filteredAttendees.length || attendanceLoading}
+                  disabled={!attendees.length || attendanceLoading || isSelectedSessionReadOnly}
                   className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black ring-1 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${option.color}`}
                 >
                   <Icon size={15} />
@@ -858,9 +893,10 @@ export default function TeacherAttendance() {
                                   key={option.key}
                                   type="button"
                                   onClick={() => updateAttendee(row.studentId, { status: option.key })}
+                                  disabled={isSelectedSessionReadOnly}
                                   className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-black ring-1 transition ${
                                     active ? option.color : "bg-white text-slate-500 ring-slate-200 hover:bg-slate-50"
-                                  }`}
+                                  } disabled:cursor-not-allowed disabled:opacity-60`}
                                 >
                                   <Icon size={14} />
                                   {statusLabels[option.key]}
@@ -912,9 +948,10 @@ export default function TeacherAttendance() {
                             key={option.key}
                             type="button"
                             onClick={() => updateAttendee(row.studentId, { status: option.key })}
+                            disabled={isSelectedSessionReadOnly}
                             className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl text-xs font-black ring-1 ${
                               active ? option.color : "bg-white text-slate-500 ring-slate-200"
-                            }`}
+                            } disabled:cursor-not-allowed disabled:opacity-60`}
                           >
                             <Icon size={14} />
                             {statusLabels[option.key]}

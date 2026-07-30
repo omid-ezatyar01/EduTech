@@ -44,6 +44,9 @@ export default function TeacherTopbar({
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(true);
   const [deletingNotificationId, setDeletingNotificationId] = useState("");
+  const [searchValue, setSearchValue] = useState(
+    () => new URLSearchParams(location.search).get("q") || "",
+  );
   const langRef = useRef(null);
   const notificationRef = useRef(null);
 
@@ -60,6 +63,13 @@ export default function TeacherTopbar({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchValue(new URLSearchParams(location.search).get("q") || "");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [location.search]);
 
   useEffect(() => {
     let active = true;
@@ -101,7 +111,8 @@ export default function TeacherTopbar({
       markTeacherNotificationRead(notification._id).catch(() => {});
     }
     setOpenNotifications(false);
-    navigate(notification.url || "/teacher/courses");
+    const target = String(notification.url || "");
+    navigate(target.startsWith("/teacher/") ? target : "/teacher/courses");
   };
 
   const markAllRead = async () => {
@@ -119,6 +130,8 @@ export default function TeacherTopbar({
       if (!notification.isRead) {
         setUnreadCount((count) => Math.max(0, count - 1));
       }
+    } catch {
+      // Keep the notification visible when the server could not remove it.
     } finally {
       setDeletingNotificationId("");
     }
@@ -135,6 +148,25 @@ export default function TeacherTopbar({
   const isAttendancePage = location.pathname.startsWith("/teacher/attendance");
   const isAssignmentsPage = location.pathname.startsWith("/teacher/assignments");
   const isMessagesPage = location.pathname.startsWith("/teacher/messages");
+  const isSearchablePage =
+    isStudentsPage ||
+    isLiveClassesPage ||
+    isAttendancePage ||
+    isAssignmentsPage ||
+    isMessagesPage ||
+    location.pathname === "/teacher/courses";
+  const submitSearch = (event) => {
+    event.preventDefault();
+    const targetPath = isSearchablePage ? location.pathname : "/teacher/courses";
+    const params = isSearchablePage
+      ? new URLSearchParams(location.search)
+      : new URLSearchParams();
+    const value = searchValue.trim();
+    if (value) params.set("q", value);
+    else params.delete("q");
+    const suffix = params.toString();
+    navigate(`${targetPath}${suffix ? `?${suffix}` : ""}`, { replace: isSearchablePage });
+  };
   const searchPlaceholder = isLiveClassesPage
     ? language === "fa"
       ? "جستجو در صنف‌ها..."
@@ -171,17 +203,19 @@ export default function TeacherTopbar({
           <Menu className="h-6 w-6" />
         </button>
 
-        <div className="hidden sm:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-[#0B4FD8] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0B4FD8]/10 lg:w-96">
+        <form onSubmit={submitSearch} className="hidden sm:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-[#0B4FD8] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0B4FD8]/10 lg:w-96">
           <Search className="h-5 w-5 text-slate-400" />
           <input
             type="text"
+            value={searchValue}
+            onChange={(event) => setSearchValue(event.target.value)}
             placeholder={searchPlaceholder}
             className={`w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400 ${
               isRTL ? "text-right" : "text-left"
             }`}
             dir={isRTL ? "rtl" : "ltr"}
           />
-        </div>
+        </form>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">

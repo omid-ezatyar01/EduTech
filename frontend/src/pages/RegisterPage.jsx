@@ -881,13 +881,9 @@ export default function RegisterPage({ language = "fa" }) {
               )}
               <p className="mt-6 text-center text-xs font-semibold text-slate-500">
                 {language === "fa" ? "توسعه داده شده توسط " : "Developed by "}
-                <a
-                  href="#"
-                  onClick={(event) => event.preventDefault()}
-                  className="cursor-default text-primary-700"
-                >
+                <span className="text-primary-700">
                   {language === "fa" ? "شرکت برنامه نویسی بودا" : "Boda Software Development Company"}
-                </a>
+                </span>
               </p>
             </div>
           </div>

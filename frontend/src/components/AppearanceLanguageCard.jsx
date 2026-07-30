@@ -1,10 +1,9 @@
 import { Palette, Sun, Moon, Monitor } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function AppearanceLanguageCard({ language = "fa" }) {
   const isFa = language === "fa";
   const [theme, setTheme] = useState("light");
-  const [lang, setLang] = useState(isFa ? "fa" : "en");
   const [toastMsg, setToastMsg] = useState("");
   const t = {
     saved: isFa ? "تنظیمات ظاهر ذخیره شد" : "Appearance settings saved",
@@ -17,17 +16,19 @@ export default function AppearanceLanguageCard({ language = "fa" }) {
     persian: isFa ? "فارسی" : "Persian",
   };
 
-  useEffect(() => {
-    setLang(isFa ? "fa" : "en");
-  }, [isFa]);
-
   const handleThemeChange = (val) => {
     setTheme(val);
     showToast();
   };
 
   const handleLangChange = (e) => {
-    setLang(e.target.value);
+    const nextLanguage = e.target.value === "en" ? "en" : "fa";
+    localStorage.setItem("edutech-language", nextLanguage);
+    window.dispatchEvent(
+      new CustomEvent("edutech_language_change", {
+        detail: { language: nextLanguage },
+      }),
+    );
     showToast();
   };
 
@@ -78,7 +79,7 @@ export default function AppearanceLanguageCard({ language = "fa" }) {
             {t.uiLanguage}
           </label>
           <select
-            value={lang}
+            value={language}
             onChange={handleLangChange}
             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-primary-500 focus:bg-white focus:ring-2 focus:ring-primary-100 transition"
           >

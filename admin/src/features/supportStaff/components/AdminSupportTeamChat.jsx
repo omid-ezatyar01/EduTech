@@ -41,6 +41,7 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
   const typingActiveRef = useRef(false);
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
+  const conversationRequestRef = useRef(0);
 
   const refreshDirectory = useCallback(async () => {
     const data = await fetchSupportTeamDirectory();
@@ -49,10 +50,12 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
   }, []);
 
   const loadConversation = useCallback(async (conversationId, { before = "" } = {}) => {
+    const requestId = ++conversationRequestRef.current;
     if (!before) setLoading(true);
     setError("");
     try {
       const data = await fetchSupportTeamMessages(conversationId, { before });
+      if (requestId !== conversationRequestRef.current) return;
       setMessages((current) => {
         const combined = before
           ? [...(data.messages || []), ...current]
@@ -62,6 +65,7 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
       });
       setPageInfo(data.pageInfo || { hasMore: false, nextBefore: null });
       await markSupportTeamConversationRead(conversationId);
+      if (requestId !== conversationRequestRef.current) return;
       if (conversationId === "general") {
         setGeneralUnread(0);
       } else {
@@ -74,9 +78,9 @@ export default function AdminSupportTeamChat({ language = "en", onLiveChange }) 
         );
       }
     } catch (err) {
-      setError(err.message);
+      if (requestId === conversationRequestRef.current) setError(err.message);
     } finally {
-      if (!before) setLoading(false);
+      if (!before && requestId === conversationRequestRef.current) setLoading(false);
     }
   }, []);
 

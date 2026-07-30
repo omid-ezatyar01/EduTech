@@ -11,9 +11,9 @@ export default function VerifyResult() {
 
   const decodedCode = useMemo(() => {
     try {
-      return decodeURIComponent(String(code || "")).trim();
+      return decodeURIComponent(String(code || "")).trim().toUpperCase();
     } catch (_error) {
-      return String(code || "").trim();
+      return String(code || "").trim().toUpperCase();
     }
   }, [code]);
 
@@ -21,9 +21,11 @@ export default function VerifyResult() {
   const [resultState, setResultState] = useState("valid");
   const [resultData, setResultData] = useState(null);
   const [message, setMessage] = useState("");
+  const [retrySeed, setRetrySeed] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
 
     const runVerification = async () => {
       if (!decodedCode) {
@@ -35,12 +37,15 @@ export default function VerifyResult() {
       setMessage("");
 
       try {
-        const payload = await verifyCertificate(decodedCode);
+        const payload = await verifyCertificate(decodedCode, {
+          signal: controller.signal,
+        });
         if (!isMounted) return;
         setResultData(payload);
         setResultState("valid");
       } catch (error) {
         if (!isMounted) return;
+        if (error?.code === "ERR_CANCELED") return;
         setResultData(null);
         if (error?.type === "invalid") {
           setResultState("invalid");
@@ -60,8 +65,9 @@ export default function VerifyResult() {
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, [decodedCode, navigate]);
+  }, [decodedCode, navigate, retrySeed]);
 
   return (
     <main className="page-shell">
@@ -72,7 +78,12 @@ export default function VerifyResult() {
         {loading ? (
           <LoadingSpinner />
         ) : (
-          <ResultCard state={resultState} data={resultData} message={message} />
+          <ResultCard
+            state={resultState}
+            data={resultData}
+            message={message}
+            onRetry={() => setRetrySeed((value) => value + 1)}
+          />
         )}
 
         <div className="actions-row">

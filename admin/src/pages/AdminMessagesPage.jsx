@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CalendarDays,
@@ -13,6 +13,7 @@ import {
   Send,
   UserCheck,
 } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { getToken } from "../../services/portal.js";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http.js";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -254,11 +255,16 @@ const getTeacherStatusLabel = (conversation, pageTr) => {
 
 export default function AdminMessagesPage() {
   const { t, language, isRTL } = useAdminI18n();
-  const pageTr = (text) => translateText(t(text), language);
+  const [searchParams] = useSearchParams();
+  const requestedSearch = searchParams.get("q") || "";
+  const pageTr = useCallback(
+    (text) => translateText(t(text), language),
+    [language, t],
+  );
   const token = useMemo(() => getToken(), []);
   const storedDirectEmailDraft = useMemo(() => getStoredDirectEmailDraft(), []);
 
-  const [conversationSearch, setConversationSearch] = useState("");
+  const [conversationSearch, setConversationSearch] = useState(requestedSearch);
   const debouncedConversationSearch = useDebouncedValue(conversationSearch.trim(), 250);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [conversations, setConversations] = useState([]);
@@ -275,6 +281,14 @@ export default function AdminMessagesPage() {
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingThread, setLoadingThread] = useState(false);
   const [sendingThread, setSendingThread] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setConversationSearch(requestedSearch),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
 
   const [directEmailForm, setDirectEmailForm] = useState(storedDirectEmailDraft.form);
   const [interviewSchedule, setInterviewSchedule] = useState(storedDirectEmailDraft.schedule);
@@ -363,11 +377,14 @@ export default function AdminMessagesPage() {
 
   useEffect(() => {
     if (!token) {
-      setError(pageTr("Authentication token not found. Please sign in again."));
-      return;
+      const timer = window.setTimeout(
+        () => setError(pageTr("Authentication token not found. Please sign in again.")),
+        0,
+      );
+      return () => window.clearTimeout(timer);
     }
 
-    const run = async () => {
+    const timer = window.setTimeout(async () => {
       setLoadingConversations(true);
       setError("");
 
@@ -401,33 +418,26 @@ export default function AdminMessagesPage() {
           );
         },
         onError: (err) => {
-          setConversations([]);
-          setSelectedTeacherId("");
-          setConversationStats({
-            totalConversations: 0,
-            unreadConversations: 0,
-            unreadMessages: 0,
-            adminSentMessages: 0,
-          });
           setError(err?.message || pageTr("Failed to load teacher conversations."));
         },
         onFinally: () => {
           setLoadingConversations(false);
         },
       });
-    };
-
-    run();
-  }, [conversationsRequest, debouncedConversationSearch, token, unreadOnly]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [conversationsRequest, debouncedConversationSearch, pageTr, token, unreadOnly]);
 
   useEffect(() => {
     if (!token || !selectedTeacherId) {
-      setSelectedTeacher(null);
-      setThreadMessages([]);
-      return;
+      const timer = window.setTimeout(() => {
+        setSelectedTeacher(null);
+        setThreadMessages([]);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
 
-    const run = async () => {
+    const timer = window.setTimeout(async () => {
       setLoadingThread(true);
       setError("");
 
@@ -451,47 +461,45 @@ export default function AdminMessagesPage() {
 
           const selectedConversation = conversations.find((row) => row.teacherId === selectedTeacherId);
           if (Number(selectedConversation?.unreadCount || 0) > 0) {
-            fetch(
-              `${getApiBase()}/admin/messages/teacher-conversations/${encodeURIComponent(selectedTeacherId)}/read`,
-              {
-                method: "PATCH",
-                headers: buildAuthHeaders(),
-              },
-            ).catch(() => null);
-
-            setConversations((prev) =>
-              prev.map((row) =>
-                row.teacherId === selectedTeacherId
-                  ? {
-                      ...row,
-                      unreadCount: 0,
-                    }
-                  : row,
-              ),
-            );
-            setConversationStats((prev) => ({
-              ...prev,
-              unreadMessages: Math.max(0, Number(prev.unreadMessages || 0) - Number(selectedConversation?.unreadCount || 0)),
-              unreadConversations: Math.max(
-                0,
-                Number(prev.unreadConversations || 0) - (Number(selectedConversation?.unreadCount || 0) > 0 ? 1 : 0),
-              ),
-            }));
+            try {
+              const readResponse = await fetch(
+                `${getApiBase()}/admin/messages/teacher-conversations/${encodeURIComponent(selectedTeacherId)}/read`,
+                {
+                  method: "PATCH",
+                  headers: buildAuthHeaders(),
+                },
+              );
+              await parseJsonResponse(readResponse);
+              setConversations((prev) =>
+                prev.map((row) =>
+                  row.teacherId === selectedTeacherId
+                    ? { ...row, unreadCount: 0 }
+                    : row,
+                ),
+              );
+              setConversationStats((prev) => ({
+                ...prev,
+                unreadMessages: Math.max(0, Number(prev.unreadMessages || 0) - Number(selectedConversation?.unreadCount || 0)),
+                unreadConversations: Math.max(
+                  0,
+                  Number(prev.unreadConversations || 0) - 1,
+                ),
+              }));
+            } catch {
+              // Keep the unread counters intact when the server could not mark them read.
+            }
           }
         },
         onError: (err) => {
-          setSelectedTeacher(null);
-          setThreadMessages([]);
           setError(err?.message || pageTr("Failed to load conversation messages."));
         },
         onFinally: () => {
           setLoadingThread(false);
         },
       });
-    };
-
-    run();
-  }, [conversations, selectedTeacherId, threadRequest, token]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [conversations, pageTr, selectedTeacherId, threadRequest, token]);
 
   const handleSendThreadMessage = async () => {
     const body = String(threadDraft || "").trim();

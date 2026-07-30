@@ -2,11 +2,12 @@ import {
   getToken,
   handleAuthExpired,
   isAuthExpiredResponse,
-} from "./portal";
+} from "./portal.js";
 
 const DEFAULT_API_BASE = "http://localhost:5000/api/v1";
 const apiResponseCache = new Map();
 const apiInflightRequests = new Map();
+let apiCacheEpoch = 0;
 
 const cloneData = (value) => {
   if (typeof structuredClone === "function") {
@@ -124,17 +125,23 @@ export const fetchJsonWithCache = async (
     return cloneData(await apiInflightRequests.get(key));
   }
 
-  const request = fetch(url, options)
+  const requestEpoch = apiCacheEpoch;
+  let request;
+  request = fetch(url, options)
     .then(parseJsonResponse)
     .then((data) => {
-      apiResponseCache.set(key, {
-        data,
-        expiresAt: Date.now() + ttlMs,
-      });
+      if (requestEpoch === apiCacheEpoch) {
+        apiResponseCache.set(key, {
+          data,
+          expiresAt: Date.now() + ttlMs,
+        });
+      }
       return data;
     })
     .finally(() => {
-      apiInflightRequests.delete(key);
+      if (apiInflightRequests.get(key) === request) {
+        apiInflightRequests.delete(key);
+      }
     });
 
   apiInflightRequests.set(key, request);
@@ -142,6 +149,8 @@ export const fetchJsonWithCache = async (
 };
 
 export const invalidateApiCache = (matcher) => {
+  apiCacheEpoch += 1;
+
   if (!matcher) {
     apiResponseCache.clear();
     apiInflightRequests.clear();
@@ -155,6 +164,9 @@ export const invalidateApiCache = (matcher) => {
 
   Array.from(apiResponseCache.keys()).forEach((key) => {
     if (shouldDelete(key)) apiResponseCache.delete(key);
+  });
+  Array.from(apiInflightRequests.keys()).forEach((key) => {
+    if (shouldDelete(key)) apiInflightRequests.delete(key);
   });
 };
 
@@ -189,7 +201,13 @@ export const getLocalizedRequestErrorMessage = (
   fallbackEn = "Request failed.",
 ) => {
   const isFa = language === "fa";
-  const raw = String(error?.message || error || "").trim();
+  const raw = String(
+    error?.response?.data?.message ||
+    error?.data?.message ||
+    error?.message ||
+    error ||
+    "",
+  ).trim();
   const normalized = raw.toLowerCase();
 
   if (isNetworkError(error)) {

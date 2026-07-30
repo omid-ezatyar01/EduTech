@@ -5,11 +5,13 @@ import {
   Home,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 export default function StudentTopbar({ onMenuClick, language = "fa" }) {
   const [isLangOpen, setIsLangOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const langRef = useRef(null);
+  const navigate = useNavigate();
   const isFa = language === "fa";
   const t = {
     search: isFa
@@ -50,14 +52,26 @@ export default function StudentTopbar({ onMenuClick, language = "fa" }) {
         >
           <Menu className="h-6 w-6" />
         </button>
-        <div className="hidden sm:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-primary-500 focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-100 lg:w-96">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const query = search.trim();
+            if (query) navigate(`/live-courses?q=${encodeURIComponent(query)}`);
+          }}
+          className="hidden sm:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-primary-500 focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-100 lg:w-96"
+        >
           <Search className="h-5 w-5 text-slate-400" />
           <input
             type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
             placeholder={t.search}
             className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
           />
-        </div>
+          <button type="submit" className="sr-only">
+            {isFa ? "جستجو" : "Search"}
+          </button>
+        </form>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">

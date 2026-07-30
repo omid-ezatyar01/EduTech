@@ -1,6 +1,6 @@
 import { CalendarDays, Clock3, Users } from "lucide-react";
 
-export default function TeacherCourseCard({ course, dir }) {
+export default function TeacherCourseCard({ course }) {
   return (
     <div className="group relative flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.03)] transition duration-300 hover:-translate-y-1 hover:border-primary-100 hover:shadow-card">
       <span className="absolute right-5 top-5 inline-flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-bold text-teal-700">

@@ -7,8 +7,9 @@ import {
   X,
   IdCard,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { updateCurrentUserProfile } from "../../services/authService";
+import { getLocalizedRequestErrorMessage } from "../../services/http";
 import { COUNTRY_PROVINCE_DATA } from "../data/countryProvinceData";
 import { resolveAvatarUrl } from "../utils/avatar";
 import ProfileImageCropModal from "./ProfileImageCropModal";
@@ -121,6 +122,21 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
     type: "",
     text: "",
   });
+  const formRef = useRef(null);
+  const localAvatarPreviewRef = useRef("");
+
+  const revokeLocalAvatarPreview = useCallback(() => {
+    if (!localAvatarPreviewRef.current) return;
+    URL.revokeObjectURL(localAvatarPreviewRef.current);
+    localAvatarPreviewRef.current = "";
+  }, []);
+
+  useEffect(
+    () => () => {
+      revokeLocalAvatarPreview();
+    },
+    [revokeLocalAvatarPreview],
+  );
 
   useEffect(() => {
     if (avatarFile) return undefined;
@@ -134,9 +150,19 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
     const frameId = window.requestAnimationFrame(() => {
       setCountryValue(resolveInitialCountry(user.country, isFa));
       setProvinceValue(resolveInitialProvince(user.country, user.city, isFa));
+      if (!isEditing) formRef.current?.reset();
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [user.country, user.city, isFa]);
+  }, [
+    user.country,
+    user.city,
+    user.firstNameFa,
+    user.lastNameFa,
+    user.phone,
+    user.gender,
+    isEditing,
+    isFa,
+  ]);
 
   const selectedCountry = useMemo(() => findCountryByValue(countryValue), [countryValue]);
   const provinceOptions = useMemo(
@@ -194,7 +220,7 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
     const rawPhone = `${formData.get("phone") || ""}`;
     const normalizedPhone = rawPhone.replace(/[\s\-()]/g, "");
 
-    if (!PHONE_REGEX.test(normalizedPhone)) {
+    if (normalizedPhone && !PHONE_REGEX.test(normalizedPhone)) {
       setFormFeedback({
         type: "error",
         text: t.invalidPhone,
@@ -230,8 +256,14 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
       const nextAvatar = resolvedAvatar
         ? withCacheBust(resolvedAvatar)
         : avatarFile
-          ? URL.createObjectURL(avatarFile)
+          ? (() => {
+              revokeLocalAvatarPreview();
+              const previewUrl = URL.createObjectURL(avatarFile);
+              localAvatarPreviewRef.current = previewUrl;
+              return previewUrl;
+            })()
           : "";
+      if (resolvedAvatar) revokeLocalAvatarPreview();
       setAvatar(nextAvatar);
       setAvatarFile(null);
       setPendingAvatarFile(null);
@@ -245,7 +277,12 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
     } catch (error) {
       setFormFeedback({
         type: "error",
-        text: error?.message || t.saveError,
+        text: getLocalizedRequestErrorMessage(
+          error,
+          language,
+          t.saveError,
+          t.saveError,
+        ),
       });
     } finally {
       setIsSaving(false);
@@ -254,6 +291,7 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
 
   return (
     <form
+      ref={formRef}
       onSubmit={handleSave}
       className="flex h-full flex-col rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_35px_rgba(15,23,42,0.03)] sm:p-8"
     >
@@ -403,8 +441,7 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
             <input
               type="tel"
               name="phone"
-              defaultValue={user.phone}
-              required
+              defaultValue={user.phone === "google-oauth" ? "" : user.phone}
               disabled={!isEditing}
               inputMode="tel"
               pattern="^\+?[0-9\s\-()]{8,20}$"
@@ -495,6 +532,8 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
               type="button"
               onClick={() => {
                 setIsEditing(false);
+                formRef.current?.reset();
+                revokeLocalAvatarPreview();
                 setAvatar(resolveAvatarUrl(user.avatar || ""));
                 setAvatarFile(null);
                 setPendingAvatarFile(null);
@@ -540,7 +579,10 @@ export default function ProfileForm({ user, onProfileUpdated, language = "fa" })
         language={language}
         onClose={() => setPendingAvatarFile(null)}
         onApply={(croppedFile) => {
-          setAvatar(URL.createObjectURL(croppedFile));
+          revokeLocalAvatarPreview();
+          const previewUrl = URL.createObjectURL(croppedFile);
+          localAvatarPreviewRef.current = previewUrl;
+          setAvatar(previewUrl);
           setAvatarFile(croppedFile);
           setPendingAvatarFile(null);
           setFormFeedback((current) => (current.type === "error" ? { type: "", text: "" } : current));

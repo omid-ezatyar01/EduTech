@@ -12,7 +12,7 @@ import {
   Landmark,
   X,
 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 import { getApiBase } from "../../services/http.js";
 import {
@@ -49,6 +49,7 @@ const resolveAvatarUrl = (rawAvatar) => {
 export default function AdminHeader({ admin, onMenuClick }) {
   const { t, language, isRTL, setLanguage } = useAdminI18n();
   const navigate = useNavigate();
+  const location = useLocation();
   const notificationRef = useRef(null);
   const languageRef = useRef(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -56,6 +57,9 @@ export default function AdminHeader({ admin, onMenuClick }) {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [deletingNotificationId, setDeletingNotificationId] = useState("");
+  const [systemSearch, setSystemSearch] = useState(
+    () => new URLSearchParams(location.search).get("q") || "",
+  );
   const displayName = admin?.name || t("header.adminName");
   const adminMeta = admin?.email || t("header.adminRole");
   const adminAvatar = resolveAvatarUrl(admin?.avatar || "");
@@ -129,15 +133,52 @@ export default function AdminHeader({ admin, onMenuClick }) {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSystemSearch(new URLSearchParams(location.search).get("q") || "");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [location.search]);
+
+  const handleSystemSearch = (event) => {
+    event.preventDefault();
+    const query = systemSearch.trim();
+    const searchableRoutes = new Set([
+      "/students",
+      "/teachers",
+      "/courses",
+      "/payments",
+      "/messages",
+      "/coupons",
+    ]);
+    const targetPath = searchableRoutes.has(location.pathname)
+      ? location.pathname
+      : "/students";
+    const params = new URLSearchParams(
+      targetPath === location.pathname ? location.search : "",
+    );
+    if (query) params.set("q", query);
+    else params.delete("q");
+    navigate(`${targetPath}${params.size ? `?${params.toString()}` : ""}`);
+  };
+
   const handleNotificationClick = async (notification) => {
     if (!notification.isRead) {
-      setNotifications((rows) =>
-        rows.map((row) =>
+      try {
+        await markAdminNotificationRead(notification._id);
+        const nextNotifications = notifications.map((row) =>
           row._id === notification._id ? { ...row, isRead: true } : row,
-        ),
-      );
-      setUnreadCount((count) => Math.max(0, count - 1));
-      markAdminNotificationRead(notification._id).catch(() => {});
+        );
+        const nextUnreadCount = Math.max(0, unreadCount - 1);
+        setNotifications(nextNotifications);
+        setUnreadCount(nextUnreadCount);
+        writeAdminPageCache(ADMIN_NOTIFICATIONS_CACHE_KEY, {
+          notifications: nextNotifications,
+          unreadCount: nextUnreadCount,
+        });
+      } catch {
+        // Keep the notification unread if the server did not persist the change.
+      }
     }
 
     setIsNotificationsOpen(false);
@@ -151,15 +192,35 @@ export default function AdminHeader({ admin, onMenuClick }) {
   };
 
   const handleMarkAllRead = async () => {
-    setNotifications((rows) => rows.map((row) => ({ ...row, isRead: true })));
+    const previousNotifications = notifications;
+    const previousUnreadCount = unreadCount;
+    const nextNotifications = notifications.map((row) => ({ ...row, isRead: true }));
+    setNotifications(nextNotifications);
     setUnreadCount(0);
+    writeAdminPageCache(ADMIN_NOTIFICATIONS_CACHE_KEY, {
+      notifications: nextNotifications,
+      unreadCount: 0,
+    });
     try {
       await markAllAdminNotificationsRead();
     } catch {
       const data = await fetchAdminNotifications().catch(() => null);
       if (data) {
-        setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
-        setUnreadCount(Math.max(0, Number(data.unreadCount) || 0));
+        const refreshedNotifications = Array.isArray(data.notifications) ? data.notifications : [];
+        const refreshedUnreadCount = Math.max(0, Number(data.unreadCount) || 0);
+        setNotifications(refreshedNotifications);
+        setUnreadCount(refreshedUnreadCount);
+        writeAdminPageCache(ADMIN_NOTIFICATIONS_CACHE_KEY, {
+          notifications: refreshedNotifications,
+          unreadCount: refreshedUnreadCount,
+        });
+      } else {
+        setNotifications(previousNotifications);
+        setUnreadCount(previousUnreadCount);
+        writeAdminPageCache(ADMIN_NOTIFICATIONS_CACHE_KEY, {
+          notifications: previousNotifications,
+          unreadCount: previousUnreadCount,
+        });
       }
     }
   };
@@ -207,17 +268,23 @@ export default function AdminHeader({ admin, onMenuClick }) {
           <Menu className="h-6 w-6" />
         </button>
 
-        <div className="hidden sm:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-[#0B4FD8] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0B4FD8]/10 lg:w-96">
+        <form
+          onSubmit={handleSystemSearch}
+          role="search"
+          className="hidden sm:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-[#0B4FD8] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0B4FD8]/10 lg:w-96"
+        >
           <Search className="h-5 w-5 text-slate-400" />
           <input
             type="text"
+            value={systemSearch}
+            onChange={(event) => setSystemSearch(event.target.value)}
             placeholder={t("common.searchInSystem")}
             className={`w-full bg-transparent text-sm font-medium outline-none placeholder:text-slate-400 ${
               isRTL ? "text-right" : "text-left"
             }`}
             dir={isRTL ? "rtl" : "ltr"}
           />
-        </div>
+        </form>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">

@@ -265,25 +265,12 @@ export default function TeacherIncome() {
       } catch (err) {
         if (err.name === "AbortError") return;
         if (!mounted) return;
-        const nextSummary = {
-          ...DEFAULT_SUMMARY,
-          settlementRows: [],
-          paymentMethodBreakdown: [],
-          regionBreakdown: [],
-          recentPayments: [],
-          availableMonths: [],
-          availableCourses: [],
-        };
         const nextError =
           language === "fa"
             ? "دریافت داده‌های درآمد ممکن نشد."
             : "Unable to load income data.";
-        setSummary(nextSummary);
+        if (!cached) setSummary(DEFAULT_SUMMARY);
         setError(nextError);
-        writeTeacherPageCache(cacheKey, {
-          summary: nextSummary,
-          error: nextError,
-        });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -311,7 +298,7 @@ export default function TeacherIncome() {
         setPendingBankPayments(Array.isArray(rows) ? rows : []);
       } catch {
         if (!mounted) return;
-        setPendingBankPayments([]);
+        // Preserve the previous pending-payment list during a transient failure.
       } finally {
         if (mounted) setBankPaymentsLoading(false);
       }

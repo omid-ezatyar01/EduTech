@@ -11,7 +11,7 @@ export default function TeacherAssignmentsCard({ items = [], language }) {
         <ul className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pe-1">
           {items.map((item, idx) => (
             <li
-              key={item}
+              key={`${item}-${idx}`}
               className="flex items-center gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5"
             >
               <span className="rounded-lg bg-[#F59E0B]/10 p-2 text-[#F59E0B]">

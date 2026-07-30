@@ -1855,7 +1855,6 @@ export const getUserProfile = async (req, res) => {
     const storedBankReviewStatus = String(user.bankPaymentReview?.status || "not_submitted");
     if (
       user.role === "teacher" &&
-      !bankPaymentSubmission.submitted &&
       ["pending", "rejected"].includes(storedBankReviewStatus) &&
       !hasUsableBankPaymentInfo(user.bankPaymentReview?.pendingInfo || {})
     ) {

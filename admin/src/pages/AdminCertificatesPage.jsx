@@ -92,10 +92,6 @@ export default function AdminCertificatesPage() {
   );
 
   useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, statusFilter]);
-
-  useEffect(() => {
     let mounted = true;
 
     const loadCertificates = async () => {
@@ -138,6 +134,34 @@ export default function AdminCertificatesPage() {
 
   const reviewCertificate = useCallback(
     async (certificate, decision) => {
+      if (submittingId) return;
+      let reason = "";
+      if (decision === "rejected") {
+        const enteredReason = window.prompt(
+          isFa
+            ? "دلیل رد سرتیفیکیت را وارد کنید:"
+            : "Enter the reason for rejecting this certificate:",
+          certificate.certificateRejectionReason || "",
+        );
+        if (enteredReason === null) return;
+        reason = enteredReason.trim();
+        if (reason.length < 3) {
+          setErrorMessage(
+            isFa
+              ? "دلیل رد باید حداقل ۳ نویسه باشد."
+              : "The rejection reason must be at least 3 characters.",
+          );
+          return;
+        }
+      } else if (
+        !window.confirm(
+          isFa
+            ? "این سرتیفیکیت دوباره تایید شود؟"
+            : "Approve this certificate again?",
+        )
+      ) {
+        return;
+      }
       try {
         setSubmittingId(certificate.id);
         setNotice("");
@@ -147,7 +171,7 @@ export default function AdminCertificatesPage() {
           headers: buildAuthHeaders(),
           body: JSON.stringify({
             decision,
-            reason: decision === "rejected" ? "Rejected by admin" : "",
+            reason,
           }),
         });
         await parseJsonResponse(response);
@@ -176,7 +200,17 @@ export default function AdminCertificatesPage() {
         setSubmittingId("");
       }
     },
-    [apiUrl, debouncedSearch, page, statusFilter, text.reviewFailed, text.updatedApproved, text.updatedRejected],
+    [
+      apiUrl,
+      debouncedSearch,
+      isFa,
+      page,
+      statusFilter,
+      submittingId,
+      text.reviewFailed,
+      text.updatedApproved,
+      text.updatedRejected,
+    ],
   );
 
   const summaryCards = [
@@ -227,15 +261,21 @@ export default function AdminCertificatesPage() {
                 className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-slate-400 ${isRTL ? "right-3" : "left-3"}`}
               />
               <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
                 placeholder={text.searchLabel}
                 className={`h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 outline-none transition focus:border-[#0B4FD8] focus:bg-white focus:ring-4 focus:ring-[#0B4FD8]/10 sm:w-72 ${isRTL ? "pr-9 pl-4 text-right" : "pl-9 pr-4 text-left"}`}
               />
             </label>
             <select
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => {
+                setStatusFilter(event.target.value);
+                setPage(1);
+              }}
               className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0B4FD8] focus:bg-white focus:ring-4 focus:ring-[#0B4FD8]/10"
             >
               <option value="">{text.allStatuses}</option>

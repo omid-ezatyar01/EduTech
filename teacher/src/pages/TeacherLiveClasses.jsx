@@ -112,7 +112,8 @@ const statusMetaMap = {
 
 const getLiveClassesCacheKey = ({ courseId, status }) =>
   getTeacherPageCacheKey("live-classes", { courseId, status });
-const isManageableCourse = (course = {}) => !course?.classEndedAt;
+const isManageableCourse = (course = {}) =>
+  !course?.classEndedAt && !course?.classCancelledAt && course?.status !== "cancelled";
 
 const isSameLocalDay = (value, compareWith = new Date()) => {
   const date = new Date(value);
@@ -323,8 +324,12 @@ export default function TeacherLiveClasses() {
       ),
     [location.search],
   );
+  const requestedSearch = useMemo(
+    () => new URLSearchParams(location.search).get("q") || "",
+    [location.search],
+  );
   const initialLiveClassesCache = readTeacherPageCache(getLiveClassesCacheKey({
-    courseId: "",
+    courseId: requestedCourseId,
     status: "",
   }));
   const [sessions, setSessions] = useState(initialLiveClassesCache?.sessions || []);
@@ -339,7 +344,7 @@ export default function TeacherLiveClasses() {
   const [busySessionId, setBusySessionId] = useState("");
   const [filterCourseId, setFilterCourseId] = useState(requestedCourseId);
   const [filterStatus, setFilterStatus] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(requestedSearch);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [refreshSeed, setRefreshSeed] = useState(0);
 
@@ -430,9 +435,31 @@ export default function TeacherLiveClasses() {
     return () => clearTimeout(timer);
   }, [requestedCourseId]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchQuery(requestedSearch), 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
+
+  useEffect(() => {
+    if (!location.state?.openCreate) return undefined;
+    const timer = window.setTimeout(() => {
+      setCreateOpen(true);
+      navigate(`${location.pathname}${location.search}`, {
+        replace: true,
+        state: null,
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname, location.search, location.state, navigate]);
+
   const reloadSessions = async () => {
     const { sessions: rows } = await fetchTeacherLiveSessions(sessionQuery);
-    const nextSessions = Array.isArray(rows) ? rows : [];
+    const allowedCourseIds = new Set(
+      courses.map((course) => String(course?._id || course?.id || "")),
+    );
+    const nextSessions = (Array.isArray(rows) ? rows : []).filter((session) =>
+      allowedCourseIds.has(String(session?.course?._id || session?.courseId || "")),
+    );
     setSessions(nextSessions);
     writeTeacherPageCache(getLiveClassesCacheKey({
       courseId: filterCourseId,
@@ -605,8 +632,10 @@ export default function TeacherLiveClasses() {
       setToast(language === "fa" ? "جلسه ایجاد شد." : "Session created.");
       window.dispatchEvent(new Event("edutech_data_changed"));
       await reloadSessions();
+      return true;
     } catch (err) {
       setToast(err?.message || "Failed to create session");
+      return false;
     }
   };
 
@@ -636,7 +665,7 @@ export default function TeacherLiveClasses() {
   };
 
   const saveAttendance = async (rows) => {
-    if (!selectedSession?.id) return;
+    if (!selectedSession?.id) return false;
     try {
       await updateTeacherLiveSessionAttendance(
         selectedSession.id,
@@ -652,8 +681,10 @@ export default function TeacherLiveClasses() {
       setToast(language === "fa" ? "حضور ثبت شد." : "Attendance saved.");
       window.dispatchEvent(new Event("edutech_data_changed"));
       await reloadSessions();
+      return true;
     } catch (err) {
       setToast(err?.message || "Failed to save attendance");
+      return false;
     }
   };
 
@@ -669,19 +700,29 @@ export default function TeacherLiveClasses() {
       limit: 100,
       courseId: selectedId,
     });
-    const targetSessions = (Array.isArray(courseSessions) ? courseSessions : [])
+    const allCourseSessions = Array.isArray(courseSessions) ? courseSessions : [];
+    const targetSessions = allCourseSessions
+      .filter((row) =>
+        ["scheduled", "ready", "delayed", "missed", "cancelled"].includes(
+          String(row?.status || ""),
+        ) && Number(row?.attendanceCount || 0) === 0,
+      )
       .map((row) => ({ id: row?._id }))
       .filter((row) => String(row.id || "").trim());
 
     if (!targetSessions.length) {
-      setToast(language === "fa" ? "برای این کورس لینکی جهت حذف وجود ندارد." : "No links found for this course.");
+      setToast(
+        language === "fa"
+          ? "جلسه قابل حذف وجود ندارد. جلسات زنده، تکمیل‌شده یا دارای حضور حفظ می‌شوند."
+          : "No deletable sessions. Live, completed, and attendance-bearing sessions are preserved.",
+      );
       return;
     }
 
     const confirmed = window.confirm(
       language === "fa"
-        ? `همه لینک‌های صنف زنده برای این کورس حذف شود؟ (${targetSessions.length})`
-        : `Delete all live class links for this course? (${targetSessions.length})`,
+        ? `${targetSessions.length} جلسه برنامه‌ریزی‌شده این کورس برای همیشه حذف شود؟`
+        : `Permanently delete ${targetSessions.length} scheduled session(s) for this course?`,
     );
     if (!confirmed) return;
 
@@ -726,6 +767,12 @@ export default function TeacherLiveClasses() {
   };
 
   const handleEndSession = async (session) => {
+    const confirmed = window.confirm(
+      language === "fa"
+        ? "این جلسه پایان یابد؟ پس از پایان، دوباره قابل شروع نیست."
+        : "End this session? A completed session cannot be started again.",
+    );
+    if (!confirmed) return;
     await withSessionAction(session.id, () => endTeacherLiveSession(session.id));
   };
 
@@ -866,7 +913,7 @@ export default function TeacherLiveClasses() {
               <Trash2 size={15} />
               {bulkDeleting
                 ? (language === "fa" ? "در حال حذف" : "Deleting")
-                : (language === "fa" ? "حذف لینک‌های کورس" : "Delete course links")}
+                : (language === "fa" ? "حذف جلسات برنامه‌ریزی‌شده" : "Delete scheduled sessions")}
             </button>
 
             <div className="inline-flex h-11 items-center justify-center rounded-xl bg-[#F8FAFC] px-4 text-sm font-bold text-slate-600">
@@ -940,6 +987,7 @@ export default function TeacherLiveClasses() {
           attendees={attendanceRows}
           onClose={() => setAttendanceOpen(false)}
           onSave={saveAttendance}
+          language={language}
         />
 
         {toast ? (

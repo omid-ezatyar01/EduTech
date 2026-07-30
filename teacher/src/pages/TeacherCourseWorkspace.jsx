@@ -13,7 +13,7 @@ import {
   Users,
   Video,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPageLoader from "../components/common/TeacherPageLoader";
@@ -151,9 +151,11 @@ export default function TeacherCourseWorkspace() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [loadedAt, setLoadedAt] = useState(() => Date.now());
+  const workspaceRequestRef = useRef(0);
 
   const loadWorkspace = useCallback(async ({ silent = false } = {}) => {
     if (!courseId) return;
+    const requestId = ++workspaceRequestRef.current;
     if (silent) setRefreshing(true);
     else setLoading(true);
     setError("");
@@ -163,9 +165,16 @@ export default function TeacherCourseWorkspace() {
       const [studentResult, sessionResult, assignmentResult, resourceRows] = await Promise.all([
         fetchTeacherStudents({ course: courseId, page: 1, limit: 20 }),
         fetchTeacherLiveSessions({ courseId, page: 1, limit: 100 }),
-        fetchTeacherAssignments({ courseId, page: 1, limit: 100, sortBy: "newest" }),
+        fetchTeacherAssignments({
+          courseId,
+          page: 1,
+          limit: 100,
+          sortBy: "newest",
+          includeEnded: true,
+        }),
         fetchTeacherCourseResources(courseId),
       ]);
+      if (requestId !== workspaceRequestRef.current) return;
       setCourse(courseRow);
       setStudentsData(studentResult || { students: [], stats: {}, meta: {} });
       setSessions(Array.isArray(sessionResult?.sessions) ? sessionResult.sessions : []);
@@ -174,19 +183,30 @@ export default function TeacherCourseWorkspace() {
       setResources(Array.isArray(resourceRows) ? resourceRows : []);
       setLoadedAt(Date.now());
     } catch (requestError) {
+      if (requestId !== workspaceRequestRef.current) return;
       setError(requestError?.message || (isFa ? "بارگذاری فضای کورس ناموفق بود." : "Failed to load course workspace."));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === workspaceRequestRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [courseId, isFa]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadWorkspace(), 0);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      workspaceRequestRef.current += 1;
+    };
   }, [loadWorkspace]);
 
   const status = statusMeta(course, isFa);
+  const isCourseClosed = Boolean(
+    course?.classEndedAt ||
+    course?.classCancelledAt ||
+    course?.status === "cancelled",
+  );
   const students = Array.isArray(studentsData?.students) ? studentsData.students : [];
   const studentStats = studentsData?.stats || {};
   const upcomingSessions = sessions
@@ -256,10 +276,12 @@ export default function TeacherCourseWorkspace() {
                 {course.description}
               </p>
               <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap">
-                <Link to={links.sessions} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#0B4FD8] to-[#00B8A9] px-4 py-2.5 text-sm font-black text-white">
-                  <Video size={17} />
-                  {isFa ? "مدیریت جلسات" : "Manage sessions"}
-                </Link>
+                {!isCourseClosed ? (
+                  <Link to={links.sessions} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#0B4FD8] to-[#00B8A9] px-4 py-2.5 text-sm font-black text-white">
+                    <Video size={17} />
+                    {isFa ? "مدیریت جلسات" : "Manage sessions"}
+                  </Link>
+                ) : null}
                 <Link to={links.students} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-50">
                   <Users size={17} />
                   {isFa ? "همه شاگردان" : "All students"}
@@ -285,9 +307,9 @@ export default function TeacherCourseWorkspace() {
         </section>
 
         <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-          <StatCard icon={Users} label={isFa ? "شاگردان ثبت‌نام‌شده" : "Enrolled students"} value={formatNumber(studentsData?.meta?.total || course.enrolledStudentsCount, language)} hint={`${formatNumber(studentStats.activeStudents, language)} ${isFa ? "شاگرد فعال" : "active"}`} />
+          <StatCard icon={Users} label={isFa ? "شاگردان ثبت‌نام‌شده" : "Enrolled students"} value={formatNumber(studentsData?.meta?.total ?? course.enrolledStudentsCount, language)} hint={`${formatNumber(studentStats.activeStudents, language)} ${isFa ? "شاگرد فعال" : "active"}`} />
           <StatCard icon={CalendarDays} label={isFa ? "جلسات کورس" : "Course sessions"} value={formatNumber(sessions.length, language)} hint={`${formatNumber(upcomingSessions.length, language)} ${isFa ? "جلسه آینده" : "upcoming"}`} tone="teal" />
-          <StatCard icon={ClipboardCheck} label={isFa ? "تمرین‌ها" : "Assignments"} value={formatNumber(assignmentMeta.total || assignments.length, language)} hint={`${formatNumber(pendingReviews, language)} ${isFa ? "در انتظار بررسی" : "awaiting review"}`} tone="violet" />
+          <StatCard icon={ClipboardCheck} label={isFa ? "تمرین‌ها" : "Assignments"} value={formatNumber(assignmentMeta.total ?? assignments.length, language)} hint={`${formatNumber(pendingReviews, language)} ${isFa ? "در انتظار بررسی" : "awaiting review"}`} tone="violet" />
           <StatCard icon={UserCheck} label={isFa ? "میانگین حضور" : "Average attendance"} value={`${formatNumber(studentStats.averageAttendance, language)}%`} hint={`${formatNumber(completedSessions, language)} ${isFa ? "جلسه تکمیل‌شده" : "completed sessions"}`} tone="amber" />
         </section>
 
@@ -298,7 +320,9 @@ export default function TeacherCourseWorkspace() {
             [links.assignments, ClipboardCheck, isFa ? "تمرین‌ها" : "Assignments", isFa ? "ساخت و بررسی تمرین" : "Create and review work"],
             [links.resources, FolderOpen, isFa ? "منابع درسی" : "Resources", isFa ? "فایل و لینک هر جلسه" : "Files and lesson links"],
             [links.students, Users, isFa ? "شاگردان" : "Students", isFa ? "پیشرفت و دسترسی شاگرد" : "Progress and access"],
-          ].map(([href, Icon, title, subtitle]) => (
+          ]
+            .filter(([href]) => !isCourseClosed || href === links.students)
+            .map(([href, Icon, title, subtitle]) => (
             <Link key={href} to={href} className="group min-w-0 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#0B4FD8]/30 hover:shadow-md sm:p-4">
               <Icon size={20} className="text-[#0B4FD8]" />
               <p className="mt-3 break-words text-sm font-black text-slate-950">{title}</p>

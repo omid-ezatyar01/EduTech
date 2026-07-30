@@ -143,9 +143,12 @@ export default function Resources({ language = "fa" }) {
         if (!mounted) return;
         const mapped = (Array.isArray(rows) ? rows : [])
           .filter((row) => !isEndedCourseResource(row))
-          .map((row) => ({
+          .map((row, index) => ({
             ...row,
-            id: row.id || crypto.randomUUID(),
+            id:
+              row.id ||
+              row._id ||
+              `${String(row.course || "resource")}-${String(row.title || "file")}-${index}`,
             size: row.size || "-",
             type: row.type || "PDF",
             addedDate: formatAddedDate(row.addedAt, locale, t.unknownDate),
@@ -411,7 +414,10 @@ export default function Resources({ language = "fa" }) {
           />
           {error ? (
             <div className="rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-              {error}
+              <p>{error}</p>
+              <button type="button" onClick={() => setRefreshSeed((value) => value + 1)} className="mt-3 rounded-xl bg-white px-4 py-2 text-xs font-black ring-1 ring-rose-200">
+                {isFa ? "تلاش دوباره" : "Try again"}
+              </button>
             </div>
           ) : null}
 
@@ -421,7 +427,7 @@ export default function Resources({ language = "fa" }) {
                 {t.loading}
               </h3>
             </div>
-          ) : filteredResources.length > 0 ? (
+          ) : error ? null : filteredResources.length > 0 ? (
             <>
               <ResourceTable
                 resources={paginatedResources}

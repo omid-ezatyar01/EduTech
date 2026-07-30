@@ -5,7 +5,10 @@ import StudentLayout from "./StudentLayout.jsx";
 import ProfileForm from "./ProfileForm.jsx";
 import LearningStatsCard from "./LearningStatsCard.jsx";
 import { clearAuth, getAuthUser, setAuthNotice } from "../../services/portal";
-import { isUnauthorizedError } from "../../services/http";
+import {
+  getLocalizedRequestErrorMessage,
+  isUnauthorizedError,
+} from "../../services/http";
 import { fetchStudentLearningStats } from "../../services/courseService";
 
 const mockProfileData = {
@@ -119,6 +122,7 @@ export default function Profile({ language = "fa" }) {
     [profileUser],
   );
   const [learningStats, setLearningStats] = useState(emptyProfileData.stats);
+  const [statsError, setStatsError] = useState("");
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [refreshSeed, setRefreshSeed] = useState(0);
 
@@ -134,6 +138,7 @@ export default function Profile({ language = "fa" }) {
 
     const loadLearningStats = async () => {
       try {
+        setStatsError("");
         const stats = await fetchStudentLearningStats();
         if (!mounted) return;
         setLearningStats(stats);
@@ -144,7 +149,16 @@ export default function Profile({ language = "fa" }) {
           clearAuth();
           setIsRedirecting(true);
           navigate("/login", { replace: true });
+          return;
         }
+        setStatsError(
+          getLocalizedRequestErrorMessage(
+            error,
+            language,
+            "بارگذاری آمار یادگیری انجام نشد.",
+            "Unable to load learning statistics.",
+          ),
+        );
       }
     };
 
@@ -152,7 +166,7 @@ export default function Profile({ language = "fa" }) {
     return () => {
       mounted = false;
     };
-  }, [navigate, refreshSeed]);
+  }, [language, navigate, refreshSeed]);
 
   useEffect(() => {
     const triggerRefresh = () => setRefreshSeed((value) => value + 1);
@@ -200,6 +214,18 @@ export default function Profile({ language = "fa" }) {
       </div>
 
       <div className="mt-6">
+        {statsError ? (
+          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+            <p>{statsError}</p>
+            <button
+              type="button"
+              onClick={() => setRefreshSeed((value) => value + 1)}
+              className="mt-3 rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white"
+            >
+              {isFa ? "تلاش دوباره" : "Try again"}
+            </button>
+          </div>
+        ) : null}
         <LearningStatsCard stats={learningStats} language={language} />
       </div>
       <div className="h-8" aria-hidden="true" />

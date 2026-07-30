@@ -65,3 +65,7 @@ export const updateSupportTicketSchema = Joi.object({
   assignedTo: Joi.alternatives().try(objectId, Joi.valid(null)),
   handoffReason: Joi.string().trim().min(5).max(500),
 }).min(1);
+
+export const reopenSupportTicketSchema = Joi.object({
+  status: Joi.string().valid("open").required(),
+});

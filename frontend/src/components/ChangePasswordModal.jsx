@@ -1,7 +1,47 @@
 import { useState } from "react";
 import { X, Lock, Eye, EyeOff } from "lucide-react";
 
+function PasswordField({
+  label,
+  fieldKey,
+  value,
+  visible,
+  onChange,
+  onToggle,
+}) {
+  return (
+    <div>
+      <label className="text-xs font-bold text-slate-700 mb-2 block">
+        {label}
+      </label>
+      <div className="relative flex items-center">
+        <Lock size={18} className="absolute start-4 text-slate-400" />
+        <input
+          name={fieldKey}
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(event) => onChange(fieldKey, event.target.value)}
+          autoComplete={fieldKey === "current" ? "current-password" : "new-password"}
+          placeholder="••••••••••"
+          className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3.5 pe-12 ps-11 text-sm font-semibold outline-none transition focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500"
+          dir="ltr"
+          required
+        />
+        <button
+          type="button"
+          onClick={() => onToggle(fieldKey)}
+          aria-label={visible ? "Hide password" : "Show password"}
+          className="absolute end-4 text-slate-400 hover:text-slate-600 transition"
+        >
+          {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ChangePasswordModal({ isOpen, onClose, onSubmit }) {
+  const [form, setForm] = useState({ current: "", new: "", confirm: "" });
   const [showPassword, setShowPassword] = useState({
     current: false,
     new: false,
@@ -12,30 +52,8 @@ export default function ChangePasswordModal({ isOpen, onClose, onSubmit }) {
 
   const toggleShow = (field) =>
     setShowPassword((prev) => ({ ...prev, [field]: !prev[field] }));
-
-  const PasswordField = ({ label, fieldKey }) => (
-    <div>
-      <label className="text-xs font-bold text-slate-700 mb-2 block">
-        {label}
-      </label>
-      <div className="relative flex items-center">
-        <Lock size={18} className="absolute start-4 text-slate-400" />
-        <input
-          type={showPassword[fieldKey] ? "text" : "password"}
-          placeholder="••••••••••"
-          className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3.5 pe-12 ps-11 text-sm font-semibold outline-none transition focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500"
-          dir="ltr"
-        />
-        <button
-          type="button"
-          onClick={() => toggleShow(fieldKey)}
-          className="absolute end-4 text-slate-400 hover:text-slate-600 transition"
-        >
-          {showPassword[fieldKey] ? <EyeOff size={18} /> : <Eye size={18} />}
-        </button>
-      </div>
-    </div>
-  );
+  const updateField = (field, value) =>
+    setForm((current) => ({ ...current, [field]: value }));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
@@ -54,13 +72,17 @@ export default function ChangePasswordModal({ isOpen, onClose, onSubmit }) {
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit();
-            onClose();
+            if (form.new !== form.confirm) return;
+            onSubmit?.({
+              currentPassword: form.current,
+              newPassword: form.new,
+              confirmPassword: form.confirm,
+            });
           }}
         >
-          <PasswordField label="رمز عبور فعلی" fieldKey="current" />
-          <PasswordField label="رمز عبور جدید" fieldKey="new" />
-          <PasswordField label="تایید رمز عبور جدید" fieldKey="confirm" />
+          <PasswordField label="رمز عبور فعلی" fieldKey="current" value={form.current} visible={showPassword.current} onChange={updateField} onToggle={toggleShow} />
+          <PasswordField label="رمز عبور جدید" fieldKey="new" value={form.new} visible={showPassword.new} onChange={updateField} onToggle={toggleShow} />
+          <PasswordField label="تایید رمز عبور جدید" fieldKey="confirm" value={form.confirm} visible={showPassword.confirm} onChange={updateField} onToggle={toggleShow} />
 
           <div className="flex gap-3 pt-4 border-t border-slate-100 mt-6">
             <button

@@ -253,7 +253,7 @@ export default function LiveClass({ language = "fa" }) {
   const [joiningId, setJoiningId] = useState("");
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [refreshSeed, setRefreshSeed] = useState(0);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(0);
   const [ratingPrompt, setRatingPrompt] = useState(null);
   const [ratingValues, setRatingValues] = useState({
     courseRating: 0,
@@ -265,8 +265,15 @@ export default function LiveClass({ language = "fa" }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
+    let interval = null;
+    const timer = window.setTimeout(() => {
+      setNowMs(Date.now());
+      interval = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      if (interval) window.clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -378,7 +385,7 @@ export default function LiveClass({ language = "fa" }) {
   }, []);
 
   useEffect(() => {
-    const now = nowMs || Date.now();
+    const now = nowMs;
     const nextRefreshAt = rows
       .flatMap((row) => [row.linkOpenAt, row.linkCloseAt])
       .map((value) => new Date(value).getTime())
@@ -409,7 +416,7 @@ export default function LiveClass({ language = "fa" }) {
   }, [nowMs, rows]);
 
   const upcomingClasses = useMemo(() => {
-    const now = nowMs || Date.now();
+    const now = nowMs;
     return rows
       .filter((row) => {
         if (
@@ -538,8 +545,11 @@ export default function LiveClass({ language = "fa" }) {
         </div>
       ) : null}
       {error ? (
-        <div className="mb-6 rounded-[24px] border border-rose-200 bg-rose-50 py-6 text-center text-sm font-bold text-rose-700">
-          {error}
+        <div className="mb-6 rounded-[24px] border border-rose-200 bg-rose-50 p-6 text-center text-sm font-bold text-rose-700">
+          <p>{error}</p>
+          <button type="button" onClick={() => setRefreshSeed((value) => value + 1)} className="mt-3 rounded-xl bg-white px-4 py-2 text-xs font-black ring-1 ring-rose-200">
+            {isFa ? "تلاش دوباره" : "Try again"}
+          </button>
         </div>
       ) : null}
 

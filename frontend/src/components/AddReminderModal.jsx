@@ -1,4 +1,4 @@
-import { X, CalendarDays, Clock, BellRing } from "lucide-react";
+import { X, BellRing } from "lucide-react";
 
 export default function AddReminderModal({ isOpen, onClose, language = "fa" }) {
   const isFa = language === "fa";

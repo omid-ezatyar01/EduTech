@@ -103,7 +103,9 @@ const getTeacherOwnedCourses = async (teacherId, courseId = "") => {
   };
   if (courseId) filter._id = courseId;
 
-  return Course.find(filter).select("_id title classEndedAt allowStudentGroupMessages");
+  return Course.find(filter).select(
+    "_id title status classEndedAt classCancelledAt allowStudentGroupMessages",
+  );
 };
 
 const assertTeacherCanMessageStudent = async (teacherId, studentId, courseId = "") => {
@@ -221,8 +223,12 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
 };
 
 const assertTeacherCanManageCourseMessaging = (course) => {
-  if (course?.classEndedAt) {
-    throw new ApiError(400, "Ended courses cannot be managed by teacher");
+  if (
+    course?.classEndedAt ||
+    course?.classCancelledAt ||
+    course?.status === "cancelled"
+  ) {
+    throw new ApiError(400, "Ended or cancelled courses cannot be managed by teacher");
   }
 };
 

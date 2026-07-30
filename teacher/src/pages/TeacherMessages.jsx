@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCheck, ChevronLeft, MessageCircle, Search, Send } from "lucide-react";
+import { useLocation } from "react-router";
 import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPageLoader from "../components/common/TeacherPageLoader";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
@@ -36,13 +37,16 @@ const formatDateTime = (value, language) => {
 };
 
 const MESSAGES_CACHE_KEY = getTeacherPageCacheKey("messages");
-const isManageableCourse = (course = {}) => !course?.classEndedAt;
+const isManageableCourse = (course = {}) =>
+  !course?.classEndedAt && !course?.classCancelledAt && course?.status !== "cancelled";
 
 export default function TeacherMessages() {
+  const location = useLocation();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
   const isFa = language === "fa";
   const initialMessagesCache = readTeacherPageCache(MESSAGES_CACHE_KEY);
-  const [searchQuery, setSearchQuery] = useState("");
+  const requestedSearch = new URLSearchParams(location.search).get("q") || "";
+  const [searchQuery, setSearchQuery] = useState(requestedSearch);
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [courses, setCourses] = useState(initialMessagesCache?.courses || []);
   const [groupConversations, setGroupConversations] = useState(initialMessagesCache?.groupConversations || []);
@@ -72,6 +76,12 @@ export default function TeacherMessages() {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const adminBottomRef = useRef(null);
   const groupBottomRef = useRef(null);
+  const groupMessagesRequestRef = useRef(0);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchQuery(requestedSearch), 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
 
   const teacher = useMemo(() => {
     const user = getAuthUser();
@@ -145,9 +155,9 @@ export default function TeacherMessages() {
     } catch (err) {
       if (!silent) {
         setError(err?.message || (isFa ? "بارگذاری پیام‌های ادمین ناموفق بود." : "Failed to load admin messages."));
+        setAdminConversation(null);
+        setAdminMessages([]);
       }
-      setAdminConversation(null);
-      setAdminMessages([]);
     } finally {
       if (!silent) {
         setAdminConversationLoading(false);
@@ -169,16 +179,17 @@ export default function TeacherMessages() {
         (normalized[0]?.courseId || "");
       setSelectedCourseChatId(nextId);
     } catch {
-      setGroupConversations([]);
-      setSelectedCourseChatId("");
+      // Preserve the last successful conversation list during temporary outages.
     }
   }, [activeCourseIds, selectedCourseChatId]);
 
   const loadGroupMessages = useCallback(async (courseId, options = {}) => {
+    const requestId = ++groupMessagesRequestRef.current;
     const silent = Boolean(options?.silent);
     if (!courseId) {
       setSelectedCourseChat(null);
       setGroupChatMessages([]);
+      setLoadingGroupChatMessages(false);
       return;
     }
 
@@ -188,6 +199,7 @@ export default function TeacherMessages() {
         setError("");
       }
       const data = await fetchTeacherCourseBroadcastMessages(courseId);
+      if (requestId !== groupMessagesRequestRef.current) return;
       const nextMessages = Array.isArray(data?.messages) ? data.messages : [];
       setSelectedCourseChat(data?.course || null);
       setAllowCourseStudentMessages(data?.course?.allowStudentGroupMessages !== false);
@@ -195,12 +207,13 @@ export default function TeacherMessages() {
       setSelectedGroupMessageIds([]);
       setGroupChatSelecting(false);
     } catch (err) {
+      if (requestId !== groupMessagesRequestRef.current) return;
       if (silent) return;
       setError(err?.message || (isFa ? "بارگذاری تاریخچه پیام صنف ناموفق بود." : "Failed to load class chat history."));
       setSelectedCourseChat(null);
       setGroupChatMessages([]);
     } finally {
-      if (!silent) {
+      if (!silent && requestId === groupMessagesRequestRef.current) {
         setLoadingGroupChatMessages(false);
       }
     }
@@ -212,7 +225,7 @@ export default function TeacherMessages() {
       const settings = await fetchTeacherMessageSettings();
       setAllowStudentDirectMessages(settings?.allowStudentDirectMessages !== false);
     } catch {
-      setAllowStudentDirectMessages(true);
+      setAllowStudentDirectMessages(false);
     } finally {
       setChatSettingsLoading(false);
     }

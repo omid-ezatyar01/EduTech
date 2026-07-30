@@ -115,6 +115,10 @@ const resolveUsdEquivalent = (payment = {}) => {
   const storedBaseUsd = Number(payment?.baseAmountUsdCents || 0) / 100;
   const storedRate = Number(payment?.exchangeRate || 0);
 
+  if (Number.isFinite(storedBaseUsd) && storedBaseUsd > 0) {
+    return storedBaseUsd;
+  }
+
   if (gatewayCurrency === "USD" || gatewayCurrency === "USDT") {
     return gatewayAmount;
   }
@@ -123,26 +127,28 @@ const resolveUsdEquivalent = (payment = {}) => {
     return gatewayAmount / storedRate;
   }
 
-  if (Number.isFinite(storedBaseUsd) && storedBaseUsd > 0) {
-    return storedBaseUsd;
-  }
-
   return 0;
 };
 
-const toUiPayment = (payment, t, locale, language = "fa") => {
+const toUiPayment = (payment, t, locale, language = "fa", nowMs = 0) => {
   const chargeAmount = Number(payment?.gatewayAmount || payment?.amount || 0);
   const chargeCurrency = String(payment?.gatewayCurrency || payment?.currency || "USD").toUpperCase();
   const displayChargeAmount = getDisplayCurrencyAmount(chargeAmount, chargeCurrency);
   const displayChargeCurrency = getDisplayCurrency(chargeCurrency);
   const baseAmountNumber = resolveUsdEquivalent(payment);
-  const rawStatus = String(payment?.status || payment?.paymentStatus || "pending").toLowerCase();
+  const storedStatus = String(payment?.status || payment?.paymentStatus || "pending").toLowerCase();
+  const rawStatus =
+    nowMs > 0 && isLocallyExpiredPayment(payment, nowMs)
+      ? "expired"
+      : storedStatus;
   const normalizedMethod = String(payment?.paymentMethod || "").toLowerCase();
   const statusMap = {
     paid: { uiStatus: "success", label: t.statusSuccess },
+    succeeded: { uiStatus: "success", label: t.statusSuccess },
     pending: { uiStatus: "pending", label: t.statusPending },
     failed: { uiStatus: "failed", label: t.statusFailed },
     cancelled: { uiStatus: "failed", label: t.statusCancelled },
+    canceled: { uiStatus: "failed", label: t.statusCancelled },
     expired: { uiStatus: "failed", label: t.statusExpired },
     refunded: { uiStatus: "refunded", label: t.statusRefunded },
   };
@@ -223,22 +229,12 @@ const removePendingPaymentsForPaidCourses = (items = []) => {
       .filter((payment) => payment?.status === "success" && payment?.orderId)
       .map((payment) => String(payment.orderId)),
   );
-  const paidCourseIds = new Set(
-    items
-      .filter((payment) => payment?.status === "success" && payment?.courseId)
-      .map((payment) => String(payment.courseId)),
-  );
-
   return items.filter((payment) => {
     if (payment?.status !== "pending") {
       return true;
     }
 
     if (payment?.orderId && paidOrderIds.has(String(payment.orderId))) {
-      return false;
-    }
-
-    if (payment?.courseId && paidCourseIds.has(String(payment.courseId))) {
       return false;
     }
 
@@ -251,7 +247,16 @@ const hasRealPaymentData = (payment = {}) => {
   const reference = String(payment?.paymentReference || "").trim();
   const amount = Number(payment?.amount);
   const status = String(payment?.status || payment?.paymentStatus || "").trim().toLowerCase();
-  const allowedStatuses = new Set(["paid", "pending"]);
+  const allowedStatuses = new Set([
+    "paid",
+    "succeeded",
+    "pending",
+    "failed",
+    "cancelled",
+    "canceled",
+    "expired",
+    "refunded",
+  ]);
 
   return Boolean(courseTitle) && Boolean(reference) && Number.isFinite(amount) && amount > 0 && allowedStatuses.has(status);
 };
@@ -306,7 +311,7 @@ export default function Payments({ language = "fa" }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshSeed, setRefreshSeed] = useState(0);
-  const [nowMs, setNowMs] = useState(Date.now());
+  const [nowMs, setNowMs] = useState(0);
 
   const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -320,8 +325,10 @@ export default function Payments({ language = "fa" }) {
       { value: STATUS_FILTER_ALL, label: t.allStatuses },
       { value: "success", label: t.statusSuccess },
       { value: "pending", label: t.statusPending },
+      { value: "failed", label: t.statusFailed },
+      { value: "refunded", label: t.statusRefunded },
     ],
-    [t.allStatuses, t.statusPending, t.statusSuccess],
+    [t.allStatuses, t.statusFailed, t.statusPending, t.statusRefunded, t.statusSuccess],
   );
   const dateOptions = useMemo(
     () => [
@@ -338,12 +345,21 @@ export default function Payments({ language = "fa" }) {
     const loadPaymentHistory = async () => {
       try {
         setLoading(true);
-        const [payments, enrollments] = await Promise.all([
+        const [paymentResult, enrollmentResult] = await Promise.allSettled([
           getStudentPaymentHistory(),
           fetchStudentEnrollments(),
         ]);
+        if (paymentResult.status === "rejected") throw paymentResult.reason;
+        if (
+          enrollmentResult.status === "rejected" &&
+          isUnauthorizedError(enrollmentResult.reason)
+        ) {
+          throw enrollmentResult.reason;
+        }
         if (!isMounted) return;
-        setLivePayments(payments);
+        setLivePayments(paymentResult.value);
+        const enrollments =
+          enrollmentResult.status === "fulfilled" ? enrollmentResult.value : [];
         setLiveEnrollments(Array.isArray(enrollments) ? enrollments : []);
         setError("");
       } catch (err) {
@@ -387,8 +403,15 @@ export default function Payments({ language = "fa" }) {
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
+    let interval = null;
+    const timer = window.setTimeout(() => {
+      setNowMs(Date.now());
+      interval = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      if (interval) window.clearInterval(interval);
+    };
   }, []);
 
   const payments = useMemo(
@@ -396,9 +419,8 @@ export default function Payments({ language = "fa" }) {
       removePendingPaymentsForPaidCourses(
         dedupePendingPayments(
           livePayments
-            .filter((payment) => !isLocallyExpiredPayment(payment, nowMs))
             .filter(hasRealPaymentData)
-            .map((payment) => toUiPayment(payment, t, locale, language)),
+            .map((payment) => toUiPayment(payment, t, locale, language, nowMs)),
         ),
       ),
     [language, livePayments, locale, nowMs, t],
@@ -409,8 +431,10 @@ export default function Payments({ language = "fa" }) {
       total: payments.length,
       success: payments.filter((p) => p.status === "success").length,
       pending: payments.filter((p) => p.status === "pending").length,
-      activeSubscriptions: liveEnrollments.filter((enrollment) =>
-        ["active", "completed"].includes(enrollment?.enrollmentStatus),
+      activeSubscriptions: liveEnrollments.filter(
+        (enrollment) =>
+          enrollment?.enrollmentStatus === "active" &&
+          enrollment?.accessStatus !== "blocked",
       ).length,
     }),
     [payments, liveEnrollments],
@@ -485,26 +509,27 @@ export default function Payments({ language = "fa" }) {
         createdAt &&
         !Number.isNaN(createdAt.getTime()) &&
         createdAt >= startOfYear);
-    const q = searchQuery.trim();
+    const q = searchQuery.trim().toLowerCase();
     const matchSearch =
       !q ||
-      p.invoice.includes(q) ||
-      p.service.includes(q) ||
-      p.description.includes(q) ||
-      p.transactionId.includes(q);
+      String(p.invoice || "").toLowerCase().includes(q) ||
+      String(p.service || "").toLowerCase().includes(q) ||
+      String(p.description || "").toLowerCase().includes(q) ||
+      String(p.transactionId || "").toLowerCase().includes(q);
     return matchTab && matchStatus && matchDate && matchSearch;
   });
 
   const handleDownloadInvoice = async (payment) => {
     if (!payment || typeof document === "undefined") return;
 
+    let invoiceRoot = null;
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
         import("html2canvas"),
         import("jspdf"),
       ]);
 
-      const invoiceRoot = document.createElement("div");
+      invoiceRoot = document.createElement("div");
       invoiceRoot.setAttribute("aria-hidden", "true");
       invoiceRoot.style.position = "fixed";
       invoiceRoot.style.left = "-99999px";
@@ -638,7 +663,8 @@ export default function Payments({ language = "fa" }) {
         useCORS: true,
       });
 
-      document.body.removeChild(invoiceRoot);
+      invoiceRoot.remove();
+      invoiceRoot = null;
 
       const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4", compress: true });
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -670,6 +696,8 @@ export default function Payments({ language = "fa" }) {
           t.invoiceError,
         ),
       );
+    } finally {
+      if (invoiceRoot?.isConnected) invoiceRoot.remove();
     }
   };
 
@@ -726,7 +754,10 @@ export default function Payments({ language = "fa" }) {
 
       {error ? (
         <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-          {error}
+          <p>{error}</p>
+          <button type="button" onClick={() => setRefreshSeed((value) => value + 1)} className="mt-3 rounded-xl bg-white px-4 py-2 text-xs font-black ring-1 ring-rose-200">
+            {isFa ? "تلاش دوباره" : "Try again"}
+          </button>
         </div>
       ) : null}
 
@@ -763,7 +794,7 @@ export default function Payments({ language = "fa" }) {
             <div className="flex flex-col items-center justify-center rounded-[24px] border border-slate-200 bg-white py-20 text-center shadow-sm">
               <h3 className="text-xl font-black text-slate-900">{t.loading}</h3>
             </div>
-          ) : filteredPayments.length > 0 ? (
+          ) : error && payments.length === 0 ? null : filteredPayments.length > 0 ? (
             <PaymentTable
               payments={filteredPayments}
               onDownload={handleDownloadInvoice}

@@ -55,6 +55,10 @@ import {
   resolveRegionalDisplaySnapshot,
   resolveStudentPricingRegion,
 } from "../utils/courseRegionalPricing.js";
+import {
+  recordCouponRedemption,
+  resolveCouponForCheckout,
+} from "../services/coupon.service.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 const DIRECT_CRYPTO_VERIFY_COOLDOWN_AFTER_FAILED_ATTEMPTS = 5;
@@ -95,9 +99,17 @@ const setIfPresent = (target, key, value) => {
   target[key] = value;
 };
 
-const expireAttemptIfBasePriceChanged = async (attempt, baseAmountUsdCents, reasonPrefix) => {
+const expireAttemptIfBasePriceChanged = async (
+  attempt,
+  baseAmountUsdCents,
+  reasonPrefix,
+  couponId = null,
+) => {
   if (!attempt) return null;
-  if (Number(attempt.baseAmountUsdCents || 0) === Number(baseAmountUsdCents || 0)) {
+  if (
+    Number(attempt.baseAmountUsdCents || 0) === Number(baseAmountUsdCents || 0) &&
+    String(attempt.couponId || "") === String(couponId || "")
+  ) {
     return attempt;
   }
 
@@ -147,6 +159,21 @@ const getCourseTeacherId = (course = {}) =>
   course?.createdBy ||
   null;
 
+const recordPaymentCouponRedemption = (payment) =>
+  recordCouponRedemption({
+    couponId: payment.couponId,
+    couponCode: payment.couponCode,
+    userId: payment.studentId,
+    courseId: payment.courseId,
+    orderId: payment.orderId || undefined,
+    paymentId: payment._id,
+    originalBaseAmountUsdCents:
+      payment.originalBaseAmountUsdCents ?? payment.baseAmountUsdCents,
+    discountAmountUsdCents: payment.discountAmountUsdCents || 0,
+    finalBaseAmountUsdCents: payment.baseAmountUsdCents,
+    redeemedAt: payment.paidAt || new Date(),
+  });
+
 const readDirectCryptoGuardState = (key) => {
   const state = directCryptoVerifyGuard.get(key);
   if (!state) return { failedCount: 0, blockUntil: null };
@@ -185,6 +212,19 @@ const markDirectCryptoGuardFailure = (key) => {
 const clearDirectCryptoGuardState = (key) => {
   directCryptoVerifyGuard.delete(key);
 };
+
+const couponResponse = (snapshot) =>
+  snapshot
+    ? {
+        code: snapshot.couponCode,
+        type: snapshot.couponType,
+        value: snapshot.couponValue,
+        originalAmountUsd:
+          snapshot.originalBaseAmountUsdCents / 100,
+        discountAmountUsd: snapshot.discountAmountUsdCents / 100,
+        finalAmountUsd: snapshot.finalBaseAmountUsdCents / 100,
+      }
+    : null;
 
 const getCourseForCheckout = async (courseId, pricingRegion = "international") => {
   const course = await Course.findById(courseId).select(
@@ -240,6 +280,7 @@ const findOrCreatePendingOrder = async ({
   sourceExchangeRateSource = null,
   sourceRateRetrievedAt = null,
   platformCommissionRate = null,
+  couponSnapshot = null,
 }, session = null) => {
   const existing = await Order.findOne({ userId, courseId, status: "PENDING" }).session(session);
   if (existing) {
@@ -249,7 +290,10 @@ const findOrCreatePendingOrder = async ({
       Number(existing.sourcePriceAmount ?? -1) !== Number(sourcePriceAmount ?? -1) ||
       String(existing.sourcePriceCurrency || "") !== String(sourcePriceCurrency || "") ||
       Number(existing.sourceExchangeRate ?? -1) !== Number(sourceExchangeRate ?? -1) ||
-      Number(existing.platformCommissionRate ?? -1) !== Number(platformCommissionRate ?? -1)
+      Number(existing.platformCommissionRate ?? -1) !== Number(platformCommissionRate ?? -1) ||
+      String(existing.couponId || "") !== String(couponSnapshot?.couponId || "") ||
+      Number(existing.discountAmountUsdCents || 0) !==
+        Number(couponSnapshot?.discountAmountUsdCents || 0)
     ) {
       existing.baseAmountUsdCents = baseAmountUsdCents;
       existing.pricingRegion = pricingRegion;
@@ -259,6 +303,14 @@ const findOrCreatePendingOrder = async ({
       existing.sourceExchangeRateSource = sourceExchangeRateSource;
       existing.sourceRateRetrievedAt = sourceRateRetrievedAt;
       existing.platformCommissionRate = platformCommissionRate;
+      existing.originalBaseAmountUsdCents =
+        couponSnapshot?.originalBaseAmountUsdCents ?? baseAmountUsdCents;
+      existing.couponId = couponSnapshot?.couponId || null;
+      existing.couponCode = couponSnapshot?.couponCode || "";
+      existing.couponType = couponSnapshot?.couponType || null;
+      existing.couponValue = couponSnapshot?.couponValue ?? null;
+      existing.discountAmountUsdCents =
+        couponSnapshot?.discountAmountUsdCents || 0;
       await existing.save({ session });
     }
     return existing;
@@ -275,6 +327,13 @@ const findOrCreatePendingOrder = async ({
     sourceExchangeRateSource,
     sourceRateRetrievedAt,
     platformCommissionRate,
+    originalBaseAmountUsdCents:
+      couponSnapshot?.originalBaseAmountUsdCents ?? baseAmountUsdCents,
+    couponId: couponSnapshot?.couponId || null,
+    couponCode: couponSnapshot?.couponCode || "",
+    couponType: couponSnapshot?.couponType || null,
+    couponValue: couponSnapshot?.couponValue ?? null,
+    discountAmountUsdCents: couponSnapshot?.discountAmountUsdCents || 0,
     status: "PENDING",
   }], session ? { session } : undefined).then((rows) => rows[0]);
 };
@@ -288,6 +347,13 @@ const createPaymentAttemptRecord = async ({ order, user, course, paymentReferenc
     provider,
     method,
     baseAmountUsdCents: order.baseAmountUsdCents,
+    originalBaseAmountUsdCents:
+      order.originalBaseAmountUsdCents ?? order.baseAmountUsdCents,
+    couponId: order.couponId || null,
+    couponCode: order.couponCode || "",
+    couponType: order.couponType || null,
+    couponValue: order.couponValue ?? null,
+    discountAmountUsdCents: order.discountAmountUsdCents || 0,
     amount,
     currency,
     customerEmail: user.email,
@@ -317,6 +383,13 @@ const createPaymentAttemptRecord = async ({ order, user, course, paymentReferenc
       orderId: order._id,
       paymentAttemptId: attempt._id,
       baseAmountUsdCents: order.baseAmountUsdCents,
+      originalBaseAmountUsdCents:
+        order.originalBaseAmountUsdCents ?? order.baseAmountUsdCents,
+      couponId: order.couponId || null,
+      couponCode: order.couponCode || "",
+      couponType: order.couponType || null,
+      couponValue: order.couponValue ?? null,
+      discountAmountUsdCents: order.discountAmountUsdCents || 0,
       pricingRegion: order.pricingRegion || "international",
       sourcePriceAmount: order.sourcePriceAmount ?? null,
       sourcePriceCurrency: order.sourcePriceCurrency || null,
@@ -460,7 +533,7 @@ export const getUsdExchangeRates = async (req, res) => {
 
 export const createCheckout = async (req, res) => {
   try {
-    const { courseId, paymentMethod } = req.body || {};
+    const { courseId, paymentMethod, couponCode } = req.body || {};
     const method = String(paymentMethod || "").trim().toUpperCase();
     const pricingRegion = resolveStudentPricingRegion({
       profileCountry: req.user?.country,
@@ -474,12 +547,23 @@ export const createCheckout = async (req, res) => {
       return apiError(res, 400, "Unsupported payment method");
     }
 
-    const { course, baseAmountUsdCents, regionalPrice } =
+    const checkoutPricing =
       await getCourseForCheckout(courseId, pricingRegion);
-    if (!course) return apiError(res, 404, "Course not found");
+    if (!checkoutPricing) return apiError(res, 404, "Course not found");
+    const { course, regionalPrice } = checkoutPricing;
+    let { baseAmountUsdCents } = checkoutPricing;
     if (!isCoursePurchasable(course)) return apiError(res, 400, "Course is not available for purchase");
     if (!Number.isFinite(baseAmountUsdCents) || baseAmountUsdCents <= 0) {
       return apiError(res, 400, "Invalid course price");
+    }
+    const couponSnapshot = await resolveCouponForCheckout({
+      code: couponCode,
+      userId: req.user._id,
+      courseId: course._id,
+      baseAmountUsdCents,
+    });
+    if (couponSnapshot) {
+      baseAmountUsdCents = couponSnapshot.finalBaseAmountUsdCents;
     }
 
     const existingEnrollment = await Enrollment.findOne({
@@ -499,7 +583,10 @@ export const createCheckout = async (req, res) => {
     const isAfghanistanHesabPay =
       method === "HESABPAY_HOSTED" && pricingRegion === "afghanistan";
 
-    if (isAfghanistanHesabPay && regionalPrice?.currency !== "AFN") {
+    if (
+      couponSnapshot ||
+      (isAfghanistanHesabPay && regionalPrice?.currency !== "AFN")
+    ) {
       hesabPayQuote = await quoteAfnFromUsdCents(baseAmountUsdCents);
       regionalDisplaySnapshot = {
         amount: Number(hesabPayQuote.amount || 0),
@@ -510,7 +597,9 @@ export const createCheckout = async (req, res) => {
       };
     } else {
       regionalDisplaySnapshot = await resolveRegionalDisplaySnapshot({
-        resolvedPrice: regionalPrice,
+        resolvedPrice: couponSnapshot
+          ? { currency: "USD", finalPrice: baseAmountUsdCents / 100 }
+          : regionalPrice,
         requestedRegion: pricingRegion,
         baseAmountUsdCents,
       });
@@ -539,6 +628,7 @@ export const createCheckout = async (req, res) => {
         sourceExchangeRateSource: regionalDisplaySnapshot.exchangeRateSource,
         sourceRateRetrievedAt: regionalDisplaySnapshot.rateRetrievedAt,
         platformCommissionRate,
+        couponSnapshot,
       },
     );
 
@@ -554,6 +644,7 @@ export const createCheckout = async (req, res) => {
         paymentAttempt,
         baseAmountUsdCents,
         "HesabPay attempt expired",
+        couponSnapshot?.couponId,
       );
       if (
         paymentAttempt &&
@@ -587,6 +678,7 @@ export const createCheckout = async (req, res) => {
           },
           exchangeRate: paymentAttempt.exchangeRate || quote.exchangeRate,
           paymentUrl: paymentAttempt.providerUrl,
+          coupon: couponResponse(couponSnapshot),
         });
       }
 
@@ -667,6 +759,7 @@ export const createCheckout = async (req, res) => {
         },
         exchangeRate: quote.exchangeRate,
         paymentUrl,
+        coupon: couponResponse(couponSnapshot),
       });
     }
 
@@ -684,6 +777,7 @@ export const createCheckout = async (req, res) => {
           existingAttempt,
           baseAmountUsdCents,
           "Crypto attempt expired",
+          couponSnapshot?.couponId,
         );
         existingAttempt = await expireAttemptIfStale(
           existingAttempt,
@@ -733,6 +827,7 @@ export const createCheckout = async (req, res) => {
             tokenAddress: existingAttempt.tokenMint || "",
             paymentUrl: existingAttempt.providerUrl || existingAttempt.recipientAddress || "",
             expiresAt: existingAttempt.expiresAt,
+            coupon: couponResponse(couponSnapshot),
           });
         }
 
@@ -787,6 +882,7 @@ export const createCheckout = async (req, res) => {
           paymentUrl: attempt.providerUrl || attempt.recipientAddress || "",
           qrPayload: directDetails.qrPayload,
           expiresAt: attempt.expiresAt,
+          coupon: couponResponse(couponSnapshot),
         });
       }
 
@@ -803,6 +899,7 @@ export const createCheckout = async (req, res) => {
         existingAttempt,
         baseAmountUsdCents,
         "Crypto attempt expired",
+        couponSnapshot?.couponId,
       );
       existingAttempt = await expireAttemptIfStale(
         existingAttempt,
@@ -846,6 +943,7 @@ export const createCheckout = async (req, res) => {
           payCurrency: String(process.env.NOWPAYMENTS_PAY_CURRENCY || "usdtbsc").trim().toUpperCase(),
           paymentUrl: existingAttempt.providerUrl || existingAttempt.recipientAddress || "",
           expiresAt: existingAttempt.expiresAt,
+          coupon: couponResponse(couponSnapshot),
         });
       }
 
@@ -904,10 +1002,16 @@ export const createCheckout = async (req, res) => {
         payCurrency: String(nowPaymentsResponse?.pay_currency || "").trim().toUpperCase(),
         paymentUrl: attempt.providerUrl || attempt.recipientAddress || "",
         expiresAt: attempt.expiresAt,
+        coupon: couponResponse(couponSnapshot),
       });
     }
 
   } catch (error) {
+    if (error?.code?.startsWith("COUPON_")) {
+      return apiError(res, error.statusCode || 400, error.message, {
+        code: error.code,
+      });
+    }
     console.error("createCheckout error:", error.message || error);
     if (/BSC RPC URL|BSC recipient address|BSC USDT contract address/i.test(String(error?.message || ""))) {
       return apiError(res, 500, "BSC payment configuration is invalid");
@@ -928,6 +1032,40 @@ export const createCheckout = async (req, res) => {
       );
     }
     return apiError(res, 500, "Internal server error");
+  }
+};
+
+export const validateCheckoutCoupon = async (req, res) => {
+  try {
+    const pricingRegion = resolveStudentPricingRegion({
+      profileCountry: req.user?.country,
+      detectedRegion: req.body?.pricingRegion,
+    });
+    const checkoutPricing = await getCourseForCheckout(
+      req.body.courseId,
+      pricingRegion,
+    );
+    if (!checkoutPricing?.course) {
+      return apiError(res, 404, "Course not found");
+    }
+    if (!isCoursePurchasable(checkoutPricing.course)) {
+      return apiError(res, 400, "Course is not available for purchase");
+    }
+    const coupon = await resolveCouponForCheckout({
+      code: req.body.code,
+      userId: req.user._id,
+      courseId: checkoutPricing.course._id,
+      baseAmountUsdCents: checkoutPricing.baseAmountUsdCents,
+    });
+    return apiSuccess(res, { coupon: couponResponse(coupon) });
+  } catch (error) {
+    if (error?.code?.startsWith("COUPON_")) {
+      return apiError(res, error.statusCode || 400, error.message, {
+        code: error.code,
+      });
+    }
+    console.error("validateCheckoutCoupon error:", error.message || error);
+    return apiError(res, 500, "Unable to validate coupon");
   }
 };
 
@@ -1417,6 +1555,7 @@ const approveExternalBankTransferPayment = async ({
   payment.bankTransferReviewStatus = "approved_by_teacher";
   payment.note = reviewerNote || payment.note;
   await payment.save();
+  await recordPaymentCouponRedemption(payment);
 
   const accessWindow = resolveCourseAccessWindow({
     course,
@@ -1517,7 +1656,7 @@ export const getCourseBankPaymentDetails = async (req, res) => {
     }
 
     const course = await Course.findById(courseId)
-      .select("title price discountPrice teacherDiscountPercentage currency isFree pricingType prices paymentPlan teacher teacherId createdBy status isPublished")
+      .select("title price discountPrice teacherDiscountPercentage currency isFree pricingType prices paymentPlan teacher teacherId createdBy status isPublished classEndedAt classCancelledAt endDate")
       .lean();
 
     if (!course || !isCoursePurchasable(course)) {
@@ -1580,17 +1719,26 @@ export const getCourseBankPaymentDetails = async (req, res) => {
     if (baseAmountUsdCents <= 0) {
       return apiError(res, 400, "Bank transfer is not available for free courses");
     }
+    const couponSnapshot = await resolveCouponForCheckout({
+      code: req.query?.couponCode,
+      userId: req.user._id,
+      courseId: course._id,
+      baseAmountUsdCents,
+    });
+    if (couponSnapshot) {
+      baseAmountUsdCents = couponSnapshot.finalBaseAmountUsdCents;
+    }
     const quoteCurrency = String(bankPaymentInfo.country || "").toUpperCase() === "IR"
       ? "IRR"
       : "AFN";
     const quote =
-      regionalPrice?.currency === quoteCurrency
+      !couponSnapshot && regionalPrice?.currency === quoteCurrency
         ? {
             amount: regionalPrice.finalPrice,
             exchangeRate: null,
             exchangeRateSource: "regional_course_price",
           }
-        : regionalPrice?.currency === "TOMAN" && quoteCurrency === "IRR"
+        : !couponSnapshot && regionalPrice?.currency === "TOMAN" && quoteCurrency === "IRR"
           ? {
               amount: Number(regionalPrice.finalPrice || 0) * 10,
               exchangeRate: null,
@@ -1598,10 +1746,12 @@ export const getCourseBankPaymentDetails = async (req, res) => {
             }
           : await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
     const regionalDisplaySnapshot = await resolveRegionalDisplaySnapshot({
-      resolvedPrice: regionalPrice || {
-        currency: "USD",
-        finalPrice: baseAmountUsdCents / 100,
-      },
+      resolvedPrice: couponSnapshot
+        ? { currency: "USD", finalPrice: baseAmountUsdCents / 100 }
+        : regionalPrice || {
+            currency: "USD",
+            finalPrice: baseAmountUsdCents / 100,
+          },
       requestedRegion: pricingRegion,
       baseAmountUsdCents,
     });
@@ -1625,8 +1775,12 @@ export const getCourseBankPaymentDetails = async (req, res) => {
       },
       regionalDisplayPrice: regionalDisplaySnapshot,
       submissionState,
+      coupon: couponResponse(couponSnapshot),
     });
   } catch (error) {
+    if (error?.code?.startsWith("COUPON_")) {
+      return apiError(res, error.statusCode || 400, error.message, { code: error.code });
+    }
     return apiError(res, 500, error.message || "Unable to load bank payment details");
   }
 };
@@ -1668,6 +1822,15 @@ export const submitBankTransferPayment = async (req, res) => {
     }
     if (baseAmountUsdCents <= 0) {
       return apiError(res, 400, "Bank transfer is not available for free courses");
+    }
+    const couponSnapshot = await resolveCouponForCheckout({
+      code: req.body?.couponCode,
+      userId: req.user._id,
+      courseId: course._id,
+      baseAmountUsdCents,
+    });
+    if (couponSnapshot) {
+      baseAmountUsdCents = couponSnapshot.finalBaseAmountUsdCents;
     }
 
     const teacherId = String(getCourseTeacherId(course) || "").trim();
@@ -1714,13 +1877,13 @@ export const submitBankTransferPayment = async (req, res) => {
 
     const quoteCurrency = countryCode === "IR" ? "IRR" : "AFN";
     const quote =
-      regionalPrice?.currency === quoteCurrency
+      !couponSnapshot && regionalPrice?.currency === quoteCurrency
         ? {
             amount: regionalPrice.finalPrice,
             exchangeRate: null,
             exchangeRateSource: "regional_course_price",
           }
-        : regionalPrice?.currency === "TOMAN" && quoteCurrency === "IRR"
+        : !couponSnapshot && regionalPrice?.currency === "TOMAN" && quoteCurrency === "IRR"
           ? {
               amount: Number(regionalPrice.finalPrice || 0) * 10,
               exchangeRate: null,
@@ -1728,10 +1891,12 @@ export const submitBankTransferPayment = async (req, res) => {
             }
           : await quoteFromUsdCents(baseAmountUsdCents, quoteCurrency);
     const regionalDisplaySnapshot = await resolveRegionalDisplaySnapshot({
-      resolvedPrice: regionalPrice || {
-        currency: "USD",
-        finalPrice: baseAmountUsdCents / 100,
-      },
+      resolvedPrice: couponSnapshot
+        ? { currency: "USD", finalPrice: baseAmountUsdCents / 100 }
+        : regionalPrice || {
+            currency: "USD",
+            finalPrice: baseAmountUsdCents / 100,
+          },
       requestedRegion: pricingRegion,
       baseAmountUsdCents,
     });
@@ -1760,6 +1925,13 @@ export const submitBankTransferPayment = async (req, res) => {
     const payload = {
       enrollmentId: enrollment._id,
       baseAmountUsdCents,
+      originalBaseAmountUsdCents:
+        couponSnapshot?.originalBaseAmountUsdCents ?? baseAmountUsdCents,
+      couponId: couponSnapshot?.couponId || null,
+      couponCode: couponSnapshot?.couponCode || "",
+      couponType: couponSnapshot?.couponType || null,
+      couponValue: couponSnapshot?.couponValue ?? null,
+      discountAmountUsdCents: couponSnapshot?.discountAmountUsdCents || 0,
       pricingRegion,
       sourcePriceAmount: regionalDisplaySnapshot.amount,
       sourcePriceCurrency: regionalDisplaySnapshot.currency,
@@ -1822,6 +1994,9 @@ export const submitBankTransferPayment = async (req, res) => {
     }, 201);
   } catch (error) {
     await removePaymentProofIfLocal(savedProofPath);
+    if (error?.code?.startsWith("COUPON_")) {
+      return apiError(res, error.statusCode || 400, error.message, { code: error.code });
+    }
     console.error("submitBankTransferPayment error:", error.message || error);
     return apiError(res, 500, "Unable to submit bank transfer payment");
   }
@@ -1868,6 +2043,7 @@ export const approveTeacherBankTransferPayment = async (req, res) => {
     }
 
     if (payment.bankTransferReviewStatus === "approved_by_teacher" || payment.paymentStatus === "paid") {
+      await recordPaymentCouponRedemption(payment);
       return apiSuccess(res, { message: "Payment already approved", payment });
     }
 

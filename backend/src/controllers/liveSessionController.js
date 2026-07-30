@@ -405,7 +405,7 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
   const course = await Course.findOne({
     _id: courseId,
     ...teacherCourseFilter(teacherId),
-  }).select("_id title teacher teacherId createdBy classEndedAt");
+  }).select("_id title status teacher teacherId createdBy classEndedAt classCancelledAt");
 
   if (!course) {
     throw new ApiError(404, "Course not found or not owned by teacher");
@@ -415,8 +415,12 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
 };
 
 const assertTeacherCanManageCourse = (course) => {
-  if (course?.classEndedAt) {
-    throw new ApiError(400, "Ended courses cannot be managed by teacher");
+  if (
+    course?.classEndedAt ||
+    course?.classCancelledAt ||
+    course?.status === "cancelled"
+  ) {
+    throw new ApiError(400, "Ended or cancelled courses cannot be managed by teacher");
   }
 };
 
@@ -445,7 +449,10 @@ const getTeacherSessionById = async (teacherId, sessionId) => {
   const session = await LiveSession.findOne({
     _id: sessionId,
     teacherId,
-  }).populate("courseId", "title isFree price startDate classEndedAt");
+  }).populate(
+    "courseId",
+    "title status isFree price startDate classEndedAt classCancelledAt",
+  );
 
   if (!session) {
     throw new ApiError(404, "Live session not found");
@@ -770,6 +777,12 @@ export const updateTeacherLiveSession = asyncHandler(async (req, res) => {
 export const deleteTeacherLiveSession = asyncHandler(async (req, res) => {
   const session = await getTeacherSessionById(req.user._id, req.params.id);
   assertTeacherCanManageCourse(session.courseId);
+  if (["live", "completed"].includes(session.status) || session.attendance?.length) {
+    throw new ApiError(
+      409,
+      "Live, completed, or attendance-bearing sessions cannot be deleted",
+    );
+  }
   await enqueueSessionCalendarRemoval(session);
   await LiveSession.deleteOne({ _id: session._id });
 
@@ -936,6 +949,9 @@ export const getTeacherLiveSessionAttendance = asyncHandler(async (req, res) => 
 export const updateTeacherLiveSessionAttendance = asyncHandler(async (req, res) => {
   const session = await getTeacherSessionById(req.user._id, req.params.id);
   assertTeacherCanManageCourse(session.courseId);
+  if (session.status === "cancelled") {
+    throw new ApiError(400, "Attendance cannot be changed for a cancelled session");
+  }
   const attendeesPayload = Array.isArray(req.body.attendees) ? req.body.attendees : [];
 
   const validEnrollments = await Enrollment.find({
@@ -1014,8 +1030,10 @@ export const getTeacherAttendanceOverview = asyncHandler(async (req, res) => {
   const activeCourses = await Course.find({
     _id: { $in: ownedCourseIds },
     classEndedAt: null,
+    classCancelledAt: null,
+    status: { $ne: "cancelled" },
   })
-    .select("_id title enrolledStudentsCount maxStudents status isPublished classEndedAt")
+    .select("_id title enrolledStudentsCount maxStudents status isPublished classEndedAt classCancelledAt")
     .sort({ createdAt: -1 })
     .lean();
   const activeCourseIds = activeCourses.map((course) => course._id);

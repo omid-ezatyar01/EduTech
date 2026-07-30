@@ -63,6 +63,8 @@ export default function Messages({ language = "fa" }) {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const bottomRef = useRef(null);
+  const conversationRequestIdRef = useRef(0);
+  const messageRequestIdRef = useRef(0);
   const navigate = useNavigate();
 
   const selectedConversation = useMemo(
@@ -76,6 +78,8 @@ export default function Messages({ language = "fa" }) {
 
   const loadConversations = useCallback(async (preferCourseId = "", options = {}) => {
     const silent = Boolean(options?.silent);
+    const requestId = conversationRequestIdRef.current + 1;
+    conversationRequestIdRef.current = requestId;
 
     try {
       if (!silent) {
@@ -89,6 +93,7 @@ export default function Messages({ language = "fa" }) {
         search: searchQuery,
         unreadOnly: showUnreadOnly,
       });
+      if (requestId !== conversationRequestIdRef.current) return;
 
       const rows = Array.isArray(data?.conversations) ? data.conversations : [];
       setConversations(rows);
@@ -100,6 +105,7 @@ export default function Messages({ language = "fa" }) {
         (!isMobileViewport ? rows[0]?.courseId || "" : ""),
       );
     } catch (err) {
+      if (requestId !== conversationRequestIdRef.current) return;
       if (isUnauthorizedError(err)) {
         setAuthNotice("Not authorized for this resource");
         clearAuth();
@@ -121,7 +127,7 @@ export default function Messages({ language = "fa" }) {
       setConversationStats({});
       setSelectedCourseId("");
     } finally {
-      if (!silent) {
+      if (!silent && requestId === conversationRequestIdRef.current) {
         setLoadingConversations(false);
       }
     }
@@ -130,10 +136,13 @@ export default function Messages({ language = "fa" }) {
   const loadMessages = useCallback(async (courseId, options = {}) => {
     const silent = Boolean(options?.silent);
     if (!courseId) {
+      messageRequestIdRef.current += 1;
       setMessages([]);
       setSelectedCourse(null);
       return;
     }
+    const requestId = messageRequestIdRef.current + 1;
+    messageRequestIdRef.current = requestId;
 
     try {
       if (!silent) {
@@ -142,6 +151,7 @@ export default function Messages({ language = "fa" }) {
       }
 
       const data = await fetchStudentGroupMessages(courseId);
+      if (requestId !== messageRequestIdRef.current) return;
       setMessages(Array.isArray(data?.messages) ? data.messages : []);
       setSelectedCourse(data?.course || null);
 
@@ -150,6 +160,7 @@ export default function Messages({ language = "fa" }) {
         prev.map((row) => (row.courseId === courseId ? { ...row, unreadCount: 0 } : row)),
       );
     } catch (err) {
+      if (requestId !== messageRequestIdRef.current) return;
       if (isUnauthorizedError(err)) {
         setAuthNotice("Not authorized for this resource");
         clearAuth();
@@ -170,7 +181,7 @@ export default function Messages({ language = "fa" }) {
       setMessages([]);
       setSelectedCourse(null);
     } finally {
-      if (!silent) {
+      if (!silent && requestId === messageRequestIdRef.current) {
         setLoadingMessages(false);
       }
     }
@@ -234,7 +245,7 @@ export default function Messages({ language = "fa" }) {
 
   const handleSend = async () => {
     const body = String(draft || "").trim();
-    if (!body || !selectedCourseId) return;
+    if (!body || !selectedCourseId || sending) return;
     if (!canSendToSelectedGroup) {
       setError(
         isFa
@@ -294,7 +305,14 @@ export default function Messages({ language = "fa" }) {
     try {
       setMarkingAllRead(true);
       setError("");
-      await Promise.all(unreadRows.map((row) => markStudentGroupAsRead(row.courseId).catch(() => null)));
+      const results = await Promise.allSettled(
+        unreadRows.map((row) => markStudentGroupAsRead(row.courseId)),
+      );
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure) {
+        await loadConversations(selectedCourseId, { silent: true });
+        throw failure.reason;
+      }
       setConversations((prev) => prev.map((row) => ({ ...row, unreadCount: 0 })));
       setToast(isFa ? "همه گفتگوهای صنف خوانده شد." : "All class conversations marked as read.");
     } catch (err) {

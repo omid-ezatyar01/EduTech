@@ -38,6 +38,10 @@ export const adminCertificateDecisionSchema = Joi.object({
   reason: Joi.string().trim().max(1000).allow("").default(""),
 });
 
+export const adminReportsQuerySchema = Joi.object({
+  period: Joi.string().valid("30d", "90d", "180d").default("90d"),
+});
+
 export const adminPlatformSettingsSchema = Joi.object({
   teacherDeductionPercentage: Joi.number().min(0).max(100).required(),
   minTeacherCoursePrice: Joi.number().min(0).max(10000).required(),

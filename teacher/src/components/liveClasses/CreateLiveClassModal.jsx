@@ -68,6 +68,7 @@ export default function CreateLiveClassModal({
   defaultCourseId = "",
 }) {
   const [form, setForm] = useState(getInitialForm());
+  const [submitting, setSubmitting] = useState(false);
   usePersistentFormDraft({
     draftId: "live-class:create",
     value: form,
@@ -89,23 +90,28 @@ export default function CreateLiveClassModal({
 
   const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
   const handleClose = () => {
+    if (submitting) return;
     setForm(getInitialForm());
     onClose();
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    onSubmit({
-      ...form,
-      courseId: selectedCourseId,
-      notify: true,
-      reminder: true,
-      autoAttendance: true,
-      startTime: resolvedTimes.startTime,
-      endTime: resolvedTimes.endTime,
-    });
-    clearTeacherFormDraft("live-class:create");
-    setForm(getInitialForm());
+    if (submitting) return;
+    try {
+      setSubmitting(true);
+      const succeeded = await onSubmit({
+        ...form,
+        courseId: selectedCourseId,
+        startTime: resolvedTimes.startTime,
+        endTime: resolvedTimes.endTime,
+      });
+      if (succeeded === false) return;
+      clearTeacherFormDraft("live-class:create");
+      setForm(getInitialForm());
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const labels = {
@@ -118,6 +124,9 @@ export default function CreateLiveClassModal({
     description: language === "fa" ? "توضیحات" : "Description",
     autoGenerateMeet:
       language === "fa" ? "تولید خودکار لینک Google Meet" : "Auto-generate Google Meet link",
+    notify: language === "fa" ? "اطلاع‌رسانی به شاگردان" : "Notify students",
+    reminder: language === "fa" ? "فعال‌سازی یادآوری" : "Enable reminders",
+    autoAttendance: language === "fa" ? "ثبت خودکار حضور" : "Automatic attendance",
     cancel: language === "fa" ? "لغو" : "Cancel",
     submit: language === "fa" ? "ایجاد صنف" : "Create Session",
     noCourses:
@@ -165,7 +174,7 @@ export default function CreateLiveClassModal({
 
           <label>
             <span className="mb-1 block text-xs font-semibold text-slate-600">{labels.date}</span>
-            <input type="date" value={form.date} required onChange={(e) => setField("date", e.target.value)} className="h-11 w-full rounded-xl border border-[#E2E8F0] px-3 text-sm outline-none focus:border-[#0B4FD8]" />
+            <input type="date" min={getTodayInputDate()} value={form.date} required onChange={(e) => setField("date", e.target.value)} className="h-11 w-full rounded-xl border border-[#E2E8F0] px-3 text-sm outline-none focus:border-[#0B4FD8]" />
           </label>
 
           <label>
@@ -200,11 +209,14 @@ export default function CreateLiveClassModal({
 
         <div className="mt-4 space-y-2 text-sm font-semibold text-slate-700">
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.autoGenerateMeet} onChange={(e) => setField("autoGenerateMeet", e.target.checked)} /> {labels.autoGenerateMeet}</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.notify} onChange={(e) => setField("notify", e.target.checked)} /> {labels.notify}</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.reminder} onChange={(e) => setField("reminder", e.target.checked)} /> {labels.reminder}</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.autoAttendance} onChange={(e) => setField("autoAttendance", e.target.checked)} /> {labels.autoAttendance}</label>
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <button type="button" onClick={handleClose} className="h-11 rounded-xl border border-[#E2E8F0] text-sm font-semibold text-slate-700">{labels.cancel}</button>
-          <button type="submit" disabled={!courses.length} className="h-11 rounded-xl bg-gradient-to-l from-[#0B4FD8] to-[#00B8A9] text-sm font-bold text-white disabled:opacity-60">{labels.submit}</button>
+          <button type="button" onClick={handleClose} disabled={submitting} className="h-11 rounded-xl border border-[#E2E8F0] text-sm font-semibold text-slate-700 disabled:opacity-60">{labels.cancel}</button>
+          <button type="submit" disabled={!courses.length || submitting} className="h-11 rounded-xl bg-gradient-to-l from-[#0B4FD8] to-[#00B8A9] text-sm font-bold text-white disabled:opacity-60">{submitting ? (language === "fa" ? "در حال ایجاد…" : "Creating…") : labels.submit}</button>
         </div>
       </form>
     </div>

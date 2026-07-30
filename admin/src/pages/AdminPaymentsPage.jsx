@@ -5,9 +5,8 @@ import {
   CreditCard,
   RefreshCw,
   Search,
-  Wallet,
-  XCircle,
 } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http.js";
 import AdminPageLoader from "../components/common/AdminPageLoader.jsx";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -32,9 +31,9 @@ const PAGE_TEXT = {
   "Pending payments": "پرداخت‌های در انتظار",
   "Total revenue": "مجموع درآمد",
   "Payment directory": "فهرست پرداخت‌ها",
-  "Search by reference, transaction ID, or student email and review every payment from one table.":
-    "با مرجع پرداخت، شناسه تراکنش یا ایمیل شاگرد جستجو کنید و همه پرداخت‌ها را از یک جدول بررسی نمایید.",
-  "Search reference, transaction ID, or email": "جستجوی مرجع، شناسه تراکنش یا ایمیل",
+  "Search by reference, transaction ID, coupon, or student email and review every payment from one table.":
+    "با مرجع پرداخت، شناسه تراکنش، کوپن یا ایمیل شاگرد جستجو کنید و همه پرداخت‌ها را از یک جدول بررسی نمایید.",
+  "Search reference, transaction ID, coupon, or email": "جستجوی مرجع، شناسه تراکنش، کوپن یا ایمیل",
   "All statuses": "همه وضعیت‌ها",
   "Payment records matching the current filters.": "رکوردهای پرداخت مطابق با فیلترهای فعلی.",
   "Visible in current filter": "نمایش داده‌شده در فیلتر فعلی",
@@ -60,6 +59,10 @@ const PAGE_TEXT = {
   Next: "بعدی",
   Successful: "موفق",
   Pending: "در انتظار",
+  Failed: "ناموفق",
+  Cancelled: "لغوشده",
+  Refunded: "بازپرداخت‌شده",
+  Expired: "منقضی‌شده",
 };
 
 const translateText = (text, language) => {
@@ -70,15 +73,25 @@ const translateText = (text, language) => {
 const statusLabelMap = {
   pending: "Pending",
   paid: "Successful",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  refunded: "Refunded",
+  expired: "Expired",
 };
 
 const statusClass = {
   pending: "border-amber-200 bg-amber-50 text-amber-700",
   paid: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  failed: "border-rose-200 bg-rose-50 text-rose-700",
+  cancelled: "border-slate-200 bg-slate-100 text-slate-700",
+  refunded: "border-violet-200 bg-violet-50 text-violet-700",
+  expired: "border-orange-200 bg-orange-50 text-orange-700",
 };
 
-const normalizePaymentStatus = (status = "") => {
-  return status === "paid" ? "paid" : "pending";
+const normalizePaymentStatus = (payment = {}) => {
+  if (payment.status === "paid" || payment.paymentStatus === "paid") return "paid";
+  const status = String(payment.status || payment.paymentStatus || "pending").toLowerCase();
+  return Object.prototype.hasOwnProperty.call(statusLabelMap, status) ? status : "pending";
 };
 
 const getAdminPaymentsCacheKey = ({ page, search, status }) =>
@@ -119,6 +132,8 @@ const getPaginationItems = (currentPage, totalPages) => {
 
 export default function AdminPaymentsPage() {
   const { language, t, isRTL } = useAdminI18n();
+  const [searchParams] = useSearchParams();
+  const requestedSearch = searchParams.get("q") || "";
   const pageTr = useMemo(
     () => (text) => translateText(t(text), language),
     [language, t],
@@ -131,7 +146,7 @@ export default function AdminPaymentsPage() {
     failedPayments: 0,
     totalPayments: 0,
   });
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(requestedSearch);
   const debouncedSearch = useDebouncedValue(search.trim(), 250);
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
@@ -147,25 +162,33 @@ export default function AdminPaymentsPage() {
   const paymentsRequest = useLatestRequest();
 
   useEffect(() => {
-    const cacheKey = getAdminPaymentsCacheKey({
-      page,
-      search: debouncedSearch,
-      status,
-    });
-    const cached = readAdminPageCache(cacheKey, { maxAgeMs: ADMIN_PAYMENTS_CACHE_TTL_MS });
+    const timer = window.setTimeout(() => {
+      setSearch(requestedSearch);
+      setPage(1);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
 
-    if (cached) {
-      setPayments(Array.isArray(cached.payments) ? cached.payments : []);
-      setSummary(cached.summary || {});
-      setPagination(cached.pagination || { page: 1, limit: PAGE_SIZE, totalPages: 1, totalPayments: 0 });
-      setLoading(false);
-      setError("");
-    } else {
-      setLoading(true);
-      setError("");
-    }
+  useEffect(() => {
+    const timer = window.setTimeout(async () => {
+      const cacheKey = getAdminPaymentsCacheKey({
+        page,
+        search: debouncedSearch,
+        status,
+      });
+      const cached = readAdminPageCache(cacheKey, { maxAgeMs: ADMIN_PAYMENTS_CACHE_TTL_MS });
 
-    const run = async () => {
+      if (cached) {
+        setPayments(Array.isArray(cached.payments) ? cached.payments : []);
+        setSummary(cached.summary || {});
+        setPagination(cached.pagination || { page: 1, limit: PAGE_SIZE, totalPages: 1, totalPayments: 0 });
+        setLoading(false);
+        setError("");
+      } else {
+        setLoading(true);
+        setError("");
+      }
+
       await paymentsRequest.runLatest(async () => {
         const params = new URLSearchParams({
           page: String(page),
@@ -211,9 +234,8 @@ export default function AdminPaymentsPage() {
           setLoading(false);
         },
       });
-    };
-
-    run();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [debouncedSearch, page, pageTr, paymentsRequest, status]);
 
   const refreshPayments = async () => {
@@ -335,7 +357,7 @@ export default function AdminPaymentsPage() {
           <div>
             <h2 className="text-lg font-extrabold text-slate-800">{pageTr("Payment directory")}</h2>
             <p className="mt-1 text-sm font-normal text-slate-600">
-              {pageTr("Search by reference, transaction ID, or student email and review every payment from one table.")}
+              {pageTr("Search by reference, transaction ID, coupon, or student email and review every payment from one table.")}
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -358,7 +380,7 @@ export default function AdminPaymentsPage() {
                 setPage(1);
                 setSearch(event.target.value);
               }}
-              placeholder={pageTr("Search reference, transaction ID, or email")}
+              placeholder={pageTr("Search reference, transaction ID, coupon, or email")}
               className="block h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 ps-11 pe-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10"
             />
           </label>
@@ -379,6 +401,7 @@ export default function AdminPaymentsPage() {
           <button
             type="button"
             onClick={refreshPayments}
+            disabled={loading}
             className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:bg-white"
           >
             <RefreshCw size={16} />
@@ -437,7 +460,7 @@ export default function AdminPaymentsPage() {
                 </tr>
               ) : (
                 payments.map((payment) => {
-                  const normalizedStatus = normalizePaymentStatus(payment.status);
+                  const normalizedStatus = normalizePaymentStatus(payment);
                   const statusLabel = pageTr(statusLabelMap[normalizedStatus] || normalizedStatus || "-");
                   const badgeClass = statusClass[normalizedStatus] || "border-slate-200 bg-slate-100 text-slate-700";
 
@@ -454,12 +477,20 @@ export default function AdminPaymentsPage() {
                       <td className="px-5 py-4">
                         <p className="line-clamp-2 font-bold text-slate-800">{payment.courseId?.title || "-"}</p>
                       </td>
-                      <td className="px-5 py-4 font-extrabold text-slate-800" dir="ltr">
-                        {formatDisplayCurrencyAmount(
-                          payment.gatewayAmount || payment.amount,
-                          payment.gatewayCurrency || payment.currency || "USD",
-                          language,
-                        )}
+                      <td className="px-5 py-4 text-slate-800" dir="ltr">
+                        <p className="font-extrabold">
+                          {formatDisplayCurrencyAmount(
+                            payment.gatewayAmount || payment.amount,
+                            payment.gatewayCurrency || payment.currency || "USD",
+                            language,
+                          )}
+                        </p>
+                        {payment.couponCode ? (
+                          <p className="mt-1 text-[11px] font-black text-violet-700">
+                            {payment.couponCode} · −$
+                            {(Number(payment.discountAmountUsdCents || 0) / 100).toFixed(2)}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-black ${badgeClass}`}>

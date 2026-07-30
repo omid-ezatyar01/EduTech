@@ -277,8 +277,27 @@ h1 {
   text-decoration: underline;
 }
 
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-link:focus-visible,
+.brand:focus-visible {
+  outline: 3px solid #0891b2;
+  outline-offset: 3px;
+}
+
 .not-found-card {
   text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media (max-width: 720px) {

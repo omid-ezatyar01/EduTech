@@ -19,7 +19,11 @@ export const fetchTeacherCourses = async (query = {}) => {
   return {
     courses: Array.isArray(data?.data) ? data.data : [],
     meta: data?.meta || {},
-    extra: data?.extra || {},
+    extra: {
+      ...(data?.meta?.pricing || {}),
+      ...(data?.extra || {}),
+      courseSummary: data?.meta?.courseSummary || data?.extra?.courseSummary || null,
+    },
   };
 };
 

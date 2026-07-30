@@ -48,6 +48,7 @@ const getSuggestedQuestions = (language) => {
 export default function AdminAiChatWidget() {
   const { language } = useAdminI18n();
   const location = useLocation();
+  const user = useMemo(() => getAuthUser(), []);
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState([]);
@@ -55,7 +56,7 @@ export default function AdminAiChatWidget() {
   const [errorMessage, setErrorMessage] = useState("");
   const scrollRef = useRef(null);
   const activeRequestRef = useRef(null);
-  const user = useMemo(() => getAuthUser(), []);
+  const messageSequenceRef = useRef(0);
   const isFa = language === "fa";
   const suggestedQuestions = getSuggestedQuestions(language);
   const handleClose = () => {
@@ -63,10 +64,15 @@ export default function AdminAiChatWidget() {
   };
 
   useEffect(() => {
-    setMessages((current) => {
-      if (current.length) return current;
-      return [{ id: "welcome", role: "assistant", content: createGreeting(language, String(user?.name || "").trim()) }];
-    });
+    const timer = window.setTimeout(() => {
+      setMessages((current) => {
+        if (current.length > 1 || (current[0] && current[0].id !== "welcome")) {
+          return current;
+        }
+        return [{ id: "welcome", role: "assistant", content: createGreeting(language, String(user?.name || "").trim()) }];
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [language, user]);
 
   useEffect(() => {
@@ -97,10 +103,11 @@ export default function AdminAiChatWidget() {
   const submitMessage = async (rawContent = "") => {
     const content = String(rawContent || "").trim();
     if (!content || content.length > MAX_MESSAGE_LENGTH || isSending) return;
-    const assistantId = `assistant-${Date.now()}`;
+    const userId = `user-${++messageSequenceRef.current}`;
+    const assistantId = `assistant-${++messageSequenceRef.current}`;
     const nextMessages = [
       ...messages,
-      { id: `user-${Date.now()}`, role: "user", content },
+      { id: userId, role: "user", content },
       { id: assistantId, role: "assistant", content: "" },
     ];
     setMessages(nextMessages);

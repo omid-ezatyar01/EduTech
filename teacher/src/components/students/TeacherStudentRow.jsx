@@ -78,7 +78,6 @@ export default function TeacherStudentRow({
               "مشاهده پروفایل",
               "مشاهده تمرین‌ها",
               "گزارش حضور",
-              "علامت‌گذاری نیازمند پیگیری",
             ].map((action) => (
               <button
                 key={action}
@@ -154,7 +153,6 @@ export default function TeacherStudentRow({
               "مشاهده پروفایل",
               "مشاهده تمرین‌ها",
               "گزارش حضور",
-              "علامت‌گذاری نیازمند پیگیری",
             ].map((action) => (
               <button
                 key={action}

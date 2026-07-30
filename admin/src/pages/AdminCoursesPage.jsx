@@ -623,6 +623,7 @@ export default function AdminCoursesPage() {
   const pageTr = useCallback((text) => translateText(t(text), language), [t, language]);
   const [searchParams] = useSearchParams();
   const requestedStatus = searchParams.get("status");
+  const requestedSearch = searchParams.get("q") || "";
   const initialStatus =
     statusOptions.includes(requestedStatus) ? requestedStatus : "all";
   const initialCoursesCache = readAdminPageCache(
@@ -634,7 +635,7 @@ export default function AdminCoursesPage() {
   );
   const [categories, setCategories] = useState([]);
   const [teachers, setTeachers] = useState([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(requestedSearch);
   const debouncedSearch = useDebouncedValue(search, 250);
   const [status, setStatus] = useState(initialStatus);
   const [category, setCategory] = useState("all");
@@ -795,6 +796,14 @@ export default function AdminCoursesPage() {
     const timer = window.setTimeout(() => setPage(1), 0);
     return () => window.clearTimeout(timer);
   }, [category, debouncedSearch, pricingFilter, status, teacherFilter]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(requestedSearch);
+      setPage(1);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
 
   useEffect(() => {
     const loadCategories = async () => {

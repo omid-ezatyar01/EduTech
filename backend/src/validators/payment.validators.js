@@ -21,11 +21,13 @@ export const checkoutSchema = Joi.object({
   courseId: objectId.required(),
   paymentMethod: Joi.string().valid("HESABPAY_HOSTED", "USDT_BSC_DIRECT").required(),
   pricingRegion: Joi.string().valid("afghanistan", "iran", "international"),
+  couponCode: Joi.string().trim().uppercase().pattern(/^[A-Z0-9][A-Z0-9_-]{2,31}$/).allow(""),
 }).required();
 
 export const submitBankTransferPaymentSchema = Joi.object({
   courseId: objectId.required(),
   countryCode: Joi.string().trim().uppercase().valid("AF", "IR").required(),
+  couponCode: Joi.string().trim().uppercase().pattern(/^[A-Z0-9][A-Z0-9_-]{2,31}$/).allow(""),
   senderAccount: Joi.string().trim().max(80).allow(""),
   note: Joi.string().trim().max(500).allow(""),
 }).required();

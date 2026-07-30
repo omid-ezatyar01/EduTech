@@ -17,6 +17,7 @@ import {
   rejectTeacherBankTransferPayment,
   submitBankTransferPayment,
   verifyDirectCryptoPayment,
+  validateCheckoutCoupon,
 } from "../controllers/payment.controller.js";
 import { allowRoles, protect } from "../middlewares/authMiddleware.js";
 import paymentProofUpload from "../middlewares/paymentProofUpload.js";
@@ -34,6 +35,7 @@ import {
   paymentStatusParamSchema,
   verifyDirectCryptoSchema,
 } from "../validators/payment.validators.js";
+import { validateCouponSchema } from "../validators/coupon.validators.js";
 
 const router = express.Router();
 
@@ -48,6 +50,13 @@ router.get(
   getCourseBankPaymentDetails,
 );
 router.post("/payments/checkout", protect, allowRoles("student"), validateRequest(checkoutSchema), createCheckout);
+router.post(
+  "/payments/coupons/validate",
+  protect,
+  allowRoles("student"),
+  validateRequest(validateCouponSchema),
+  validateCheckoutCoupon,
+);
 router.post(
   "/payments/bank-transfer/submit",
   protect,

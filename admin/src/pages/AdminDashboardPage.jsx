@@ -135,18 +135,6 @@ const formatDashboardDate = (date = new Date(), language = "en") => {
 
 const ADMIN_DASHBOARD_CACHE_KEY = getAdminPageCacheKey("dashboard");
 const ADMIN_DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
-const ADMIN_DASHBOARD_REQUEST_GUARD_TTL_MS = 15 * 1000;
-const recentDashboardRequestKeys = new Map();
-
-const shouldSkipRecentDashboardRequest = (key) => {
-  const now = Date.now();
-  const lastTime = Number(recentDashboardRequestKeys.get(key) || 0);
-  if (lastTime && now - lastTime < ADMIN_DASHBOARD_REQUEST_GUARD_TTL_MS) {
-    return true;
-  }
-  recentDashboardRequestKeys.set(key, now);
-  return false;
-};
 
 export default function AdminDashboardPage() {
   const { t, tr, language, isRTL } = useAdminI18n();
@@ -181,9 +169,6 @@ export default function AdminDashboardPage() {
 
       const requestKey = `admin-dashboard:${language}`;
       if (lastDashboardRequestKeyRef.current === requestKey) {
-        return;
-      }
-      if (shouldSkipRecentDashboardRequest(requestKey)) {
         return;
       }
       lastDashboardRequestKeyRef.current = requestKey;

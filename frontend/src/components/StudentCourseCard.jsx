@@ -1,7 +1,6 @@
 import {
   Video,
   FileText,
-  FolderOpen,
   Headphones,
   Clock,
   CheckCircle2,

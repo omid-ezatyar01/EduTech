@@ -87,7 +87,7 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
   const course = await Course.findOne({
     _id: courseId,
     ...teacherCourseFilter(teacherId),
-  }).select("_id title classEndedAt");
+  }).select("_id title status classEndedAt classCancelledAt");
 
   if (!course) {
     throw new ApiError(404, "Course not found or not owned by teacher");
@@ -97,8 +97,12 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
 };
 
 const assertTeacherCanManageAssignmentCourse = (course) => {
-  if (course?.classEndedAt) {
-    throw new ApiError(400, "Ended courses cannot be managed by teacher");
+  if (
+    course?.classEndedAt ||
+    course?.classCancelledAt ||
+    course?.status === "cancelled"
+  ) {
+    throw new ApiError(400, "Ended or cancelled courses cannot be managed by teacher");
   }
 };
 
@@ -106,7 +110,7 @@ const assertTeacherOwnsAssignment = async (teacherId, assignmentId) => {
   const assignment = await Assignment.findOne({
     _id: assignmentId,
     teacherId,
-  }).populate("courseId", "title level classEndedAt");
+  }).populate("courseId", "title level status classEndedAt classCancelledAt");
 
   if (!assignment) {
     throw new ApiError(404, "Assignment not found");
@@ -237,12 +241,27 @@ export const getTeacherAssignments = asyncHandler(async (req, res) => {
   const teacherId = req.user._id;
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 10));
+  const manageableCourseIds = (
+    await Course.find({
+      ...teacherCourseFilter(teacherId),
+      classEndedAt: null,
+      classCancelledAt: null,
+      status: { $ne: "cancelled" },
+    }).select("_id")
+  ).map((course) => course._id);
 
   if (req.query.courseId) {
-    await assertTeacherOwnsCourse(teacherId, req.query.courseId);
+    const requestedCourse = await assertTeacherOwnsCourse(teacherId, req.query.courseId);
+    if (!req.query.includeEnded) {
+      assertTeacherCanManageAssignmentCourse(requestedCourse);
+    }
   }
 
   const filter = buildAssignmentFilter(teacherId, req.query);
+  filter.courseId =
+    req.query.courseId && req.query.includeEnded
+      ? req.query.courseId
+      : req.query.courseId || { $in: manageableCourseIds };
   const sort = buildSort(req.query.sortBy, req.query.sortOrder);
 
   const [assignments, total] = await Promise.all([

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -58,6 +58,7 @@ export default function AdminTeacherBankReviewsPage() {
   const [selected, setSelected] = useState(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const requestIdRef = useRef(0);
 
   const text = useMemo(
     () => ({
@@ -95,6 +96,7 @@ export default function AdminTeacherBankReviewsPage() {
   );
 
   const loadRows = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError("");
     try {
@@ -108,6 +110,7 @@ export default function AdminTeacherBankReviewsPage() {
         headers: buildAuthHeaders(),
       });
       const data = await parseJsonResponse(response);
+      if (requestId !== requestIdRef.current) return;
       setTeachers(Array.isArray(data?.teachers) ? data.teachers : []);
       setCounts(data?.counts || {});
       setPagination({
@@ -115,16 +118,17 @@ export default function AdminTeacherBankReviewsPage() {
         totalPages: Number(data?.pagination?.totalPages || 1),
       });
     } catch (requestError) {
-      setError(requestError.message || text.loadFailed);
+      if (requestId === requestIdRef.current) {
+        setError(requestError.message || text.loadFailed);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [apiUrl, debouncedSearch, page, status, text.loadFailed]);
 
   useEffect(() => {
-    // Loading is intentionally initiated when the active query changes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadRows();
+    const timer = window.setTimeout(() => loadRows(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadRows]);
 
   const openReview = (teacher) => {

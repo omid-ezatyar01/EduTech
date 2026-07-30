@@ -266,7 +266,7 @@ export default function Schedule({ language = "fa" }) {
     return () => {
       mounted = false;
     };
-  }, [language, navigate, refreshSeed, t.statusCancelled, t.statusCompleted, t.statusLive, t.statusScheduled]);
+  }, [language, navigate, refreshSeed, t.statusCancelled, t.statusCompleted, t.statusDelayed, t.statusLive, t.statusMissed, t.statusReady, t.statusRescheduled, t.statusScheduled]);
 
   useEffect(() => {
     const triggerRefresh = () => setRefreshSeed((prev) => prev + 1);
@@ -413,8 +413,11 @@ export default function Schedule({ language = "fa" }) {
         </div>
       ) : null}
       {error ? (
-        <div className="mb-6 rounded-[24px] border border-rose-200 bg-rose-50 py-6 text-center text-sm font-bold text-rose-700">
-          {error}
+        <div className="mb-6 rounded-[24px] border border-rose-200 bg-rose-50 p-6 text-center text-sm font-bold text-rose-700">
+          <p>{error}</p>
+          <button type="button" onClick={() => setRefreshSeed((value) => value + 1)} className="mt-3 rounded-xl bg-white px-4 py-2 text-xs font-black ring-1 ring-rose-200">
+            {isFa ? "تلاش دوباره" : "Try again"}
+          </button>
         </div>
       ) : null}
 

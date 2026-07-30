@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, Edit3, FileText, Link2, Plus, Trash2, X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 import TeacherLayout from "../layouts/TeacherLayout";
@@ -46,7 +46,8 @@ const DEFAULT_COURSE_PAGINATION = {
   total: 0,
   totalPages: 1,
 };
-const isManageableCourse = (course = {}) => !course?.classEndedAt;
+const isManageableCourse = (course = {}) =>
+  !course?.classEndedAt && !course?.classCancelledAt && course?.status !== "cancelled";
 
 const bytesToMb = (bytes = 0) => `${Math.round(Number(bytes || 0) / 1024 / 1024)}MB`;
 
@@ -177,6 +178,8 @@ export default function TeacherResources() {
   const [loadingResources, setLoadingResources] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const resourcesRequestRef = useRef(0);
+  const sessionsRequestRef = useRef(0);
   const resourceDraftId = `resource:${selectedCourseId || "unselected"}`;
   usePersistentFormDraft({
     draftId: resourceDraftId,
@@ -325,6 +328,16 @@ export default function TeacherResources() {
     fetchTeacherCourseById(selectedCourseId)
       .then((course) => {
         if (!active || !course) return;
+        if (!isManageableCourse(course)) {
+          setError(
+            isFa
+              ? "منابع کورس پایان‌یافته قابل ویرایش نیست."
+              : "Resources for an ended course are read-only.",
+          );
+          setSelectedCourseId("");
+          navigate("/teacher/resources", { replace: true });
+          return;
+        }
         setCourses((current) => [
           course,
           ...current.filter((item) => getCourseId(item) !== getCourseId(course)),
@@ -341,7 +354,7 @@ export default function TeacherResources() {
     return () => {
       active = false;
     };
-  }, [courses, isFa, loadingCourses, selectedCourseId]);
+  }, [courses, isFa, loadingCourses, navigate, selectedCourseId]);
 
   const applySessionToForm = (sessionId) => {
     setSelectedSessionId(sessionId);
@@ -358,35 +371,43 @@ export default function TeacherResources() {
   };
 
   const loadResources = useCallback(async (courseId = selectedCourseId) => {
+    const requestId = ++resourcesRequestRef.current;
     if (!courseId) {
       setResources([]);
+      setLoadingResources(false);
       return;
     }
     try {
       setLoadingResources(true);
       setError("");
       const rows = await fetchTeacherCourseResources(courseId);
+      if (requestId !== resourcesRequestRef.current) return;
       setResources(rows.map(normalizeResource));
     } catch (err) {
+      if (requestId !== resourcesRequestRef.current) return;
       setError(err?.message || (isFa ? "بارگذاری محتوا ناموفق بود." : "Failed to load content."));
     } finally {
-      setLoadingResources(false);
+      if (requestId === resourcesRequestRef.current) setLoadingResources(false);
     }
   }, [isFa, selectedCourseId]);
 
   const loadSessions = useCallback(async (courseId = selectedCourseId) => {
+    const requestId = ++sessionsRequestRef.current;
     if (!courseId) {
       setSessions([]);
+      setLoadingSessions(false);
       return;
     }
     try {
       setLoadingSessions(true);
       const result = await fetchTeacherLiveSessions({ courseId, limit: 100 });
+      if (requestId !== sessionsRequestRef.current) return;
       setSessions(Array.isArray(result?.sessions) ? result.sessions : []);
     } catch (err) {
+      if (requestId !== sessionsRequestRef.current) return;
       setError(err?.message || (isFa ? "بارگذاری جلسات صنف ناموفق بود." : "Failed to load class sessions."));
     } finally {
-      setLoadingSessions(false);
+      if (requestId === sessionsRequestRef.current) setLoadingSessions(false);
     }
   }, [isFa, selectedCourseId]);
 
@@ -443,15 +464,6 @@ export default function TeacherResources() {
           emptyForm,
         ),
       );
-      loadResources(selectedCourseId);
-      loadSessions(selectedCourseId);
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [loadResources, loadSessions, selectedCourseId]);
-
-  useEffect(() => {
-    if (!selectedCourseId) return;
-    const timer = setTimeout(() => {
       loadResources(selectedCourseId);
       loadSessions(selectedCourseId);
     }, 0);
@@ -604,6 +616,12 @@ export default function TeacherResources() {
       setError(isFa ? "شناسه محتوا معتبر نیست. صفحه را تازه‌سازی کنید." : "Invalid resource id. Please refresh the page.");
       return;
     }
+    const confirmed = window.confirm(
+      isFa
+        ? "این منبع درسی برای همیشه حذف شود؟"
+        : "Permanently delete this course resource?",
+    );
+    if (!confirmed) return;
 
     try {
       setError("");

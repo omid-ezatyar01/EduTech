@@ -347,7 +347,7 @@ export default function LoginPage({ language = "fa" }) {
                   icon={Mail}
                   type="email"
                   value={email}
-                  autoComplete="off"
+                  autoComplete="email"
                   onChange={(e) => setEmail(e.target.value)}
                 />
                 <PasswordInput
@@ -355,24 +355,17 @@ export default function LoginPage({ language = "fa" }) {
                   placeholder={data.form.placeholders.password}
                   icon={Lock}
                   value={password}
-                  autoComplete="new-password"
+                  autoComplete="current-password"
                   onChange={(e) => setPassword(e.target.value)}
                 />
 
-                <div className="pt-5 flex items-center justify-between gap-2 sm:gap-4">
-                  <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                    />
-                    {data.form.remember}
-                  </label>
-                  <a
-                    href="#"
+                <div className="pt-5 flex items-center justify-end gap-2 sm:gap-4">
+                  <Link
+                    to="/contact"
                     className="text-sm font-bold text-primary-600 hover:text-primary-700"
                   >
                     {data.form.forgot}
-                  </a>
+                  </Link>
                 </div>
 
                 <button
@@ -419,13 +412,9 @@ export default function LoginPage({ language = "fa" }) {
               </p>
               <p className="mt-4 text-center text-xs font-semibold text-slate-500">
                 {language === "fa" ? "توسعه داده شده توسط " : "Developed by "}
-                <a
-                  href="#"
-                  onClick={(event) => event.preventDefault()}
-                  className="cursor-default text-primary-700"
-                >
+                <span className="text-primary-700">
                   {language === "fa" ? "شرکت برنامه نویسی بودا" : "Boda Software Development Company"}
-                </a>
+                </span>
               </p>
             </div>
           </div>

@@ -1,6 +1,8 @@
-import { Coins, CreditCard, Landmark, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, Coins, CreditCard, Landmark, Tag, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useRegionalPricing } from "../context/RegionalPricingContext.jsx";
+import { validateCheckoutCoupon } from "../../services/paymentGateway.js";
 
 export default function PaymentMethodModal({
   isOpen,
@@ -16,10 +18,26 @@ export default function PaymentMethodModal({
   isBankPaymentAvailable = true,
   isLoading = false,
   isBankLoading = false,
+  courseId = "",
+  pricingRegion = "international",
+  onCouponApplied,
 }) {
   const isFa = language === "fa";
   const { status } = useRegionalPricing();
+  const [couponInput, setCouponInput] = useState("");
+  const [couponResult, setCouponResult] = useState(null);
+  const [couponError, setCouponError] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
   const isPricingLoading = status === "loading";
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setCouponInput("");
+      setCouponResult(null);
+      setCouponError("");
+      onCouponApplied?.("", null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [courseId, onCouponApplied]);
   if (!isOpen) return null;
   const normalizedCountryCode = String(bankOptionCountryCode || "").trim().toUpperCase();
   const showBankOption =
@@ -57,6 +75,58 @@ export default function PaymentMethodModal({
     close: isFa ? "بستن" : "Close",
     loading: isFa ? "در حال آماده‌سازی" : "Preparing",
     loadingBank: isFa ? "در حال دریافت" : "Loading",
+    coupon: isFa ? "کد تخفیف" : "Coupon code",
+    apply: isFa ? "اعمال" : "Apply",
+    remove: isFa ? "حذف" : "Remove",
+    couponPlaceholder: isFa ? "کد کوپن را وارد کنید" : "Enter coupon code",
+    saved: isFa ? "تخفیف شما" : "You save",
+  };
+
+  const applyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code || !courseId || couponLoading) return;
+    setCouponLoading(true);
+    setCouponError("");
+    try {
+      const result = await validateCheckoutCoupon({
+        courseId,
+        code,
+        pricingRegion,
+      });
+      setCouponInput(code);
+      setCouponResult(result);
+      onCouponApplied?.(code, result);
+    } catch (error) {
+      setCouponResult(null);
+      onCouponApplied?.("", null);
+      const errorCode = String(error?.data?.code || "");
+      const localizedErrors = isFa
+        ? {
+            COUPON_INVALID: "کوپن معتبر یا فعال نیست.",
+            COUPON_NOT_STARTED: "زمان استفاده از این کوپن هنوز شروع نشده است.",
+            COUPON_EXPIRED: "این کوپن منقضی شده است.",
+            COUPON_USED_UP: "حد استفاده از این کوپن تکمیل شده است.",
+            COUPON_COURSE_MISMATCH: "این کوپن برای این کورس قابل استفاده نیست.",
+            COUPON_MINIMUM_NOT_MET: "قیمت کورس به حداقل خرید این کوپن نمی‌رسد.",
+            COUPON_USER_LIMIT: "شما قبلاً از این کوپن استفاده کرده‌اید.",
+            COUPON_DISCOUNT_INVALID: "مقدار تخفیف برای قیمت این کورس معتبر نیست.",
+          }
+        : {};
+      setCouponError(
+        localizedErrors[errorCode] ||
+          error.message ||
+          (isFa ? "کوپن معتبر نیست." : "Coupon is not valid."),
+      );
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setCouponInput("");
+    setCouponResult(null);
+    setCouponError("");
+    onCouponApplied?.("", null);
   };
 
   const content = (
@@ -93,6 +163,41 @@ export default function PaymentMethodModal({
         </div>
 
         <div className="space-y-3 px-5 py-5 sm:px-6">
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-3">
+            <label className="flex items-center gap-2 text-xs font-black text-slate-700">
+              <Tag size={15} className="text-violet-600" /> {t.coupon}
+            </label>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={couponInput}
+                onChange={(event) => {
+                  const nextValue = event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+                  setCouponInput(nextValue);
+                  setCouponError("");
+                  if (couponResult) {
+                    setCouponResult(null);
+                    onCouponApplied?.("", null);
+                  }
+                }}
+                disabled={couponLoading}
+                placeholder={t.couponPlaceholder}
+                dir="ltr"
+                maxLength={32}
+                className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-left text-sm font-bold uppercase outline-none focus:border-violet-400"
+              />
+              {couponResult ? (
+                <button type="button" onClick={removeCoupon} className="rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600">{t.remove}</button>
+              ) : (
+                <button type="button" onClick={applyCoupon} disabled={couponLoading || couponInput.length < 3} className="rounded-xl bg-violet-600 px-4 text-xs font-black text-white disabled:opacity-50">{couponLoading ? "…" : t.apply}</button>
+              )}
+            </div>
+            {couponResult ? (
+              <p className="mt-2 flex items-center gap-1.5 text-xs font-black text-emerald-700">
+                <CheckCircle2 size={15} /> {couponResult.code}: {t.saved} ${Number(couponResult.discountAmountUsd || 0).toFixed(2)} · ${Number(couponResult.finalAmountUsd || 0).toFixed(2)}
+              </p>
+            ) : null}
+            {couponError ? <p role="alert" className="mt-2 text-xs font-bold text-rose-600">{couponError}</p> : null}
+          </div>
           <button
             type="button"
             onClick={onSelectHesabPay}

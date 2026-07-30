@@ -11,9 +11,7 @@ const TELEGRAM_CHANNEL_URL = "https://t.me/edutech_main";
 const INSTAGRAM_URL = "https://www.instagram.com/edutech_main/";
 const FACEBOOK_URL = "https://www.facebook.com/share/1KuPqHbFMv/";
 const YOUTUBE_URL = "https://www.youtube.com/@edutech_main";
-const disableLinkClick = (event) => {
-  event.preventDefault();
-};
+const disableLinkClick = (event) => event.preventDefault();
 
 function WhatsAppIcon({ size = 18, className = "" }) {
   return (
@@ -200,13 +198,9 @@ export default function Footer({ t }) {
         </div>
         <p className="mt-2">
           {isFa ? "توسعه داده شده توسط " : "Developed by "}
-          <a
-            href="#"
-            onClick={disableLinkClick}
-            className="cursor-default text-primary-700"
-          >
+          <span className="text-primary-700">
             {isFa ? "شرکت برنامه نویسی بودا" : "Boda Software Development Company"}
-          </a>
+          </span>
         </p>
       </div>
     </footer>

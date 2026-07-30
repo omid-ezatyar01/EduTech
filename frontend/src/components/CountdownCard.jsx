@@ -31,8 +31,8 @@ const parseDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const buildDateFromTime = (hour, minute) => {
-  const date = new Date();
+const buildDateFromTime = (hour, minute, referenceTime) => {
+  const date = new Date(referenceTime);
   date.setHours(hour, minute, 0, 0);
   return date;
 };
@@ -61,8 +61,23 @@ export default function CountdownCard({ course, language = "fa" }) {
   const timeUnitLabels = isFa
     ? ["ساعت", "دقیقه", "ثانیه"]
     : ["Hours", "Minutes", "Seconds"];
+  const [nowMs, setNowMs] = useState(0);
+
+  useEffect(() => {
+    let interval = null;
+    const timer = window.setTimeout(() => {
+      setNowMs(Date.now());
+      interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      if (interval) window.clearInterval(interval);
+    };
+  }, []);
+
   const countdownConfig = useMemo(() => {
     if (!course) return { targetTime: null, totalMs: 0, subtitle: t.noClass };
+    if (!nowMs) return { targetTime: null, totalMs: 0, subtitle: t.pending };
     const exactStart = parseDate(course.startAt || course.linkOpenAt);
     const exactEnd = parseDate(course.endAt || course.linkCloseAt);
 
@@ -71,7 +86,7 @@ export default function CountdownCard({ course, language = "fa" }) {
         targetTime: exactEnd,
         totalMs: exactStart
           ? Math.max(1, exactEnd.getTime() - exactStart.getTime())
-          : Math.max(1, exactEnd.getTime() - Date.now()),
+          : Math.max(1, exactEnd.getTime() - nowMs),
         subtitle: t.untilEnd,
       };
     }
@@ -79,7 +94,7 @@ export default function CountdownCard({ course, language = "fa" }) {
     if ((course.status === "scheduled" || course.status === "upcoming") && exactStart) {
       return {
         targetTime: exactStart,
-        totalMs: Math.max(1, exactStart.getTime() - Date.now()),
+        totalMs: Math.max(1, exactStart.getTime() - nowMs),
         subtitle: t.untilStart,
       };
     }
@@ -87,8 +102,8 @@ export default function CountdownCard({ course, language = "fa" }) {
     const parsed = parseTimeRange(course.time);
     if (!parsed) return { targetTime: null, totalMs: 0, subtitle: t.noTime };
 
-    const start = buildDateFromTime(parsed.startHour, parsed.startMinute);
-    const end = buildDateFromTime(parsed.endHour, parsed.endMinute);
+    const start = buildDateFromTime(parsed.startHour, parsed.startMinute, nowMs);
+    const end = buildDateFromTime(parsed.endHour, parsed.endMinute, nowMs);
     if (end <= start) {
       end.setDate(end.getDate() + 1);
     }
@@ -103,37 +118,22 @@ export default function CountdownCard({ course, language = "fa" }) {
 
     if (course.status === "scheduled") {
       const nextStart = new Date(start);
-      if (nextStart <= new Date()) {
+      if (nextStart.getTime() <= nowMs) {
         nextStart.setDate(nextStart.getDate() + 1);
       }
       return {
         targetTime: nextStart,
-        totalMs: Math.max(1, nextStart.getTime() - Date.now()),
+        totalMs: Math.max(1, nextStart.getTime() - nowMs),
         subtitle: t.untilStart,
       };
     }
 
     return { targetTime: null, totalMs: 0, subtitle: t.pending };
-  }, [course, t.noClass, t.noTime, t.pending, t.untilEnd, t.untilStart]);
+  }, [course, nowMs, t.noClass, t.noTime, t.pending, t.untilEnd, t.untilStart]);
 
-  const [remainingMs, setRemainingMs] = useState(() => {
-    if (!countdownConfig.targetTime) return 0;
-    return Math.max(0, countdownConfig.targetTime.getTime() - Date.now());
-  });
-
-  useEffect(() => {
-    if (!countdownConfig.targetTime) {
-      setRemainingMs(0);
-      return;
-    }
-
-    const tick = () =>
-      setRemainingMs(Math.max(0, countdownConfig.targetTime.getTime() - Date.now()));
-
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [countdownConfig.targetTime]);
+  const remainingMs = countdownConfig.targetTime
+    ? Math.max(0, countdownConfig.targetTime.getTime() - nowMs)
+    : 0;
 
   const progress = countdownConfig.totalMs
     ? Math.min(1, Math.max(0, remainingMs / countdownConfig.totalMs))

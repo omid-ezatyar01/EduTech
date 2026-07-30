@@ -281,6 +281,14 @@ const resolveDashboardBaseUsdAmount = (payment = {}) => {
   return 0;
 };
 
+const resolveDashboardCommissionRate = (payment = {}, fallbackRate = 0) => {
+  const snapshotRate = Number(payment?.platformCommissionRate);
+  if (Number.isFinite(snapshotRate) && snapshotRate >= 0 && snapshotRate <= 100) {
+    return snapshotRate;
+  }
+  return Number(fallbackRate || 0);
+};
+
 // @desc    Admin dashboard stats
 // @route   GET /api/v1/admin/dashboard
 // @access  Admin
@@ -314,12 +322,12 @@ export const getAdminDashboard = async (req, res) => {
       Payment.find({
         $or: [{ status: "paid" }, { paymentStatus: "paid" }],
       })
-        .select("amount baseAmountUsdCents paidAt createdAt")
+        .select("amount baseAmountUsdCents currency platformCommissionRate paidAt createdAt")
         .lean(),
       Payment.find({
         $or: [{ status: "paid" }, { paymentStatus: "paid" }],
       })
-        .select("amount baseAmountUsdCents currency gatewayAmount gatewayCurrency paymentMethod paidAt createdAt courseId studentId")
+        .select("amount baseAmountUsdCents currency gatewayAmount gatewayCurrency paymentMethod platformCommissionRate paidAt createdAt courseId studentId")
         .populate("courseId", "title")
         .populate("studentId", "name nameFa firstName firstNameFa email")
         .sort({ paidAt: -1, createdAt: -1 })
@@ -348,9 +356,12 @@ export const getAdminDashboard = async (req, res) => {
       const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
       const bucket = monthlyIncomeMap.get(monthKey);
       if (!bucket) return;
-      const baseUsd = Number(payment?.baseAmountUsdCents || 0) / 100;
-      const revenue = Number.isFinite(baseUsd) && baseUsd > 0 ? baseUsd : Number(payment?.amount || 0);
-      const platformIncome = (revenue * Number(commissionRate || 0)) / 100;
+      const revenue = resolveDashboardBaseUsdAmount(payment);
+      const appliedCommissionRate = resolveDashboardCommissionRate(
+        payment,
+        commissionRate,
+      );
+      const platformIncome = (revenue * appliedCommissionRate) / 100;
       bucket.totalRevenue += revenue;
       bucket.platformIncome += platformIncome;
     });
@@ -381,7 +392,11 @@ export const getAdminDashboard = async (req, res) => {
       monthlyIncome,
       recentPayments: recentPayments.map((payment) => {
         const baseRevenue = resolveDashboardBaseUsdAmount(payment);
-        const platformIncome = (baseRevenue * Number(commissionRate || 0)) / 100;
+        const appliedCommissionRate = resolveDashboardCommissionRate(
+          payment,
+          commissionRate,
+        );
+        const platformIncome = (baseRevenue * appliedCommissionRate) / 100;
         const studentName =
           payment?.studentId?.nameFa ||
           payment?.studentId?.firstNameFa ||
@@ -406,6 +421,156 @@ export const getAdminDashboard = async (req, res) => {
     return res.status(500).json({
       message: error.message,
     });
+  }
+};
+
+export const getAdminReports = async (req, res) => {
+  try {
+    const period = String(req.query.period || "90d");
+    const days = Number.parseInt(period, 10) || 90;
+    const startAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const paidFilter = {
+      $and: [
+        { $or: [{ status: "paid" }, { paymentStatus: "paid" }] },
+        {
+          $or: [
+            { paidAt: { $gte: startAt } },
+            { paidAt: null, createdAt: { $gte: startAt } },
+          ],
+        },
+      ],
+    };
+
+    const [payments, totalAttempts] = await Promise.all([
+      Payment.find(paidFilter)
+        .select(
+          "studentId courseId amount currency baseAmountUsdCents pricingRegion gatewayCurrency paymentMethod provider paidAt createdAt",
+        )
+        .populate(
+          "courseId",
+          "title teacher teacherId createdBy",
+        )
+        .lean(),
+      Payment.countDocuments({ createdAt: { $gte: startAt } }),
+    ]);
+
+    const studentIds = new Set();
+    const courseIds = new Set();
+    const teacherIds = new Set();
+    const channelCounts = new Map();
+    const marketCounts = new Map();
+    const revenueByPeriod = new Map();
+    const courseRows = new Map();
+    let revenue = 0;
+
+    payments.forEach((payment) => {
+      const paymentRevenue = resolveDashboardBaseUsdAmount(payment);
+      revenue += paymentRevenue;
+      if (payment.studentId) studentIds.add(String(payment.studentId));
+
+      const course = payment.courseId;
+      const courseId = String(course?._id || course || "");
+      if (courseId) {
+        courseIds.add(courseId);
+        const teacherId =
+          course?.teacher?._id ||
+          course?.teacher ||
+          course?.teacherId?._id ||
+          course?.teacherId ||
+          course?.createdBy?._id ||
+          course?.createdBy;
+        if (teacherId) teacherIds.add(String(teacherId));
+        const currentCourse = courseRows.get(courseId) || {
+          title: course?.title || "Course",
+          revenue: 0,
+          students: new Set(),
+        };
+        currentCourse.revenue += paymentRevenue;
+        if (payment.studentId) currentCourse.students.add(String(payment.studentId));
+        courseRows.set(courseId, currentCourse);
+      }
+
+      const channel = resolveDashboardPaymentMethodLabel(payment);
+      channelCounts.set(channel, Number(channelCounts.get(channel) || 0) + 1);
+
+      const region = String(payment.pricingRegion || "").toLowerCase();
+      const market = region === "afghanistan"
+        ? "Afghanistan"
+        : region === "iran"
+          ? "Iran"
+          : resolveDashboardMarketLabel(payment);
+      marketCounts.set(market, Number(marketCounts.get(market) || 0) + 1);
+
+      const sourceDate = new Date(payment.paidAt || payment.createdAt);
+      if (!Number.isNaN(sourceDate.getTime())) {
+        const key = `${sourceDate.getUTCFullYear()}-${String(sourceDate.getUTCMonth() + 1).padStart(2, "0")}`;
+        const current = revenueByPeriod.get(key) || {
+          month: sourceDate.toLocaleDateString("en-US", {
+            month: "short",
+            year: "numeric",
+            timeZone: "UTC",
+          }),
+          revenue: 0,
+          students: new Set(),
+          sortKey: key,
+        };
+        current.revenue += paymentRevenue;
+        if (payment.studentId) current.students.add(String(payment.studentId));
+        revenueByPeriod.set(key, current);
+      }
+    });
+
+    const toPercentRows = (counts) => {
+      const total = Array.from(counts.values()).reduce(
+        (sum, count) => sum + Number(count || 0),
+        0,
+      );
+      if (!total) return [];
+      return Array.from(counts.entries())
+        .map(([name, count]) => ({
+          name,
+          value: Math.round((Number(count || 0) / total) * 100),
+          count: Number(count || 0),
+        }))
+        .sort((left, right) => right.count - left.count);
+    };
+
+    return res.json({
+      data: {
+        period,
+        summary: {
+          revenue: Math.round((revenue + Number.EPSILON) * 100) / 100,
+          students: studentIds.size,
+          courses: courseIds.size,
+          teachers: teacherIds.size,
+          conversion: Math.max(totalAttempts, payments.length)
+            ? Math.round(
+                (payments.length / Math.max(totalAttempts, payments.length)) *
+                  10000,
+              ) / 100
+            : 0,
+        },
+        monthlyRevenue: Array.from(revenueByPeriod.values())
+          .sort((left, right) => left.sortKey.localeCompare(right.sortKey))
+          .map((row) => ({
+            month: row.month,
+            revenue: Math.round((row.revenue + Number.EPSILON) * 100) / 100,
+            students: row.students.size,
+          })),
+        channelMix: toPercentRows(channelCounts),
+        countryMix: toPercentRows(marketCounts),
+        topCourses: Array.from(courseRows.values())
+          .map((row) => ({
+            title: row.title,
+            revenue: Math.round((row.revenue + Number.EPSILON) * 100) / 100,
+            students: row.students.size,
+          }))
+          .sort((left, right) => right.revenue - left.revenue)
+          .slice(0, 8),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 

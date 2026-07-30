@@ -16,8 +16,13 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
+import { useNavigate } from "react-router";
 import StudentLayout from "../components/StudentLayout.jsx";
-import { getAuthUser } from "../../services/portal.js";
+import { clearAuth, getAuthUser, setAuthNotice } from "../../services/portal.js";
+import {
+  getLocalizedRequestErrorMessage,
+  isUnauthorizedError,
+} from "../../services/http.js";
 import {
   connectSupportSocket,
   createSupportTicket,
@@ -131,6 +136,7 @@ const formatListTime = (value, isFa) => {
 };
 
 export default function StudentSupportPage({ language = "fa" }) {
+  const navigate = useNavigate();
   const text = COPY[language] || COPY.fa;
   const isFa = language === "fa";
   const viewer = useMemo(() => getAuthUser() || {}, []);
@@ -188,6 +194,23 @@ export default function StudentSupportPage({ language = "fa" }) {
   const typingActiveRef = useRef(false);
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
+  const conversationRequestIdRef = useRef(0);
+  const handleRequestError = useCallback((err) => {
+    if (isUnauthorizedError(err)) {
+      setAuthNotice("Not authorized for this resource");
+      clearAuth();
+      navigate("/login", { replace: true });
+      return;
+    }
+    setError(
+      getLocalizedRequestErrorMessage(
+        err,
+        language,
+        "درخواست پشتیبانی انجام نشد.",
+        "The support request failed.",
+      ),
+    );
+  }, [language, navigate]);
 
   const loadTickets = useCallback(async () => {
     const data = await fetchMySupportTickets();
@@ -202,6 +225,8 @@ export default function StudentSupportPage({ language = "fa" }) {
 
   const loadConversation = useCallback(async (id, { before = "" } = {}) => {
     if (!id) return;
+    const requestId = conversationRequestIdRef.current + 1;
+    conversationRequestIdRef.current = requestId;
     const cacheKey = buildSupportCacheKey("student", viewerId, `ticket:${id}`);
     const cached = readSupportPageCache(cacheKey);
     if (cached) {
@@ -212,6 +237,7 @@ export default function StudentSupportPage({ language = "fa" }) {
       );
     }
     const data = await fetchSupportTicket(id, { before });
+    if (requestId !== conversationRequestIdRef.current) return;
     setConversation((current) => {
       const sameTicket = current?.ticket?.id === data.ticket?.id;
       const currentMessages = sameTicket ? current.messages || [] : [];
@@ -253,7 +279,7 @@ export default function StudentSupportPage({ language = "fa" }) {
         if (container) container.scrollTop += container.scrollHeight - previousHeight;
       });
     } catch (err) {
-      setError(err.message);
+      handleRequestError(err);
     } finally {
       setLoadingOlder(false);
       window.setTimeout(() => {
@@ -282,19 +308,19 @@ export default function StudentSupportPage({ language = "fa" }) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       loadTickets()
-        .catch((err) => setError(err.message))
+        .catch(handleRequestError)
         .finally(() => setLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadTickets]);
+  }, [handleRequestError, loadTickets]);
 
   useEffect(() => {
     if (!selectedId) return;
     const timer = window.setTimeout(() => {
-      loadConversation(selectedId).catch((err) => setError(err.message));
+      loadConversation(selectedId).catch(handleRequestError);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [selectedId, loadConversation]);
+  }, [handleRequestError, selectedId, loadConversation]);
 
   const latestConversationMessageId =
     conversation?.messages?.[conversation.messages.length - 1]?.id || "";
@@ -437,6 +463,7 @@ export default function StudentSupportPage({ language = "fa" }) {
 
   const create = async (event) => {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
@@ -452,7 +479,7 @@ export default function StudentSupportPage({ language = "fa" }) {
       setSelectedId(data.ticket.id);
       setMobileChatOpen(true);
     } catch (err) {
-      setError(err.message);
+      handleRequestError(err);
     } finally {
       setBusy(false);
     }
@@ -461,7 +488,7 @@ export default function StudentSupportPage({ language = "fa" }) {
   const send = async (event) => {
     event.preventDefault();
     const body = draft.trim();
-    if (!body || !selectedId) return;
+    if (!body || !selectedId || busy) return;
     setBusy(true);
     notifyTyping(false);
     setDraft("");
@@ -500,7 +527,7 @@ export default function StudentSupportPage({ language = "fa" }) {
       }
     } catch (err) {
       setDraft(body);
-      setError(err.message);
+      handleRequestError(err);
     } finally {
       setBusy(false);
     }
@@ -523,6 +550,7 @@ export default function StudentSupportPage({ language = "fa" }) {
   };
 
   const editMessage = async (message) => {
+    if (busy) return;
     const body = window.prompt(
       isFa ? "پیام را ویرایش کنید" : "Edit message",
       message.body,
@@ -533,7 +561,7 @@ export default function StudentSupportPage({ language = "fa" }) {
       await updateSupportMessage(selectedId, message.id, body);
       await Promise.all([loadConversation(selectedId), loadTickets()]);
     } catch (err) {
-      setError(err.message);
+      handleRequestError(err);
     } finally {
       setBusy(false);
     }
@@ -551,6 +579,7 @@ export default function StudentSupportPage({ language = "fa" }) {
   };
 
   const deleteSelection = async (scope) => {
+    if (busy) return;
     const messageIds = [...selectedMessageIds].filter((messageId) => {
       const message = conversation?.messages?.find((row) => row.id === messageId);
       return message && !message.deletedForEveryone;
@@ -591,7 +620,7 @@ export default function StudentSupportPage({ language = "fa" }) {
       );
       setSelectedMessageIds(new Set());
     } catch (err) {
-      setError(err.message);
+      handleRequestError(err);
     } finally {
       setBusy(false);
     }
@@ -621,7 +650,18 @@ export default function StudentSupportPage({ language = "fa" }) {
 
         {error ? (
           <div className="mb-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">
-            {error}
+            <p>{error}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setError("");
+                setLoading(true);
+                loadTickets().catch(handleRequestError).finally(() => setLoading(false));
+              }}
+              className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-black ring-1 ring-red-200"
+            >
+              {isFa ? "تلاش دوباره" : "Try again"}
+            </button>
           </div>
         ) : null}
 

@@ -24,6 +24,7 @@ export const loginUser = (userData) =>
 export const getCurrentUser = async () => {
   const response = await fetch(`${getApiBase()}/auth/profile`, {
     headers: buildAuthHeaders(),
+    cache: "no-store",
   });
   return parseJsonResponse(response);
 };

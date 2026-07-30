@@ -91,10 +91,6 @@ function formatDuration(course = {}, language = "fa") {
   return String(course?.duration || "").trim() || (language === "fa" ? "نامشخص" : "Unknown");
 }
 
-function normalizeList(rows = []) {
-  return [...new Set((Array.isArray(rows) ? rows : []).map((item) => String(item || "").trim()).filter(Boolean))];
-}
-
 function getInitials(value = "") {
   const words = String(value)
     .trim()
@@ -138,156 +134,6 @@ function rowBelongsToCourse(row = {}, course = {}) {
   );
 }
 
-function formatShortDate(dateValue, language = "fa") {
-  const date = new Date(dateValue || "");
-  if (Number.isNaN(date.getTime())) return language === "fa" ? "به‌زودی" : "Soon";
-  if (language === "fa") {
-    return new Intl.DateTimeFormat("fa-AF-u-ca-persian", {
-      month: "short",
-      day: "numeric",
-    }).format(date);
-  }
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}
-
-function buildMockStudentWorkspaceData({
-  course = {},
-  enrollment = {},
-  teacherName = "",
-  learningPoints = [],
-  requirementPoints = [],
-  audiencePoints = [],
-  language = "fa",
-}) {
-  const isFa = language === "fa";
-  const progress = Math.min(
-    96,
-    Math.max(
-      12,
-      Number(enrollment?.progressPercent || enrollment?.progress || 0) ||
-        20 + ((learningPoints.length || 3) * 7),
-    ),
-  );
-  const completedUnits = Math.max(1, Math.min(learningPoints.length || 4, Math.round(progress / 20)));
-  const totalUnits = Math.max(completedUnits + 1, learningPoints.length || 6);
-  const pendingAssignments = Math.max(1, Math.min(4, requirementPoints.length || 2));
-  const downloadableFiles = Math.max(8, (learningPoints.length + requirementPoints.length) * 2 || 10);
-
-  const studyModules = (learningPoints.length ? learningPoints : [
-    isFa ? "مرور مفاهیم اصلی کورس" : "Review core course concepts",
-    isFa ? "تمرین‌های هفتگی" : "Weekly practice tasks",
-    isFa ? "پروژه عملی" : "Hands-on project",
-    isFa ? "جلسه بازخورد" : "Feedback session",
-  ]).slice(0, 6).map((item, index) => ({
-    title: item,
-    lessons: isFa ? `${index + 3} درس` : `${index + 3} lessons`,
-    duration: isFa ? `${(index + 1) * 35} دقیقه` : `${(index + 1) * 35} min`,
-    status:
-      index < completedUnits
-        ? (isFa ? "تکمیل شده" : "Completed")
-        : index === completedUnits
-          ? (isFa ? "در حال یادگیری" : "In progress")
-          : (isFa ? "در صف مطالعه" : "Queued"),
-    accent:
-      index < completedUnits
-        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-        : index === completedUnits
-          ? "bg-primary-50 text-primary-700 border-primary-200"
-          : "bg-slate-50 text-slate-600 border-slate-200",
-  }));
-
-  const resourceGroups = [
-    {
-      title: isFa ? "ویدیوها و ضبط‌ها" : "Videos & Recordings",
-      count: isFa ? `${Math.max(6, completedUnits + 4)} فایل` : `${Math.max(6, completedUnits + 4)} files`,
-      text: isFa ? "جلسات ضبط‌شده، ویدیوهای کوتاه و مرور درس‌ها." : "Recorded classes, short lessons, and recap videos.",
-    },
-    {
-      title: isFa ? "جزوه و اسلاید" : "Notes & Slides",
-      count: isFa ? `${Math.max(4, completedUnits + 2)} فایل` : `${Math.max(4, completedUnits + 2)} files`,
-      text: isFa ? "خلاصه درس، فایل‌های PDF و اسلایدهای استاد." : "Lesson summaries, PDFs, and instructor slide decks.",
-    },
-    {
-      title: isFa ? "تمرین و پروژه" : "Practice & Projects",
-      count: isFa ? `${pendingAssignments + 2} مورد` : `${pendingAssignments + 2} items`,
-      text: isFa ? "تمرین‌های عملی، پروژه‌ها و نمونه‌کارهای ارزیابی." : "Hands-on tasks, projects, and graded practice work.",
-    },
-    {
-      title: isFa ? "فایل‌های کمکی" : "Support Files",
-      count: isFa ? `${downloadableFiles} دانلود` : `${downloadableFiles} downloads`,
-      text: isFa ? "چک‌لیست‌ها، واژه‌نامه‌ها و فایل‌های کمکی کورس." : "Checklists, glossaries, and support documents for the course.",
-    },
-  ];
-
-  const announcements = [
-    {
-      title: isFa ? "نقشه این هفته کورس" : "This Week's Learning Plan",
-      date: formatShortDate(course?.updatedAt || course?.startDate, language),
-      text: isFa
-        ? `${teacherName} مسیر مطالعه این هفته را آپدیت کرده است. ابتدا محتوای ماژول جاری را بخوانید، سپس تمرین عملی را ارسال کنید.`
-        : `${teacherName} updated this week's study flow. Review the current module first, then submit the practical exercise.`,
-    },
-    {
-      title: isFa ? "تمرین جدید اضافه شد" : "New Assignment Added",
-      date: formatShortDate(course?.createdAt || course?.startDate, language),
-      text: isFa
-        ? "یک تمرین جدید برای تثبیت مفاهیم این بخش اضافه شده و بهتر است پیش از جلسه بعدی تکمیل شود."
-        : "A new practice task was added for this section and should ideally be completed before the next session.",
-    },
-    {
-      title: isFa ? "منابع تکمیلی منتشر شد" : "Supplementary Resources Posted",
-      date: isFa ? "امروز" : "Today",
-      text: isFa
-        ? "جزوه‌های کمکی و فایل‌های تکمیلی برای مرور بهتر مطالب در دسترس قرار گرفته است."
-        : "Extra notes and support material are now available for stronger revision.",
-    },
-  ];
-
-  const questionThreads = [
-    {
-      question: isFa ? "برای این بخش از کورس، اول ویدیوها را ببینیم یا تمرین را شروع کنیم؟" : "Should we watch the videos first or start with the exercise for this section?",
-      answer: isFa
-        ? `${teacherName}: بهتر است ویدیوی اصلی و خلاصه جزوه را ببینید، بعد تمرین را حل کنید تا بازخورد دقیق‌تری بگیرید.`
-        : `${teacherName}: Start with the main lesson and notes, then do the exercise so your feedback is more accurate.`,
-    },
-    {
-      question: isFa ? "اگر در جلسه زنده حاضر نشوم، آیا ضبط آن در دسترس می‌ماند؟" : "If I miss the live session, will the recording stay available?",
-      answer: isFa
-        ? "بله، ضبط جلسه همراه با فایل‌های مرتبط در بخش منابع کورس قرار می‌گیرد."
-        : "Yes, the session recording and related files will be added to the course resources area.",
-    },
-    {
-      question: isFa ? "برای آمادگی بهتر، کدام منابع این هفته مهم‌تر است؟" : "Which resources matter most for this week's preparation?",
-      answer: isFa
-        ? "ماژول جاری، تمرین هفتگی و جلسه رفع اشکال این هفته اولویت اصلی شما است."
-        : "Prioritize the current module, the weekly assignment, and the upcoming Q&A clinic.",
-    },
-  ];
-
-  const supportCards = [
-  ];
-
-  return {
-    progress,
-    completedUnits,
-    totalUnits,
-    pendingAssignments,
-    downloadableFiles,
-    studyModules,
-    resourceGroups,
-    announcements,
-    questionThreads,
-    supportCards,
-    audienceHighlights: (audiencePoints.length ? audiencePoints : [
-      isFa ? "دانشجویانی که می‌خواهند با برنامه مشخص پیش بروند." : "Students who want a structured study path.",
-      isFa ? "کسانی که به تمرین، بازخورد و جلسه زنده نیاز دارند." : "Learners who benefit from practice, feedback, and live sessions.",
-    ]).slice(0, 3),
-  };
-}
-
 export default function StudentCourseWorkspace({ language = "fa" }) {
   const isFa = language === "fa";
   const { id } = useParams();
@@ -301,6 +147,7 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
   const [studentRatings, setStudentRatings] = useState([]);
   const [ratingModalOpen, setRatingModalOpen] = useState(false);
   const [ratingNotice, setRatingNotice] = useState("");
+  const [refreshSeed, setRefreshSeed] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -398,7 +245,7 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
     return () => {
       mounted = false;
     };
-  }, [id, language, navigate]);
+  }, [id, language, navigate, refreshSeed]);
 
   const course = useMemo(() => enrollment?.courseId || {}, [enrollment?.courseId]);
   const courseId = String(course?._id || course?.id || "");
@@ -432,9 +279,6 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
     () => (Array.isArray(course?.schedule) ? course.schedule : []),
     [course],
   );
-  const learningPoints = normalizeList(course?.whatYouWillLearn || course?.curriculumTopics || []);
-  const requirementPoints = normalizeList(course?.requirements || []);
-  const audiencePoints = normalizeList(course?.targetAudience || []);
   const statusLabel = useMemo(() => {
     const status = String(enrollment?.enrollmentStatus || "").toLowerCase();
     if (status === "active") return isFa ? "فعال" : "Active";
@@ -491,32 +335,11 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
 
     return {
       progress,
-      weeklySessions: Math.max(1, scheduleRows.length || 0),
+      weeklySessions: scheduleRows.length,
       pendingAssignments,
       downloadableFiles,
     };
   }, [course, courseAssignments, courseResources, enrollment, scheduleRows.length]);
-  const workspaceData = useMemo(
-    () =>
-      buildMockStudentWorkspaceData({
-        course,
-        enrollment,
-        teacherName,
-        learningPoints,
-        requirementPoints,
-        audiencePoints,
-        language,
-      }),
-    [
-      audiencePoints,
-      course,
-      enrollment,
-      language,
-      learningPoints,
-      requirementPoints,
-      teacherName,
-    ],
-  );
   const workspaceLinks = [
     {
       to: "/student/live",
@@ -561,8 +384,16 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
   if (loading) {
     return (
       <StudentLayout language={language}>
-        <div className="rounded-[24px] border border-slate-200 bg-white py-20 text-center text-sm font-semibold text-slate-500">
-          {isFa ? "در حال بارگذاری صفحه کورس" : "Loading course page"}
+        <div
+          className="animate-pulse space-y-5"
+          aria-label={isFa ? "در حال بارگذاری صفحه کورس" : "Loading course page"}
+        >
+          <div className="h-72 rounded-[28px] border border-slate-200 bg-slate-100" />
+          <div className="grid gap-3 md:grid-cols-4">
+            {[0, 1, 2, 3].map((item) => (
+              <div key={item} className="h-24 rounded-2xl bg-slate-100" />
+            ))}
+          </div>
         </div>
       </StudentLayout>
     );
@@ -573,6 +404,13 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
       <StudentLayout language={language}>
         <div className="rounded-[24px] border border-rose-200 bg-white p-8 text-center">
           <p className="text-sm font-bold text-rose-600">{error}</p>
+          <button
+            type="button"
+            onClick={() => setRefreshSeed((value) => value + 1)}
+            className="mt-4 rounded-xl bg-primary-600 px-5 py-2.5 text-sm font-black text-white"
+          >
+            {isFa ? "تلاش دوباره" : "Try again"}
+          </button>
         </div>
       </StudentLayout>
     );
@@ -821,16 +659,10 @@ export default function StudentCourseWorkspace({ language = "fa" }) {
               </p>
             </div>
           </div>
-          <div className="mt-5 space-y-3">
-            {workspaceData.announcements.map((item) => (
-              <div key={`${item.title}-${item.date}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm font-black text-slate-900">{item.title}</p>
-                  <span className="text-xs font-bold text-slate-500">{item.date}</span>
-                </div>
-                <p className="mt-2 text-xs leading-6 text-slate-600">{item.text}</p>
-              </div>
-            ))}
+          <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-semibold text-slate-600">
+            {isFa
+              ? "هنوز اعلانی برای این کورس ثبت نشده است."
+              : "No announcements have been posted for this course yet."}
           </div>
         </section>
       </div>

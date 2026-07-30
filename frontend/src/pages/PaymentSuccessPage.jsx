@@ -51,10 +51,12 @@ export default function PaymentSuccessPage() {
   const navigate = useNavigate();
   const reference = searchParams.get("ref");
   const paymentAttemptId = searchParams.get("paymentAttemptId");
+  const hasPaymentReference = Boolean(reference || paymentAttemptId);
   const [status, setStatus] = useState("pending");
   const [courseTitle, setCourseTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retrySeed, setRetrySeed] = useState(0);
 
   const language = useMemo(() => {
     const saved = localStorage.getItem("edutech-language");
@@ -62,11 +64,7 @@ export default function PaymentSuccessPage() {
   }, []);
 
   useEffect(() => {
-    if (!reference && !paymentAttemptId) {
-      setError(language === "fa" ? "شناسه پرداخت نامعتبر است." : "Invalid payment reference.");
-      setLoading(false);
-      return;
-    }
+    if (!hasPaymentReference) return undefined;
 
     let isMounted = true;
     let pollTimer = null;
@@ -126,8 +124,7 @@ export default function PaymentSuccessPage() {
           ),
         );
       } finally {
-        if (!isMounted) return;
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
@@ -137,7 +134,7 @@ export default function PaymentSuccessPage() {
       isMounted = false;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [language, navigate, paymentAttemptId, reference]);
+  }, [hasPaymentReference, language, navigate, paymentAttemptId, reference, retrySeed]);
 
   const meta = statusMeta[status] || statusMeta.pending;
   const Icon = meta.icon;
@@ -155,12 +152,28 @@ export default function PaymentSuccessPage() {
 
         <h1 className="text-2xl font-black text-slate-950">{title}</h1>
 
-        {loading ? (
+        {!hasPaymentReference ? (
+          <p className="mt-3 text-sm font-semibold text-rose-600">
+            {language === "fa" ? "شناسه پرداخت نامعتبر است." : "Invalid payment reference."}
+          </p>
+        ) : loading ? (
           <p className="mt-3 text-sm font-semibold text-slate-500">
             {language === "fa" ? "در حال بررسی وضعیت پرداخت" : "Checking payment status"}
           </p>
         ) : error ? (
-          <p className="mt-3 text-sm font-semibold text-rose-600">{error}</p>
+          <div className="mt-3">
+            <p className="text-sm font-semibold text-rose-600">{error}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                setRetrySeed((value) => value + 1);
+              }}
+              className="mt-4 rounded-xl bg-rose-50 px-4 py-2 text-sm font-black text-rose-700"
+            >
+              {language === "fa" ? "بررسی دوباره" : "Check again"}
+            </button>
+          </div>
         ) : (
           <>
             <p className="mt-3 text-sm font-semibold text-slate-600">{text}</p>

@@ -9,10 +9,27 @@ import { resolveCourseAccessWindow } from "../utils/courseAccess.js";
 import { sendCourseEnrollmentCongratsEmail } from "../utils/Email.js";
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
+import { recordCouponRedemption } from "../services/coupon.service.js";
 
 const isPaidStatus = (payment) => {
   return payment.status === "paid" || payment.paymentStatus === "paid";
 };
+const escapeRegex = (value = "") =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const recordPaymentCouponRedemption = (payment) =>
+  recordCouponRedemption({
+    couponId: payment.couponId,
+    couponCode: payment.couponCode,
+    userId: payment.studentId,
+    courseId: payment.courseId,
+    orderId: payment.orderId || undefined,
+    paymentId: payment._id,
+    originalBaseAmountUsdCents:
+      payment.originalBaseAmountUsdCents ?? payment.baseAmountUsdCents,
+    discountAmountUsdCents: payment.discountAmountUsdCents || 0,
+    finalBaseAmountUsdCents: payment.baseAmountUsdCents,
+    redeemedAt: payment.paidAt || new Date(),
+  });
 
 export const getAdminPaymentsList = asyncHandler(async (req, res) => {
   const page = Number(req.query.page) || 1;
@@ -25,10 +42,11 @@ export const getAdminPaymentsList = asyncHandler(async (req, res) => {
   }
 
   if (req.query.search) {
+    const safeSearch = escapeRegex(req.query.search);
     const userIds = await User.find({
       $or: [
-        { name: { $regex: req.query.search, $options: "i" } },
-        { email: { $regex: req.query.search, $options: "i" } },
+        { name: { $regex: safeSearch, $options: "i" } },
+        { email: { $regex: safeSearch, $options: "i" } },
       ],
     }).select("_id");
 
@@ -37,9 +55,10 @@ export const getAdminPaymentsList = asyncHandler(async (req, res) => {
     filter.$and = filter.$and || [];
     filter.$and.push({
       $or: [
-        { transactionId: { $regex: req.query.search, $options: "i" } },
-        { paymentReference: { $regex: req.query.search, $options: "i" } },
-        { customerEmail: { $regex: req.query.search, $options: "i" } },
+        { transactionId: { $regex: safeSearch, $options: "i" } },
+        { paymentReference: { $regex: safeSearch, $options: "i" } },
+        { customerEmail: { $regex: safeSearch, $options: "i" } },
+        { couponCode: { $regex: safeSearch, $options: "i" } },
         { studentId: { $in: matchedStudentIds } },
       ],
     });
@@ -57,12 +76,41 @@ export const getAdminPaymentsList = asyncHandler(async (req, res) => {
     Payment.aggregate([
       { $match: filter },
       {
+        $project: {
+          effectiveStatus: {
+            $cond: [
+              {
+                $or: [
+                  { $eq: ["$status", "paid"] },
+                  { $eq: ["$paymentStatus", "paid"] },
+                ],
+              },
+              "paid",
+              { $ifNull: ["$status", "$paymentStatus"] },
+            ],
+          },
+          baseRevenueUsd: {
+            $cond: [
+              { $gt: ["$baseAmountUsdCents", 0] },
+              { $divide: ["$baseAmountUsdCents", 100] },
+              {
+                $cond: [
+                  { $in: [{ $toUpper: { $ifNull: ["$currency", ""] } }, ["USD", "USDT"]] },
+                  "$amount",
+                  0,
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
         $group: {
-          _id: "$status",
+          _id: "$effectiveStatus",
           count: { $sum: 1 },
           revenue: {
             $sum: {
-              $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0],
+              $cond: [{ $eq: ["$effectiveStatus", "paid"] }, "$baseRevenueUsd", 0],
             },
           },
         },
@@ -129,6 +177,7 @@ export const verifyPaymentByAdmin = asyncHandler(async (req, res) => {
   }
 
   if (isPaidStatus(payment)) {
+    await recordPaymentCouponRedemption(payment);
     return res.json(
       new ApiResponse({
         message: "Payment already verified",
@@ -172,6 +221,7 @@ export const verifyPaymentByAdmin = asyncHandler(async (req, res) => {
   }
 
   await payment.save();
+  await recordPaymentCouponRedemption(payment);
 
   const accessWindow = resolveCourseAccessWindow({
     course,

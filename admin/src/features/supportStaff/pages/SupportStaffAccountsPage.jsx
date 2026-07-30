@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Headphones,
   KeyRound,
@@ -45,6 +45,7 @@ export default function SupportStaffAccountsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const loadRequestRef = useRef(0);
 
   const query = useMemo(
     () => ({ search, status, specialization }),
@@ -62,13 +63,23 @@ export default function SupportStaffAccountsPage() {
     [staff],
   );
   const load = useCallback(async () => {
-    const data = await fetchSupportStaff(query);
-    setStaff(Array.isArray(data.staff) ? data.staff : []);
+    const requestId = ++loadRequestRef.current;
+    try {
+      const data = await fetchSupportStaff(query);
+      if (requestId !== loadRequestRef.current) return;
+      setStaff(Array.isArray(data.staff) ? data.staff : []);
+      setError("");
+    } catch (err) {
+      if (requestId === loadRequestRef.current) throw err;
+    } finally {
+      if (requestId === loadRequestRef.current) setLoading(false);
+    }
   }, [query]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      load().catch((err) => setError(err.message)).finally(() => setLoading(false));
+      setLoading(true);
+      load().catch((err) => setError(err.message));
     }, 200);
     return () => clearTimeout(timer);
   }, [load]);
@@ -77,6 +88,14 @@ export default function SupportStaffAccountsPage() {
     event.preventDefault();
     if (form.password !== form.confirmPassword) {
       setError(isFa ? "رمزهای عبور یکسان نیستند." : "Passwords do not match.");
+      return;
+    }
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/.test(form.password)) {
+      setError(
+        isFa
+          ? "رمز عبور باید حداقل ۸ نویسه و شامل حرف بزرگ، حرف کوچک و عدد باشد."
+          : "Password must be at least 8 characters and include uppercase, lowercase, and a number.",
+      );
       return;
     }
     setBusy(true);
@@ -102,6 +121,20 @@ export default function SupportStaffAccountsPage() {
   };
 
   const toggleStatus = async (row) => {
+    const blocking = row.status === "active";
+    if (
+      !window.confirm(
+        blocking
+          ? isFa
+            ? "این حساب مسدود و تکت‌های فعال آن دوباره در صف قرار داده شوند؟"
+            : "Block this account and return its active tickets to the team queue?"
+          : isFa
+            ? "این حساب دوباره فعال شود؟"
+            : "Reactivate this support account?",
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -141,6 +174,14 @@ export default function SupportStaffAccountsPage() {
     if (!resetTarget) return;
     if (newPassword !== confirmNewPassword) {
       setError(isFa ? "رمزهای عبور یکسان نیستند." : "Passwords do not match.");
+      return;
+    }
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/.test(newPassword)) {
+      setError(
+        isFa
+          ? "رمز عبور باید حداقل ۸ نویسه و شامل حرف بزرگ، حرف کوچک و عدد باشد."
+          : "Password must be at least 8 characters and include uppercase, lowercase, and a number.",
+      );
       return;
     }
     setBusy(true);

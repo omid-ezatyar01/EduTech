@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
-  Clock3,
   Eye,
   GraduationCap,
   Plus,
@@ -14,6 +13,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http.js";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 import useDebouncedValue from "../hooks/useDebouncedValue.js";
@@ -28,9 +28,7 @@ import {
 
 const PAGE_SIZE = 30;
 const ADMIN_STUDENTS_CACHE_TTL_MS = 5 * 60 * 1000;
-const ADMIN_STUDENTS_REQUEST_GUARD_TTL_MS = 15 * 1000;
 const ADMIN_STUDENTS_STATS_CACHE_KEY = getAdminPageCacheKey("students-stats");
-const recentStudentsRequestKeys = new Map();
 const getAdminStudentsListCacheKey = ({ page, search, statusFilter }) =>
   getAdminPageCacheKey("students-list", {
     page,
@@ -39,16 +37,6 @@ const getAdminStudentsListCacheKey = ({ page, search, statusFilter }) =>
   });
 const getAdminStudentDetailsCacheKey = (studentId) =>
   getAdminPageCacheKey("student-details", { studentId });
-
-const shouldSkipRecentStudentsRequest = (key) => {
-  const now = Date.now();
-  const lastTime = Number(recentStudentsRequestKeys.get(key) || 0);
-  if (lastTime && now - lastTime < ADMIN_STUDENTS_REQUEST_GUARD_TTL_MS) {
-    return true;
-  }
-  recentStudentsRequestKeys.set(key, now);
-  return false;
-};
 
 const PAGE_TEXT = {
   "Student operations": "عملیات شاگردان",
@@ -71,7 +59,6 @@ const PAGE_TEXT = {
   "All statuses": "همه وضعیت‌ها",
   "Add student": "افزودن شاگرد",
   Student: "شاگرد",
-  Email: "ایمیل",
   "Phone number": "شماره تماس",
   Location: "موقعیت",
   Learning: "یادگیری",
@@ -180,16 +167,6 @@ const formatDate = (value, language = "en") => {
   }).format(date);
 };
 
-const formatDateTime = (value, language = "en") => {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString(language === "fa" ? "fa-AF" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-};
-
 const mapApiStatusToLabel = (status, pageTr) => {
   if (status === "active") return pageTr("Active");
   if (status === "blocked") return pageTr("Blocked");
@@ -215,11 +192,13 @@ const resolvePaymentPlanLabel = (value, pageTr) =>
 export default function AdminStudentsPage() {
   const { t, language, isRTL } = useAdminI18n();
   const pageTr = useCallback((text) => translateText(t(text), language), [t, language]);
+  const [searchParams] = useSearchParams();
+  const requestedSearch = searchParams.get("q") || "";
   const [statsData, setStatsData] = useState(FALLBACK_STATS);
   const [students, setStudents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
-  const [searchText, setSearchText] = useState("");
+  const [searchText, setSearchText] = useState(requestedSearch);
   const debouncedSearch = useDebouncedValue(searchText.trim(), 350);
   const [statusFilter, setStatusFilter] = useState("all");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -231,6 +210,14 @@ export default function AdminStudentsPage() {
     totalUsers: 0,
     totalPages: 1,
   });
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchText(requestedSearch);
+      setPage(1);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -265,9 +252,6 @@ export default function AdminStudentsPage() {
 
       const requestKey = `students-stats:${refreshKey}`;
       if (lastStatsRequestKeyRef.current === requestKey) {
-        return;
-      }
-      if (shouldSkipRecentStudentsRequest(requestKey)) {
         return;
       }
       lastStatsRequestKeyRef.current = requestKey;
@@ -319,6 +303,7 @@ export default function AdminStudentsPage() {
       const cached = readAdminPageCache(cacheKey, {
         maxAgeMs: ADMIN_STUDENTS_CACHE_TTL_MS,
       });
+      const hasCachedRows = Boolean(cached);
       if (cached) {
         setStudents(Array.isArray(cached.students) ? cached.students : []);
         setPagination(cached.pagination || { page: 1, limit: PAGE_SIZE, totalUsers: 0, totalPages: 1 });
@@ -340,9 +325,6 @@ export default function AdminStudentsPage() {
         language,
       });
       if (lastStudentsRequestKeyRef.current === requestKey) {
-        return;
-      }
-      if (shouldSkipRecentStudentsRequest(`students-list:${requestKey}`)) {
         return;
       }
       lastStudentsRequestKeyRef.current = requestKey;
@@ -402,8 +384,10 @@ export default function AdminStudentsPage() {
         },
         onError: (error) => {
           console.error("Error fetching students:", error);
-          setStudents([]);
-          setPagination({ page: 1, limit: PAGE_SIZE, totalUsers: 0, totalPages: 1 });
+          if (!hasCachedRows) {
+            setStudents([]);
+            setPagination({ page: 1, limit: PAGE_SIZE, totalUsers: 0, totalPages: 1 });
+          }
           setErrorMessage(error.message || pageTr("Failed to fetch students list."));
         },
         onFinally: () => setIsLoading(false),

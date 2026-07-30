@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, AlertCircle, Clock, Users } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 import TeacherLayout from "../layouts/TeacherLayout";
@@ -67,12 +67,16 @@ export default function TeacherStudents() {
       "all",
     [location.search],
   );
+  const requestedSearch = useMemo(
+    () => new URLSearchParams(location.search).get("q") || "",
+    [location.search],
+  );
   const initialStudentsCache = readTeacherPageCache(getStudentsCacheKey({
     page: 1,
-    search: "",
+    search: requestedSearch,
     course: initialCourse,
   }));
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(requestedSearch);
   const [course, setCourse] = useState(initialCourse);
   const [page, setPage] = useState(1);
   const [openMenuId, setOpenMenuId] = useState(null);
@@ -86,6 +90,7 @@ export default function TeacherStudents() {
   const [loading, setLoading] = useState(!initialStudentsCache);
   const [error, setError] = useState("");
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const studentsRequestRef = useRef(0);
 
   useLiveDataRefresh(() => setRefreshSeed((prev) => prev + 1), {
     intervalMs: 0,
@@ -102,6 +107,7 @@ export default function TeacherStudents() {
 
   useEffect(() => {
     const timer = setTimeout(async () => {
+      const requestId = ++studentsRequestRef.current;
       const cacheKey = getStudentsCacheKey({ page, search, course });
       const cached = readTeacherPageCache(cacheKey);
       if (cached) {
@@ -124,6 +130,7 @@ export default function TeacherStudents() {
           search,
           course: course === "all" ? "" : course,
         });
+        if (requestId !== studentsRequestRef.current) return;
 
         const nextStudents = Array.isArray(data?.students) ? data.students.map(mapStudentRow) : [];
         const nextNewStudents = Array.isArray(data?.newStudents) ? data.newStudents.map(mapStudentRow) : [];
@@ -154,18 +161,17 @@ export default function TeacherStudents() {
           meta: nextMeta,
         });
       } catch (err) {
+        if (requestId !== studentsRequestRef.current) return;
         setError(err?.message || "خطا در دریافت اطلاعات شاگردان");
-        setStudents([]);
-        setNewStudents([]);
-        setCourseOptions([]);
-        setStatsData(DEFAULT_STUDENT_STATS);
-        setMeta(DEFAULT_STUDENT_META);
       } finally {
-        setLoading(false);
+        if (requestId === studentsRequestRef.current) setLoading(false);
       }
     }, 250);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      studentsRequestRef.current += 1;
+    };
   }, [page, search, course, refreshSeed]);
 
   useEffect(() => {
@@ -175,6 +181,14 @@ export default function TeacherStudents() {
     }, 0);
     return () => clearTimeout(timer);
   }, [initialCourse]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(requestedSearch);
+      setPage(1);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [requestedSearch]);
 
   const handleSearchChange = (value) => {
     setSearch(value);
@@ -228,7 +242,23 @@ export default function TeacherStudents() {
       return;
     }
 
-    showToast(`عملیات «${action}» برای ${student.name} انجام شد`);
+    const studentCourseId = String(student.courseId || course || "");
+    if (action === "مشاهده تمرین‌ها") {
+      navigate(
+        studentCourseId && studentCourseId !== "all"
+          ? `/teacher/assignments?courseId=${encodeURIComponent(studentCourseId)}`
+          : "/teacher/assignments",
+      );
+      return;
+    }
+
+    if (action === "گزارش حضور") {
+      navigate(
+        studentCourseId && studentCourseId !== "all"
+          ? `/teacher/attendance?courseId=${encodeURIComponent(studentCourseId)}`
+          : "/teacher/attendance",
+      );
+    }
   };
 
   const handleQuickAction = (action) => {

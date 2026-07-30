@@ -500,6 +500,24 @@ export const markSupportTicketRead = asyncHandler(async (req, res) => {
   return res.json(new ApiResponse({ message: "Ticket marked as read", data }));
 });
 
+export const reopenSupportTicket = asyncHandler(async (req, res) => {
+  const ticket = await findAccessibleTicket(req.params.ticketId, req.user);
+  if (!["resolved", "closed"].includes(ticket.status)) {
+    throw new ApiError(409, "Only resolved or closed tickets can be reopened");
+  }
+
+  ticket.status = "open";
+  ticket.resolvedAt = null;
+  ticket.closedAt = null;
+  ticket.unreadForSupport = Math.max(1, Number(ticket.unreadForSupport || 0));
+  await ticket.save();
+
+  const updated = await populatedTicket(SupportTicket.findById(ticket._id));
+  const data = { ticket: mapTicket(updated) };
+  emitSupportEvent({ ticket: updated, event: "support:ticket-updated", data });
+  return res.json(new ApiResponse({ message: "Support ticket reopened", data }));
+});
+
 export const getAdminSupportTickets = asyncHandler(async (req, res) => {
   const query = req.validated?.query || req.query || {};
   const page = Math.max(1, Number(query.page) || 1);

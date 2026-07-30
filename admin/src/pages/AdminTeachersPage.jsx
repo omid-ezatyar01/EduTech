@@ -21,6 +21,7 @@ import {
   BellRing,
   CheckCircle2,
 } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http.js";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 import useDebouncedValue from "../hooks/useDebouncedValue.js";
@@ -41,9 +42,7 @@ const FALLBACK_STATS = {
   blockedTeachers: 0,
 };
 const ADMIN_TEACHERS_CACHE_TTL_MS = 5 * 60 * 1000;
-const ADMIN_TEACHERS_REQUEST_GUARD_TTL_MS = 15 * 1000;
 const ADMIN_TEACHERS_STATS_CACHE_KEY = getAdminPageCacheKey("teachers-stats");
-const recentTeachersRequestKeys = new Map();
 const DEFAULT_TEACHERS_LIST_CACHE_KEY = getAdminPageCacheKey("teachers-list", {
   page: 1,
   search: "",
@@ -236,16 +235,6 @@ const translateText = (text, language) => {
   return PAGE_TEXT[text] || text;
 };
 
-const shouldSkipRecentTeachersRequest = (key) => {
-  const now = Date.now();
-  const lastTime = Number(recentTeachersRequestKeys.get(key) || 0);
-  if (lastTime && now - lastTime < ADMIN_TEACHERS_REQUEST_GUARD_TTL_MS) {
-    return true;
-  }
-  recentTeachersRequestKeys.set(key, now);
-  return false;
-};
-
 const formatNumber = (value, language = "en") =>
   new Intl.NumberFormat(language === "fa" ? "fa-AF" : "en-US").format(Number(value || 0));
 
@@ -297,10 +286,11 @@ const formatDateOnly = (value, language = "en") => {
 
 const toDateInputValue = (value) => {
   if (!value) return "";
+  const isoDate = String(value).match(/^(\d{4}-\d{2}-\d{2})(?:T|$)/)?.[1];
+  if (isoDate) return isoDate;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const timezoneOffsetMs = date.getTimezoneOffset() * 60 * 1000;
-  return new Date(date.getTime() - timezoneOffsetMs).toISOString().slice(0, 10);
+  return date.toISOString().slice(0, 10);
 };
 
 const formatPlainNumber = (value) => new Intl.NumberFormat("en-US").format(Number(value) || 0);
@@ -308,7 +298,12 @@ const formatPlainNumber = (value) => new Intl.NumberFormat("en-US").format(Numbe
 const getFileName = (value = "") => {
   const normalized = String(value || "").split("?")[0];
   const filename = normalized.split("/").filter(Boolean).pop();
-  return filename ? decodeURIComponent(filename) : "Document";
+  if (!filename) return "Document";
+  try {
+    return decodeURIComponent(filename);
+  } catch {
+    return filename;
+  }
 };
 
 const getPublicFileUrl = (value = "") => {
@@ -345,12 +340,14 @@ const buildApplicationDocuments = (application = {}) => {
     });
   }
 
-  const certificateFiles = [
+  const certificateFiles = [...new Set([
     ...(Array.isArray(application.certifications)
-      ? application.certifications.filter((item) => String(item || "").trim().startsWith("/uploads/"))
+      ? application.certifications.filter((item) =>
+          /(?:\/uploads\/|\.pdf(?:$|[?#]))/i.test(String(item || "").trim()),
+        )
       : []),
     application.certificatesFileUrl,
-  ].filter(Boolean);
+  ].map((item) => String(item || "").trim()).filter(Boolean))];
 
   certificateFiles.forEach((fileUrl, index) => {
     documents.push({
@@ -363,17 +360,47 @@ const buildApplicationDocuments = (application = {}) => {
   return documents;
 };
 
-const buildApplicationLinks = (application = {}) =>
-  [
+const buildApplicationLinks = (application = {}) => {
+  const rows = [
     { label: "Portfolio", href: application.portfolioUrl, icon: LinkIcon },
     { label: "Intro video", href: application.introVideoUrl, icon: Video },
+    ...(Array.isArray(application.courseIntroVideoUrls)
+      ? application.courseIntroVideoUrls.map((href, index) => ({
+          label: `Course video ${index + 1}`,
+          href,
+          icon: Video,
+        }))
+      : []),
   ].filter((item) => isLikelyUrl(item.href));
+
+  const seen = new Set();
+  return rows.filter((item) => {
+    const key = String(item.href).trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
 
 const buildTeacherSocialLinks = (teacher = {}) =>
   [
     { label: "LinkedIn", href: teacher?.socialLinks?.linkedin, icon: LinkIcon },
+    { label: "YouTube", href: teacher?.socialLinks?.youtube, icon: Video },
+    { label: "Instagram", href: teacher?.socialLinks?.instagram, icon: LinkIcon },
+    { label: "Facebook", href: teacher?.socialLinks?.facebook, icon: LinkIcon },
+    { label: "WhatsApp", href: teacher?.socialLinks?.whatsapp, icon: LinkIcon },
     { label: "GitHub", href: teacher?.socialLinks?.github, icon: LinkIcon },
   ].filter((item) => isLikelyUrl(item.href));
+
+const dedupeProvidedLinks = (rows = []) => {
+  const seen = new Set();
+  return rows.filter((item) => {
+    const key = String(item?.href || "").trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
 
 const getPaginationItems = (currentPage, totalPages) => {
   if (totalPages <= 5) {
@@ -404,6 +431,8 @@ const DEFAULT_APPROVAL_NOTIFICATION_PAYLOAD = {
 export default function AdminTeachersPage() {
   const { t, language, isRTL } = useAdminI18n();
   const pageTr = useCallback((text) => translateText(t(text), language), [t, language]);
+  const [searchParams] = useSearchParams();
+  const requestedSearch = searchParams.get("q") || "";
   const initialStatsCache = readAdminPageCache(ADMIN_TEACHERS_STATS_CACHE_KEY, {
     maxAgeMs: ADMIN_TEACHERS_CACHE_TTL_MS,
   });
@@ -416,7 +445,7 @@ export default function AdminTeachersPage() {
   );
   const [isLoading, setIsLoading] = useState(!initialTeachersCache);
   const [errorMessage, setErrorMessage] = useState("");
-  const [searchText, setSearchText] = useState("");
+  const [searchText, setSearchText] = useState(requestedSearch);
   const debouncedSearch = useDebouncedValue(searchText.trim(), 350);
   const [statusFilter, setStatusFilter] = useState("all");
   const [applicationStatusFilter, setApplicationStatusFilter] = useState("all");
@@ -455,6 +484,14 @@ export default function AdminTeachersPage() {
     totalUsers: Number(initialTeachersCache?.pagination?.totalUsers) || 0,
     totalPages: Number(initialTeachersCache?.pagination?.totalPages) || 1,
   });
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchText(requestedSearch);
+      setPage(1);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
   const statsRequest = useLatestRequest();
   const teachersRequest = useLatestRequest();
   const lastStatsRequestKeyRef = useRef("");
@@ -474,9 +511,6 @@ export default function AdminTeachersPage() {
 
       const requestKey = `teachers-stats:${refreshKey}`;
       if (lastStatsRequestKeyRef.current === requestKey) {
-        return;
-      }
-      if (shouldSkipRecentTeachersRequest(requestKey)) {
         return;
       }
       lastStatsRequestKeyRef.current = requestKey;
@@ -554,9 +588,6 @@ export default function AdminTeachersPage() {
       if (lastTeachersRequestKeyRef.current === requestKey) {
         return;
       }
-      if (shouldSkipRecentTeachersRequest(`teachers-list:${requestKey}`)) {
-        return;
-      }
       lastTeachersRequestKeyRef.current = requestKey;
 
       await teachersRequest.runLatest(async () => {
@@ -606,7 +637,7 @@ export default function AdminTeachersPage() {
             ),
             application,
             documentCount: documents.length,
-            linkCount: links.length + socialLinks.length,
+            linkCount: dedupeProvidedLinks([...links, ...socialLinks]).length,
             yearsExperience: Number(application.yearsExperience || 0),
             createdAt: teacher.createdAt || null,
           };
@@ -690,11 +721,7 @@ export default function AdminTeachersPage() {
     const response = await fetch(`${apiUrl}/admin/teachers/${teacherId}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(data?.message || pageTr("Failed to fetch teacher details"));
-    }
+    const data = await parseJsonResponse(response);
 
     const teacher = data?.teacher
       ? {
@@ -856,9 +883,20 @@ export default function AdminTeachersPage() {
 
       clearAdminPageCache("admin:teachers");
       setRefreshKey((prev) => prev + 1);
-      const teacher = await loadTeacherDetails(teacherId);
-      setSelectedTeacher(teacher);
+      if (data?.teacher) {
+        setSelectedTeacher((prev) => ({
+          ...(prev || {}),
+          ...data.teacher,
+          teacherInsights: prev?.teacherInsights || {},
+        }));
+      }
       closeTeacherApprovalModal();
+      try {
+        const teacher = await loadTeacherDetails(teacherId);
+        if (teacher) setSelectedTeacher(teacher);
+      } catch (detailsError) {
+        console.error("Teacher review succeeded, but refreshed details could not be loaded:", detailsError);
+      }
     } catch (error) {
       alert(error.message || pageTr("Unable to review teacher application"));
     } finally {
@@ -1628,14 +1666,15 @@ export default function AdminTeachersPage() {
             const documents = buildApplicationDocuments(application);
             const externalLinks = buildApplicationLinks(application);
             const socialLinks = buildTeacherSocialLinks(selectedTeacher);
-            const allProvidedLinks = [...externalLinks, ...socialLinks];
+            const allProvidedLinks = dedupeProvidedLinks([...externalLinks, ...socialLinks]);
             const avatarUrl = selectedTeacher.avatar ? getPublicFileUrl(selectedTeacher.avatar) : "";
             const relatedCourses = Array.isArray(teacherInsights.relatedCourses)
               ? teacherInsights.relatedCourses
               : [];
             const certificationNotes = Array.isArray(application.certifications)
               ? application.certifications.filter(
-                  (item) => !String(item || "").trim().startsWith("/uploads/"),
+                  (item) =>
+                    !/(?:\/uploads\/|\.pdf(?:$|[?#]))/i.test(String(item || "").trim()),
                 )
               : [];
 

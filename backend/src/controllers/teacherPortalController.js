@@ -6,6 +6,7 @@ import LiveSession from "../models/LiveSession.js";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { calculateTeacherEarnings } from "../utils/teacherEarnings.js";
+import { DateTime } from "luxon";
 
 const getTeacherCourseFilter = (teacherId) => ({
   $or: [{ teacher: teacherId }, { teacherId }, { createdBy: teacherId }],
@@ -304,37 +305,93 @@ const mapCourseOptions = (courses = []) =>
 export const getTeacherDashboard = asyncHandler(async (req, res) => {
   const teacherId = req.user._id;
   const earnings = await calculateTeacherEarnings(teacherId);
+  const teacherTimeZone = String(
+    req.user?.timezone || process.env.APP_TIMEZONE || "Asia/Kabul",
+  );
+  const localNow = DateTime.now().setZone(teacherTimeZone);
+  const dayStart = localNow.startOf("day").toUTC().toJSDate();
+  const dayEnd = localNow.endOf("day").toUTC().toJSDate();
 
   const courses = await Course.find(getTeacherCourseFilter(teacherId))
     .select("title status schedule enrolledStudentsCount maxStudents meetingLink startDate endDate classStartedAt classEndedAt classCancelledAt")
     .sort({ createdAt: -1 });
 
   const courseIds = courses.map((c) => c._id);
+  const manageableCourseIds = courses
+    .filter(
+      (course) =>
+        !course.classEndedAt &&
+        !course.classCancelledAt &&
+        course.status !== "cancelled",
+    )
+    .map((course) => course._id);
 
-  const [enrollments] = await Promise.all([
-    courseIds.length
-      ? Enrollment.find({ courseId: { $in: courseIds } })
+  const [enrollments, pendingAssignmentCount, pendingSubmissionRows, todaySessionRows] = await Promise.all([
+    manageableCourseIds.length
+      ? Enrollment.find({ courseId: { $in: manageableCourseIds } })
           .select("studentId enrollmentStatus updatedAt")
           .populate("studentId", "_id")
       : [],
+    manageableCourseIds.length
+      ? AssignmentSubmission.countDocuments({
+          teacherId,
+          courseId: { $in: manageableCourseIds },
+          status: "submitted",
+        })
+      : 0,
+    manageableCourseIds.length
+      ? AssignmentSubmission.find({
+          teacherId,
+          courseId: { $in: manageableCourseIds },
+          status: "submitted",
+        })
+          .populate("assignmentId", "title")
+          .populate("studentId", "name")
+          .sort({ submittedAt: 1 })
+          .limit(5)
+          .lean()
+      : [],
+    manageableCourseIds.length
+      ? LiveSession.find({
+          teacherId,
+          courseId: { $in: manageableCourseIds },
+          startAt: { $lte: dayEnd },
+          endAt: { $gte: dayStart },
+          status: { $in: ["scheduled", "ready", "live", "delayed"] },
+        })
+          .populate("courseId", "title enrolledStudentsCount")
+          .sort({ startAt: 1 })
+          .lean()
+      : [],
   ]);
 
-  const activeCourses = courses.filter((c) => ["published", "approved"].includes(c.status)).length;
+  const activeCourses = courses.filter(
+    (course) =>
+      ["published", "approved"].includes(course.status) &&
+      !course.classEndedAt &&
+      !course.classCancelledAt,
+  ).length;
   const visibleEnrollments = enrollments.filter((e) => Boolean(e?.studentId?._id));
   const activeStudents = visibleEnrollments.filter((e) => e.enrollmentStatus === "active").length;
-  const pendingStudents = visibleEnrollments.filter((e) => e.enrollmentStatus === "pending").length;
   const monthIncome = Number(earnings.teacherEarnings || 0);
 
-  const liveClasses = courses
-    .filter((c) => Array.isArray(c.schedule) && c.schedule.length)
-    .slice(0, 3)
-    .map((course) => ({
-      id: String(course._id),
-      title: course.title,
-      time: `${course.schedule[0].startTime} - ${course.schedule[0].endTime}`,
-      studentsCount: course.enrolledStudentsCount || 0,
-      meetingLink: course.meetingLink || null,
-    }));
+  const liveClasses = todaySessionRows.map((session) => {
+    const sessionZone = String(session?.timezone || teacherTimeZone);
+    const startLabel = DateTime.fromJSDate(new Date(session.startAt))
+      .setZone(sessionZone)
+      .toFormat("HH:mm");
+    const endLabel = DateTime.fromJSDate(new Date(session.endAt))
+      .setZone(sessionZone)
+      .toFormat("HH:mm");
+    return {
+      id: String(session._id),
+      title: session.title || session?.courseId?.title || "Live class",
+      time: `${startLabel} - ${endLabel}`,
+      studentsCount: Number(session?.courseId?.enrolledStudentsCount || 0),
+      meetingLink: session.meetingLink || null,
+      status: session.status,
+    };
+  });
 
   const courseProgress = courses.slice(0, 4).map((course) => {
     return {
@@ -344,7 +401,11 @@ export const getTeacherDashboard = asyncHandler(async (req, res) => {
     };
   });
 
-  const reviewAssignments = courses.slice(0, 3).map((course) => `پیگیری پیشرفت کورس ${course.title}`);
+  const reviewAssignments = pendingSubmissionRows.map((submission) => {
+    const assignmentTitle = submission?.assignmentId?.title || "Assignment";
+    const studentName = submission?.studentId?.name || "Student";
+    return `${assignmentTitle} — ${studentName}`;
+  });
 
   return res.json(
     new ApiResponse({
@@ -353,7 +414,7 @@ export const getTeacherDashboard = asyncHandler(async (req, res) => {
         stats: {
           activeCourses,
           activeStudents,
-          pendingAssignments: pendingStudents,
+          pendingAssignments: pendingAssignmentCount,
           monthIncome,
         },
         contract: {

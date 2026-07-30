@@ -12,6 +12,7 @@ import {
   fetchMockPublishedCourseBySlug,
   fetchMockPublishedCourses,
 } from "./mockCourseService.js";
+import { invalidatePublicTeacherCaches } from "./teacherService.js";
 
 const USE_FRONTEND_COURSE_MOCKS = false;
 
@@ -347,6 +348,12 @@ export const getCachedPublishedCourseBySlug = (slug) =>
 export const getCachedPublicCategories = () =>
   readPublicCache(publicCategoryCache, buildPublicCacheKey("public-categories"));
 
+export const invalidatePublicCourseCaches = () => {
+  publicCourseDetailCache.clear();
+  publicCourseListCache.clear();
+  invalidateApiCache((key) => key.includes("/courses"));
+};
+
 export const enrollCourse = async (courseId, pricingRegion = "international") => {
   const response = await fetch(`${getApiBase()}/courses/${courseId}/enroll`, {
     method: "POST",
@@ -361,6 +368,8 @@ export const enrollCourse = async (courseId, pricingRegion = "international") =>
     key.includes("/student/learning-stats") ||
     key.includes("/student/live-sessions"),
   );
+  publicCourseDetailCache.clear();
+  publicCourseListCache.clear();
   return data?.data;
 };
 
@@ -478,6 +487,7 @@ export const submitTeacherRating = async (payload = {}) => {
   const response = await fetch(`${getApiBase()}/student/teacher-ratings`, { method: "POST", headers: buildAuthHeaders(), body: JSON.stringify(payload) });
   const data = await parseJsonResponse(response);
   invalidateApiCache((key) => key.includes("/teachers") || key.includes("/teacher-ratings"));
+  invalidatePublicTeacherCaches();
   return data?.data || null;
 };
 
@@ -485,6 +495,7 @@ export const updateStudentTeacherRating = async (ratingId, payload = {}) => {
   const response = await fetch(`${getApiBase()}/student/teacher-ratings/${encodeURIComponent(ratingId)}`, { method: "PATCH", headers: buildAuthHeaders(), body: JSON.stringify(payload) });
   const data = await parseJsonResponse(response);
   invalidateApiCache((key) => key.includes("/teachers") || key.includes("/teacher-ratings"));
+  invalidatePublicTeacherCaches();
   return data?.data || null;
 };
 

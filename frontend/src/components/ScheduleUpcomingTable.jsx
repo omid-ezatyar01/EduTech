@@ -16,21 +16,22 @@ export default function ScheduleUpcomingTable({
     Thursday: isFa ? "پنجشنبه" : "Thursday",
     Friday: isFa ? "جمعه" : "Friday",
   };
-  const rows = Array.isArray(classes) ? classes : [];
+  const rows = useMemo(
+    () => (Array.isArray(classes) ? classes : []),
+    [classes],
+  );
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(rows.length / itemsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
   const paginatedRows = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
+    const start = (safeCurrentPage - 1) * itemsPerPage;
     return rows.slice(start, start + itemsPerPage);
-  }, [currentPage, rows]);
+  }, [rows, safeCurrentPage]);
 
   useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
-
-  useEffect(() => {
-    setCurrentPage(1);
+    const timer = window.setTimeout(() => setCurrentPage(1), 0);
+    return () => window.clearTimeout(timer);
   }, [rows]);
 
   return (
@@ -125,8 +126,8 @@ export default function ScheduleUpcomingTable({
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
+              disabled={safeCurrentPage === 1}
               className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isFa ? "قبلی" : "Previous"}
@@ -138,7 +139,7 @@ export default function ScheduleUpcomingTable({
                 type="button"
                 onClick={() => setCurrentPage(page)}
                 className={`h-9 min-w-9 rounded-lg px-3 text-xs font-black transition ${
-                  currentPage === page
+                  safeCurrentPage === page
                     ? "bg-primary-600 text-white"
                     : "border border-slate-200 text-slate-700 hover:bg-slate-50"
                 }`}
@@ -149,8 +150,8 @@ export default function ScheduleUpcomingTable({
 
             <button
               type="button"
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
+              disabled={safeCurrentPage === totalPages}
               className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isFa ? "بعدی" : "Next"}

@@ -15,6 +15,7 @@ export const assignmentSubmissionParamSchema = Joi.object({
 
 export const assignmentListQuerySchema = paginationQuerySchema.keys({
   courseId: objectId,
+  includeEnded: Joi.boolean().default(false),
   status: assignmentStatusSchema,
   type: assignmentTypeSchema,
   sortBy: Joi.string().valid("newest", "dueAt", "title").default("newest"),
@@ -29,7 +30,7 @@ export const createAssignmentSchema = Joi.object({
   title: Joi.string().trim().min(3).max(180).required(),
   description: Joi.string().trim().max(4000).allow(""),
   type: assignmentTypeSchema.default("homework"),
-  dueAt: Joi.date().required(),
+  dueAt: Joi.date().greater("now").required(),
   maxScore: Joi.number().min(1).max(1000).default(100),
   status: assignmentStatusSchema.default("draft"),
   allowLateSubmission: Joi.boolean().default(false),
@@ -68,4 +69,3 @@ export const submitAssignmentSchema = Joi.object({
 }).messages({
   "any.invalid": "{{#message}}",
 });
-

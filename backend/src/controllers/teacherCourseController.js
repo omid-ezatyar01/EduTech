@@ -38,6 +38,12 @@ import {
 } from "../utils/courseRegionalPricing.js";
 
 const buildSort = ({ sortBy = "newest", sortOrder = "desc" }) => {
+  if (sortBy === "popular") {
+    return {
+      enrolledStudentsCount: sortOrder === "asc" ? 1 : -1,
+      createdAt: -1,
+    };
+  }
   if (sortBy === "price") return { price: sortOrder === "asc" ? 1 : -1 };
   if (sortBy === "startDate") return { startDate: sortOrder === "asc" ? 1 : -1 };
   return { createdAt: -1 };
@@ -409,7 +415,7 @@ export const getTeacherCourses = asyncHandler(async (req, res) => {
 
   const sort = buildSort(req.query);
 
-  const [courses, total] = await Promise.all([
+  const [courses, total, summaryCourses] = await Promise.all([
     Course.find(filter)
       .populate("category", "name slug parent")
       .populate("subcategory", "name slug parent")
@@ -417,9 +423,34 @@ export const getTeacherCourses = asyncHandler(async (req, res) => {
       .skip(skip)
       .limit(limit),
     Course.countDocuments(filter),
+    Course.find(ownCourseFilter(req.user._id))
+      .select("status enrolledStudentsCount")
+      .lean(),
   ]);
   await Promise.all(courses.map((course) => ensureCourseAutoStarted(course)));
   const pricing = await getPlatformPricingSettings();
+  const courseSummary = summaryCourses.reduce(
+    (summary, course) => {
+      summary.total += 1;
+      summary.totalStudents += Number(course?.enrolledStudentsCount || 0);
+      const status = String(course?.status || "draft").toLowerCase();
+      if (["published", "approved"].includes(status)) summary.published += 1;
+      else if (status === "pending") summary.pending += 1;
+      else if (status === "rejected") summary.rejected += 1;
+      else if (status === "cancelled") summary.cancelled += 1;
+      else summary.draft += 1;
+      return summary;
+    },
+    {
+      total: 0,
+      published: 0,
+      pending: 0,
+      draft: 0,
+      rejected: 0,
+      cancelled: 0,
+      totalStudents: 0,
+    },
+  );
 
   return res.json(
     new ApiResponse({
@@ -436,8 +467,9 @@ export const getTeacherCourses = asyncHandler(async (req, res) => {
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+        courseSummary,
+        pricing,
       },
-      extra: pricing,
     }),
   );
 });

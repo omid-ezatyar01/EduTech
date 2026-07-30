@@ -1080,6 +1080,14 @@ const normalizeSkillRatings = (rows = []) =>
     }))
     .slice(0, SKILL_RATING_MAX_COUNT);
 
+const uniqueNonEmptyStrings = (rows = []) => [
+  ...new Set(
+    (Array.isArray(rows) ? rows : [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean),
+  ),
+];
+
 const normalizeYouTubeInput = (value = "") => {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -1177,6 +1185,7 @@ const mapBackendFieldToUiKey = (rawPath = "") => {
   if (path === "socialLinks.whatsapp") return "whatsapp";
   if (path === "socialLinks.github") return "github";
   if (path === "teacherApplication.professionalTitle") return "professionalTitle";
+  if (path === "teacherApplication.yearsExperience") return "yearsExperience";
   if (path === "teacherApplication.education") return "education";
   if (path === "teacherApplication.expertiseAreas" || path.startsWith("teacherApplication.expertiseAreas")) return "expertiseAreas";
   if (path === "teacherApplication.languages" || path.startsWith("teacherApplication.languages")) return "languages";
@@ -1210,6 +1219,7 @@ const getLocalizedValidationMessage = (path = "", backendMessage = "", isFa = fa
     whatsapp: "WhatsApp",
     github: "GitHub",
     professionalTitle: isFa ? "عنوان حرفه‌ای" : "Professional title",
+    yearsExperience: isFa ? "سال‌های تجربه" : "Years of experience",
     education: isFa ? "تحصیلات" : "Education",
     expertiseAreas: isFa ? "حوزه‌های تخصص" : "Expertise areas",
     languages: isFa ? "زبان‌های تدریس" : "Teaching languages",
@@ -1307,12 +1317,17 @@ export default function TeacherProfile() {
   }, [success]);
 
   useEffect(() => {
+    if (!avatarPreview.startsWith("blob:")) return undefined;
+    return () => URL.revokeObjectURL(avatarPreview);
+  }, [avatarPreview]);
+
+  useEffect(() => {
     let mounted = true;
 
     const loadProfile = async () => {
       const cached = readTeacherPageCache(PROFILE_CACHE_KEY);
       if (cached) {
-        const merged = { ...(teacher || {}), ...(cached || {}) };
+        const merged = { ...(getAuthUser() || {}), ...(cached || {}) };
         const accountEmail = String(merged?.email || authEmail || "").trim();
         const shouldUseResetDraft = readLocalStorage(PROFILE_RESET_DRAFT_KEY) === "1";
         setProfile(cached);
@@ -1333,7 +1348,7 @@ export default function TeacherProfile() {
         if (!mounted) return;
         setProfile(data || null);
         writeTeacherPageCache(PROFILE_CACHE_KEY, data || null);
-        const merged = { ...(teacher || {}), ...(data || {}) };
+        const merged = { ...(getAuthUser() || {}), ...(data || {}) };
         const accountEmail = String(merged?.email || authEmail || "").trim();
         const shouldUseResetDraft = readLocalStorage(PROFILE_RESET_DRAFT_KEY) === "1";
         setForm(
@@ -1349,9 +1364,10 @@ export default function TeacherProfile() {
           ? merged.teacherApplication.certifications
           : [];
         const legacyCertificate = String(merged?.teacherApplication?.certificatesFileUrl || "").trim();
-        const allCertificates = legacyCertificate
-          ? [legacyCertificate, ...existingCertificates]
-          : existingCertificates;
+        const allCertificates = uniqueNonEmptyStrings([
+          legacyCertificate,
+          ...existingCertificates,
+        ]);
         setCertificateLabel(shouldUseResetDraft
           ? ""
           : (allCertificates.length
@@ -1372,7 +1388,7 @@ export default function TeacherProfile() {
     return () => {
       mounted = false;
     };
-  }, [authEmail, isFa, teacher]);
+  }, [authEmail, isFa]);
 
   const merged = useMemo(() => ({ ...(teacher || {}), ...(profile || {}) }), [profile, teacher]);
   const lockedEmail = String(merged?.email || authEmail || "").trim();
@@ -1408,8 +1424,9 @@ export default function TeacherProfile() {
       ? merged.teacherApplication.certifications
       : [];
     const legacyCertificate = String(merged?.teacherApplication?.certificatesFileUrl || "").trim();
-    const allRows = legacyCertificate ? [legacyCertificate, ...rows] : rows;
-    return allRows.filter((item) => /\/uploads\/teacher-certificates\/|\.pdf$/i.test(String(item || "")));
+    return uniqueNonEmptyStrings([legacyCertificate, ...rows]).filter((item) =>
+      /\/uploads\/teacher-certificates\/|\.pdf(?:$|[?#])/i.test(item),
+    );
   }, [merged]);
   const approvedPhone = normalizePhoneByCountry(
     merged?.phone || "",
@@ -1440,6 +1457,7 @@ export default function TeacherProfile() {
 
         let nextTeacherSnapshot = null;
         setProfile(data);
+        writeTeacherPageCache(PROFILE_CACHE_KEY, data);
         setTeacher((prev) => {
           const nextTeacher = { ...(prev || {}), ...data };
           nextTeacherSnapshot = nextTeacher;
@@ -1470,13 +1488,18 @@ export default function TeacherProfile() {
 
     window.addEventListener("teacher_auth_change", syncApprovalStatus);
     window.addEventListener("edutech_data_changed", syncApprovalStatus);
+    const approvalPollTimer =
+      applicationStatus === "submitted"
+        ? window.setInterval(syncApprovalStatus, 30_000)
+        : null;
 
     return () => {
       mounted = false;
+      if (approvalPollTimer) window.clearInterval(approvalPollTimer);
       window.removeEventListener("teacher_auth_change", syncApprovalStatus);
       window.removeEventListener("edutech_data_changed", syncApprovalStatus);
     };
-  }, [authEmail]);
+  }, [applicationStatus, authEmail]);
 
   const statusBadge =
     applicationStatus === "approved"
@@ -1986,9 +2009,12 @@ export default function TeacherProfile() {
       setFieldErrors({});
       const cvUrl = resolveAssetUrl(updatedUser?.teacherApplication?.cvUrl || "");
       setCvLabel(cvUrl ? (isFa ? "رزومه ثبت شده" : "Saved CV") : "");
-      const nextCertificates = Array.isArray(updatedUser?.teacherApplication?.certifications)
-        ? updatedUser.teacherApplication.certifications
-        : [];
+      const nextCertificates = uniqueNonEmptyStrings([
+        updatedUser?.teacherApplication?.certificatesFileUrl,
+        ...(Array.isArray(updatedUser?.teacherApplication?.certifications)
+          ? updatedUser.teacherApplication.certifications
+          : []),
+      ]);
       setCertificateLabel(
         nextCertificates.length
           ? isFa
@@ -2003,8 +2029,8 @@ export default function TeacherProfile() {
             ? "درخواست شما برای بررسی مدیر ارسال شد."
             : "Your application was submitted for admin review."
           : isFa
-            ? "پیش‌نویس ذخیره شد."
-            : "Draft saved successfully.",
+            ? "تغییرات پروفایل با موفقیت ذخیره شد."
+            : "Profile changes saved successfully.",
       );
       if (isApproved) {
         setIsEditingApprovedProfile(false);
@@ -2056,6 +2082,29 @@ export default function TeacherProfile() {
     setAvatarPreview("");
     setCvLabel("");
     setCertificateLabel("");
+  };
+
+  const handleCancelApprovedEdit = () => {
+    clearTeacherFormDraft(PROFILE_FORM_DRAFT_ID);
+    removeLocalStorage(PROFILE_RESET_DRAFT_KEY);
+    setForm(getInitialForm(merged));
+    setFieldErrors({});
+    setError("");
+    setSuccess("");
+    setAvatarFile(null);
+    setPendingAvatarFile(null);
+    setCvFile(null);
+    setCertificateFiles([]);
+    setAvatarPreview(resolveAssetUrl(merged?.avatar || ""));
+    setCvLabel(existingCvUrl ? (isFa ? "رزومه ثبت شده" : "Saved CV") : "");
+    setCertificateLabel(
+      existingCertificateUrls.length
+        ? isFa
+          ? `${existingCertificateUrls.length} گواهینامه ثبت شده`
+          : `${existingCertificateUrls.length} saved certificate(s)`
+        : "",
+    );
+    setIsEditingApprovedProfile(false);
   };
 
   const educationOptions = isFa ? EDUCATION_OPTIONS_FA : EDUCATION_OPTIONS_EN;
@@ -2715,7 +2764,7 @@ export default function TeacherProfile() {
                 {isApproved ? (
                   <button
                     type="button"
-                    onClick={() => setIsEditingApprovedProfile(false)}
+                    onClick={handleCancelApprovedEdit}
                     disabled={loading || saving}
                     className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-[#0B4FD8] bg-white px-6 text-sm font-black text-[#0B4FD8] transition hover:bg-[#EFF6FF] disabled:opacity-70 sm:w-auto"
                   >

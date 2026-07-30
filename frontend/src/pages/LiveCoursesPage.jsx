@@ -196,7 +196,10 @@ export default function LiveCoursesPage({ t }) {
   const [currentPage, setCurrentPage] = useState(INITIAL_LIST_PAGE_COUNT);
   const [searchTerm, setSearchTerm] = useState(requestedSearch);
   const [searchInput, setSearchInput] = useState(requestedSearch);
-  const [categories, setCategories] = useState(() => getCachedPublicCategories() || []);
+  const initialCategories = useMemo(() => getCachedPublicCategories() || [], []);
+  const [categories, setCategories] = useState(initialCategories);
+  const [categoriesLoading, setCategoriesLoading] = useState(initialCategories.length === 0);
+  const [categoriesError, setCategoriesError] = useState("");
   const [categoryPath, setCategoryPath] = useState(() =>
     roadmap === "english"
       ? buildEnglishCategoryPath(categories)
@@ -221,10 +224,12 @@ export default function LiveCoursesPage({ t }) {
   );
   const [meta, setMeta] = useState({ totalPages: 1 });
   const [loading, setLoading] = useState(false);
+  const [resolvedCourseRequestKey, setResolvedCourseRequestKey] = useState("");
   const [error, setError] = useState("");
   const [enrolledCourseIds, setEnrolledCourseIds] = useState(() => new Set());
   const [mobileSections, setMobileSections] = useState([]);
   const [mobileSectionsLoading, setMobileSectionsLoading] = useState(false);
+  const [resolvedMobileSectionsKey, setResolvedMobileSectionsKey] = useState("");
   const [mobileSectionsError, setMobileSectionsError] = useState("");
   const [sectionRowNav, setSectionRowNav] = useState({});
   const [retrySeed, setRetrySeed] = useState(0);
@@ -243,6 +248,46 @@ export default function LiveCoursesPage({ t }) {
     maxPrice === "" &&
     sortMode === "popular";
   const isRootSectionMode = filtersAtDefault && searchTerm.trim() === "";
+  const courseRequestKey = useMemo(
+    () =>
+      JSON.stringify({
+        currentPage,
+        searchTerm,
+        category,
+        level,
+        courseLanguage,
+        pricing,
+        courseType,
+        paymentPlan,
+        minPrice,
+        maxPrice,
+        sortMode,
+        language,
+        roadmap,
+        roadmapCategoryResolved,
+        retrySeed,
+      }),
+    [
+      category,
+      courseLanguage,
+      courseType,
+      currentPage,
+      language,
+      level,
+      maxPrice,
+      minPrice,
+      paymentPlan,
+      pricing,
+      retrySeed,
+      roadmap,
+      roadmapCategoryResolved,
+      searchTerm,
+      sortMode,
+    ],
+  );
+  const courseRequestPending =
+    !isRootSectionMode &&
+    (loading || resolvedCourseRequestKey !== courseRequestKey);
 
   const applySearch = useCallback(() => {
     setCurrentPage(INITIAL_LIST_PAGE_COUNT);
@@ -364,7 +409,10 @@ export default function LiveCoursesPage({ t }) {
           ),
         );
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setResolvedCourseRequestKey(courseRequestKey);
+          setLoading(false);
+        }
       }
     }, 250);
 
@@ -390,6 +438,7 @@ export default function LiveCoursesPage({ t }) {
     roadmapCategoryResolved,
     categoryPath.length,
     retrySeed,
+    courseRequestKey,
   ]);
 
   useEffect(() => {
@@ -408,19 +457,32 @@ export default function LiveCoursesPage({ t }) {
       const cachedCategories = getCachedPublicCategories();
       if (cachedCategories?.length) {
         applyCategories(cachedCategories);
+        setCategoriesError("");
+        setCategoriesLoading(false);
         return;
       }
 
       try {
         const rows = await fetchPublicCategories();
         applyCategories(rows);
-      } catch {
+        setCategoriesError("");
+      } catch (err) {
         applyCategories([]);
+        setCategoriesError(
+          getLocalizedRequestErrorMessage(
+            err,
+            language,
+            "بارگذاری دسته‌بندی‌های کورس انجام نشد.",
+            "Failed to load course categories.",
+          ),
+        );
+      } finally {
+        setCategoriesLoading(false);
       }
     };
 
     loadCategories();
-  }, [requestedCategory, roadmap]);
+  }, [language, requestedCategory, retrySeed, roadmap]);
 
   const loadEnrollments = useCallback(async (mountedRef) => {
     if (localStorage.getItem("edutech_auth") !== "true") {
@@ -570,6 +632,20 @@ export default function LiveCoursesPage({ t }) {
     () => categories.filter((item) => !item?.parent),
     [categories],
   );
+  const mobileSectionsRequestKey = useMemo(
+    () =>
+      JSON.stringify({
+        rootCategoryIds: rootCategories.map((item) => String(item?._id || "")),
+        retrySeed,
+        language,
+      }),
+    [language, retrySeed, rootCategories],
+  );
+  const mobileSectionsPending =
+    isRootSectionMode &&
+    (categoriesLoading ||
+      mobileSectionsLoading ||
+      resolvedMobileSectionsKey !== mobileSectionsRequestKey);
   const selectedCategoryName = categories.find((item) => String(item?._id || "") === category)?.name || "";
   const displayTotalCourses = isRootSectionMode
     ? mobileSections.reduce((total, section) => total + Number(section.total || 0), 0)
@@ -637,6 +713,12 @@ export default function LiveCoursesPage({ t }) {
         if (!isRootSectionMode) {
           setMobileSections([]);
           setMobileSectionsError("");
+          setMobileSectionsLoading(false);
+        } else if (!categoriesLoading) {
+          setMobileSections([]);
+          setMobileSectionsError("");
+          setMobileSectionsLoading(false);
+          setResolvedMobileSectionsKey(mobileSectionsRequestKey);
         }
         return;
       }
@@ -676,7 +758,10 @@ export default function LiveCoursesPage({ t }) {
           ),
         );
       } finally {
-        if (!cancelled) setMobileSectionsLoading(false);
+        if (!cancelled) {
+          setResolvedMobileSectionsKey(mobileSectionsRequestKey);
+          setMobileSectionsLoading(false);
+        }
       }
     };
 
@@ -685,7 +770,14 @@ export default function LiveCoursesPage({ t }) {
     return () => {
       cancelled = true;
     };
-  }, [isRootSectionMode, language, retrySeed, rootCategories]);
+  }, [
+    categoriesLoading,
+    isRootSectionMode,
+    language,
+    mobileSectionsRequestKey,
+    retrySeed,
+    rootCategories,
+  ]);
 
   const resetFilters = () => {
     setCurrentPage(INITIAL_LIST_PAGE_COUNT);
@@ -1256,7 +1348,7 @@ export default function LiveCoursesPage({ t }) {
               </div>
             ) : null}
 
-            {error || mobileSectionsError ? <div className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-center sm:flex-row sm:text-start"><p className="text-sm font-bold text-rose-700">{error || mobileSectionsError}</p><button type="button" onClick={() => setRetrySeed((value) => value + 1)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-rose-700 shadow-sm"><RotateCcw size={15} />{language === "fa" ? "تلاش دوباره" : "Try again"}</button></div> : null}
+            {error || mobileSectionsError || categoriesError ? <div className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-center sm:flex-row sm:text-start"><p className="text-sm font-bold text-rose-700">{error || mobileSectionsError || categoriesError}</p><button type="button" onClick={() => setRetrySeed((value) => value + 1)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-rose-700 shadow-sm"><RotateCcw size={15} />{language === "fa" ? "تلاش دوباره" : "Try again"}</button></div> : null}
 
             <div className="mt-5 space-y-4 sm:space-y-0">
               {isRootSectionMode ? (
@@ -1356,9 +1448,14 @@ export default function LiveCoursesPage({ t }) {
               )}
             </div>
 
-            {(loading && courses.length === 0) || (mobileSectionsLoading && mobileSections.length === 0) ? <div className="mt-5"><CourseGridSkeleton /></div> : null}
+            {(courseRequestPending && courses.length === 0) ||
+            (mobileSectionsPending && mobileSections.length === 0) ? (
+              <div className="mt-5">
+                <CourseGridSkeleton />
+              </div>
+            ) : null}
 
-            {!loading && !mobileSectionsLoading && !error && !mobileSectionsError && (isRootSectionMode ? mobileSections.length === 0 : courses.length === 0) ? (
+            {!courseRequestPending && !mobileSectionsPending && !error && !mobileSectionsError && !categoriesError && (isRootSectionMode ? mobileSections.length === 0 : courses.length === 0) ? (
               <div className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm sm:px-10">
                 <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-primary-50 text-primary-700"><BookOpen size={30} /></span>
                 <h2 className="mt-5 text-xl font-black text-slate-950 sm:text-2xl">{activeFilterCount > 0 ? (language === "fa" ? "کورسی مطابق انتخاب شما پیدا نشد" : "No courses match your selection") : (language === "fa" ? "کورس‌های تازه به‌زودی منتشر می‌شوند" : "New courses are coming soon")}</h2>

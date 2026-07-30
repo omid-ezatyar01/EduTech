@@ -9,10 +9,20 @@ const formatDate = (rawDate) => {
   }).format(date);
 };
 
-export default function ResultCard({ state, data, message }) {
+const safeCertificateUrl = (value) => {
+  try {
+    const url = new URL(String(value || ""));
+    return ["https:", "http:"].includes(url.protocol) ? url.toString() : "";
+  } catch {
+    return "";
+  }
+};
+
+export default function ResultCard({ state, data, message, onRetry }) {
+  const certificateUrl = safeCertificateUrl(data?.certificateUrl);
   if (state === "valid") {
     return (
-      <article className="result-card result-valid">
+      <article className="result-card result-valid" role="status">
         <header className="result-header">
           <h2>Certificate Verified</h2>
           <span className="status-pill">Verified</span>
@@ -40,8 +50,8 @@ export default function ResultCard({ state, data, message }) {
           </div>
         </dl>
 
-        {data?.certificateUrl ? (
-          <a className="btn-secondary" href={data.certificateUrl} target="_blank" rel="noreferrer">
+        {certificateUrl ? (
+          <a className="btn-secondary" href={certificateUrl} target="_blank" rel="noopener noreferrer">
             View Certificate
           </a>
         ) : null}
@@ -51,7 +61,7 @@ export default function ResultCard({ state, data, message }) {
 
   if (state === "invalid") {
     return (
-      <article className="result-card result-invalid">
+      <article className="result-card result-invalid" role="status">
         <h2>Certificate Not Found</h2>
         <p>{message || "We could not find this certificate. Please check the ID and try again."}</p>
       </article>
@@ -59,9 +69,14 @@ export default function ResultCard({ state, data, message }) {
   }
 
   return (
-    <article className="result-card result-error">
+    <article className="result-card result-error" role="alert">
       <h2>Verification Temporarily Unavailable</h2>
       <p>{message || "Please try again in a few minutes."}</p>
+      {onRetry ? (
+        <button type="button" className="btn-secondary" onClick={onRetry}>
+          Try Again
+        </button>
+      ) : null}
     </article>
   );
 }

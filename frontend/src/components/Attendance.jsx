@@ -153,7 +153,6 @@ export default function Attendance({ language = "fa" }) {
 
   const [courses, setCourses] = useState([]);
   const [sessions, setSessions] = useState([]);
-  const [stats, setStats] = useState({});
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [sessionStatusFilter, setSessionStatusFilter] = useState("all");
   const [attendanceFilter, setAttendanceFilter] = useState("all");
@@ -176,7 +175,6 @@ export default function Attendance({ language = "fa" }) {
         if (!mounted) return;
         setCourses(Array.isArray(result.courses) ? result.courses : []);
         setSessions(Array.isArray(result.sessions) ? result.sessions : []);
-        setStats(result.stats || {});
       } catch (err) {
         if (!mounted) return;
         if (isUnauthorizedError(err)) {
@@ -322,7 +320,7 @@ export default function Attendance({ language = "fa" }) {
   const statCards = [
     {
       label: t.stats.rate,
-      value: `${Number(filteredStats.attendanceRate || stats.attendanceRate || 0)}%`,
+      value: `${Number(filteredStats.attendanceRate || 0)}%`,
       icon: TrendingUp,
       color: "bg-blue-50 text-blue-700",
     },
@@ -572,7 +570,12 @@ export default function Attendance({ language = "fa" }) {
           </div>
 
           {error ? (
-            <p className="m-5 rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</p>
+            <div className="m-5 rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+              <p>{error}</p>
+              <button type="button" onClick={() => setRefreshSeed((value) => value + 1)} className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-black ring-1 ring-rose-200">
+                {isFa ? "تلاش دوباره" : "Try again"}
+              </button>
+            </div>
           ) : null}
 
           {loading ? (
@@ -580,7 +583,7 @@ export default function Attendance({ language = "fa" }) {
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-primary-600" />
               {t.loading}
             </div>
-          ) : filteredSessions.length === 0 ? (
+          ) : error ? null : filteredSessions.length === 0 ? (
             <p className="p-10 text-center text-sm font-medium text-slate-500">{t.noRows}</p>
           ) : (
             <>

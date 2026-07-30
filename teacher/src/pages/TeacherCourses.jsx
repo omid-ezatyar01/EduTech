@@ -6,7 +6,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import TeacherLayout from "../layouts/TeacherLayout";
 import TeacherPageLoader from "../components/common/TeacherPageLoader";
 import useTeacherLanguage from "../hooks/useTeacherLanguage";
@@ -115,6 +115,12 @@ const DEFAULT_PRICING_SETTINGS = {
   minTeacherCoursePrice: null,
   teacherDeductionPercentage: 0,
   globalCourseDiscountPercentage: 0,
+};
+const DEFAULT_COURSE_SUMMARY = {
+  total: 0,
+  published: 0,
+  pending: 0,
+  totalStudents: 0,
 };
 const TEACHER_COURSES_PAGE_SIZE = 3;
 const TEACHER_SPECIAL_STATUS_FETCH_LIMIT = 100;
@@ -393,6 +399,7 @@ function mapCourse(course, language, pricingSettings = {}) {
 
 export default function TeacherCourses() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
 
   const teacher = useMemo(
@@ -400,8 +407,9 @@ export default function TeacherCourses() {
     [],
   );
   const teacherLanguages = useMemo(() => getTeacherTeachingLanguages(teacher), [teacher]);
+  const requestedSearch = new URLSearchParams(location.search).get("q") || "";
   const initialCoursesCache = readTeacherPageCache(getCoursesCacheKey({
-    search: "",
+    search: requestedSearch,
     category: "all",
     status: "all",
     page: 1,
@@ -410,7 +418,7 @@ export default function TeacherCourses() {
 
   const [courses, setCourses] = useState(initialCoursesCache?.courses || []);
   const [categories, setCategories] = useState([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(requestedSearch);
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
@@ -433,8 +441,12 @@ export default function TeacherCourses() {
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [googleStatus, setGoogleStatus] = useState({ connected: false, googleEmail: "" });
   const [pricingSettings, setPricingSettings] = useState(DEFAULT_PRICING_SETTINGS);
+  const [courseSummary, setCourseSummary] = useState(
+    initialCoursesCache?.courseSummary || DEFAULT_COURSE_SUMMARY,
+  );
   const [refreshSeed, setRefreshSeed] = useState(0);
   const createCourseRequestRef = useRef(false);
+  const coursesRequestRef = useRef(0);
   const pricingSettingsRef = useRef(
     normalizePricingSettings(initialCoursesCache?.pricingSettings, DEFAULT_PRICING_SETTINGS),
   );
@@ -444,6 +456,14 @@ export default function TeacherCourses() {
     refreshOnFocus: false,
     refreshOnVisible: false,
   });
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(requestedSearch);
+      setPage(1);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
 
   const applyPricingSettings = (settings, fallback = pricingSettingsRef.current) => {
     const nextPricingSettings = normalizePricingSettings(settings, fallback);
@@ -478,11 +498,13 @@ export default function TeacherCourses() {
   useEffect(() => {
     const timer = setTimeout(() => {
       const loadCourses = async () => {
+        const requestId = ++coursesRequestRef.current;
         const cacheKey = getCoursesCacheKey({ search, category, status, page, language });
         const cached = readTeacherPageCache(cacheKey);
         if (cached) {
           setCourses(cached.courses || []);
           setPagination((previous) => cached.pagination || previous);
+          setCourseSummary(cached.courseSummary || DEFAULT_COURSE_SUMMARY);
           if (cached.pricingSettings) applyPricingSettings(cached.pricingSettings);
           setLoading(false);
         } else {
@@ -508,10 +530,17 @@ export default function TeacherCourses() {
           }
 
           const { courses: rows, meta, extra } = await fetchTeacherCourses(query);
+          if (requestId !== coursesRequestRef.current) return;
 
           let nextPricingSettings = pricingSettingsRef.current;
           if (extra && typeof extra === "object") {
             nextPricingSettings = applyPricingSettings(extra);
+            if (extra.courseSummary) {
+              setCourseSummary({
+                ...DEFAULT_COURSE_SUMMARY,
+                ...extra.courseSummary,
+              });
+            }
           }
 
           const mappedRows = rows.map((course) =>
@@ -541,18 +570,26 @@ export default function TeacherCourses() {
             courses: nextCourses,
             pagination: nextPagination,
             pricingSettings: nextPricingSettings,
+            courseSummary: {
+              ...DEFAULT_COURSE_SUMMARY,
+              ...(extra?.courseSummary || {}),
+            },
           });
         } catch (err) {
+          if (requestId !== coursesRequestRef.current) return;
           setError(err.message || "Failed to load courses");
         } finally {
-          setLoading(false);
+          if (requestId === coursesRequestRef.current) setLoading(false);
         }
       };
 
       loadCourses();
     }, 250);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      coursesRequestRef.current += 1;
+    };
   }, [category, language, page, refreshSeed, search, status]);
 
   useEffect(() => {
@@ -622,7 +659,7 @@ export default function TeacherCourses() {
         setGoogleStatus(nextStatus);
         writeTeacherPageCache(COURSE_GOOGLE_STATUS_CACHE_KEY, nextStatus);
       } catch {
-        setGoogleStatus({ connected: false, googleEmail: "" });
+        if (!cached) setGoogleStatus({ connected: false, googleEmail: "" });
       }
     };
 
@@ -636,22 +673,19 @@ export default function TeacherCourses() {
   }, [toast]);
 
   const stats = useMemo(() => {
-    const publishedCourses = courses.filter((course) => course.status === "published").length;
-    const totalStudents = courses.reduce((sum, course) => sum + course.students, 0);
-
     return [
       {
         id: "published-courses",
         title: language === "fa" ? "کورس‌های منتشر شده" : "Published Courses",
-        value: String(publishedCourses),
-        subtitle: language === "fa" ? `از مجموع ${courses.length} کورس` : `${courses.length} courses in total`,
+        value: String(courseSummary.published),
+        subtitle: language === "fa" ? `از مجموع ${courseSummary.total} کورس` : `${courseSummary.total} courses in total`,
         icon: BookOpen,
         tone: "teal",
       },
       {
         id: "students",
         title: language === "fa" ? "شاگردان کل" : "Total Students",
-        value: String(totalStudents),
+        value: String(courseSummary.totalStudents),
         subtitle: language === "fa" ? "در همه کورس‌ها" : "Across all courses",
         icon: Users,
         tone: "purple",
@@ -659,13 +693,13 @@ export default function TeacherCourses() {
       {
         id: "pending-courses",
         title: language === "fa" ? "کورس‌های در انتظار" : "Pending Courses",
-        value: String(courses.filter((course) => course.status === "pending").length),
+        value: String(courseSummary.pending),
         subtitle: language === "fa" ? "منتظر تایید مدیر" : "Waiting admin approval",
         icon: ClipboardList,
         tone: "orange",
       },
     ];
-  }, [courses, language]);
+  }, [courseSummary, language]);
 
   const handleCreateCourse = async (form) => {
     if (createCourseRequestRef.current) return;

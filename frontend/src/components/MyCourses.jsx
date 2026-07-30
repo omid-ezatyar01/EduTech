@@ -375,26 +375,23 @@ export default function MyCourses({ language = "fa" }) {
   }, [language, navigate]);
 
   useEffect(() => {
-    const mountedRef = { current: true };
-    loadEnrollments(mountedRef);
-
     const handleEnrollmentRefresh = () => setRefreshSeed((prev) => prev + 1);
     window.addEventListener("auth_change", handleEnrollmentRefresh);
     window.addEventListener("edutech_data_changed", handleEnrollmentRefresh);
 
     return () => {
-      mountedRef.current = false;
       window.removeEventListener("auth_change", handleEnrollmentRefresh);
       window.removeEventListener("edutech_data_changed", handleEnrollmentRefresh);
     };
-  }, [loadEnrollments]);
+  }, []);
 
   useEffect(() => {
     const mountedRef = { current: true };
-    if (refreshSeed > 0) {
+    const timer = window.setTimeout(() => {
       loadEnrollments(mountedRef);
-    }
+    }, 0);
     return () => {
+      window.clearTimeout(timer);
       mountedRef.current = false;
     };
   }, [loadEnrollments, refreshSeed]);
@@ -466,14 +463,21 @@ export default function MyCourses({ language = "fa" }) {
 
       <CourseFilterTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
-      {error ? <p className="mb-4 mt-4 text-sm font-bold text-rose-600">{error}</p> : null}
+      {error ? (
+        <div className="mb-4 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+          <span>{error}</span>
+          <button type="button" onClick={() => setRefreshSeed((value) => value + 1)} className="rounded-xl bg-white px-4 py-2 text-xs font-black ring-1 ring-rose-200">
+            {isFa ? "تلاش دوباره" : "Try again"}
+          </button>
+        </div>
+      ) : null}
 
       <div className="space-y-4 mt-4">
         {loading ? (
-          <div className="rounded-[24px] border border-slate-200 bg-white py-16 text-center text-sm font-semibold text-slate-500">
-            {isFa ? "در حال بارگذاری کورس‌های شما" : "Loading your courses"}
+          <div className="grid animate-pulse gap-4">
+            {[0, 1, 2].map((item) => <div key={item} className="h-40 rounded-[24px] bg-slate-100" />)}
           </div>
-        ) : filteredCourses.length > 0 ? (
+        ) : error ? null : filteredCourses.length > 0 ? (
           filteredCourses.map((course) => (
             <StudentCourseCard
               key={course.id}

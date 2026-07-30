@@ -57,6 +57,7 @@ export default function Settings({ language = "fa" }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isSecurityModalOpen, setSecurityModalOpen] = useState(false);
+  const [refreshSeed, setRefreshSeed] = useState(0);
 
   const text = useMemo(() => ({
     dashboard: isFa ? "داشبورد" : "Dashboard",
@@ -112,7 +113,7 @@ export default function Settings({ language = "fa" }) {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [text.loading]);
+  }, [refreshSeed, text.loading]);
 
   const flash = (message = text.saved) => {
     setNotice(message);
@@ -141,9 +142,13 @@ export default function Settings({ language = "fa" }) {
 
   const changeLanguage = async (nextLanguage) => {
     if (nextLanguage !== "fa" && nextLanguage !== "en") return;
+    if (nextLanguage === language) return;
+    const saved = await saveProfilePreference("language", {
+      preferredLanguage: nextLanguage,
+    });
+    if (!saved) return;
     localStorage.setItem("edutech-language", nextLanguage);
     window.dispatchEvent(new CustomEvent("edutech_language_change", { detail: { language: nextLanguage } }));
-    await saveProfilePreference("language", { preferredLanguage: nextLanguage });
   };
 
   const changeDisplayScale = (nextScale) => {
@@ -196,7 +201,7 @@ export default function Settings({ language = "fa" }) {
         <div className="mb-5 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-500"><Link className="hover:text-primary-700" to="/student/dashboard">{text.dashboard}</Link><span>/</span><span className="text-primary-600">{text.settings}</span></div>
         <header className="mb-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h1 className="text-2xl font-black text-slate-900 sm:text-3xl">{text.settings}</h1><p className="mt-2 text-sm font-medium leading-6 text-slate-500">{text.subtitle}</p></header>
 
-        {error ? <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"><span>{error}</span><button type="button" onClick={() => window.location.reload()} className="rounded-lg bg-white px-3 py-1.5 ring-1 ring-rose-200">{text.retry}</button></div> : null}
+        {error ? <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"><span>{error}</span><button type="button" onClick={() => { setError(""); setLoading(true); setRefreshSeed((value) => value + 1); }} className="rounded-lg bg-white px-3 py-1.5 ring-1 ring-rose-200">{text.retry}</button></div> : null}
         {notice ? <div className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700"><CheckCircle2 size={17} />{notice}</div> : null}
 
         {loading ? <FrontendPageLoader label={text.loading} /> : <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]"><SettingsCategoryCard active={activeCategory} setActive={setActiveCategory} language={language} /><div className="min-w-0">{renderPanel()}</div></div>}

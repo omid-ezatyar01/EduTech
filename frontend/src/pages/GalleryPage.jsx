@@ -52,6 +52,9 @@ const categoryLabels = {
   },
 };
 
+const localizedTitle = (item, locale) =>
+  item?.title?.[locale] || item?.title?.[locale === "fa" ? "en" : "fa"] || "";
+
 export default function GalleryPage({ language = "fa" }) {
   const locale = language === "fa" ? "fa" : "en";
   const text = copy[locale];
@@ -63,6 +66,7 @@ export default function GalleryPage({ language = "fa" }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
+  const [resolvedCategory, setResolvedCategory] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -71,8 +75,10 @@ export default function GalleryPage({ language = "fa" }) {
       const result = await fetchGallery({ category, limit: 100 });
       setImages(result.images);
       setCategories(result.meta.categories || []);
+      setResolvedCategory(category);
     } catch (err) {
       setError(err.message || text.empty);
+      setResolvedCategory(category);
     } finally {
       setLoading(false);
     }
@@ -86,9 +92,14 @@ export default function GalleryPage({ language = "fa" }) {
           setImages(result.images);
           setCategories(result.meta.categories || []);
           setError("");
+          setResolvedCategory(category);
         }
       })
-      .catch((err) => active && setError(err.message || text.empty))
+      .catch((err) => {
+        if (!active) return;
+        setError(err.message || text.empty);
+        setResolvedCategory(category);
+      })
       .finally(() => active && setLoading(false));
     window.scrollTo(0, 0);
     return () => {
@@ -146,7 +157,7 @@ export default function GalleryPage({ language = "fa" }) {
           ))}
         </div>
 
-        {loading ? (
+        {loading || resolvedCategory !== category ? (
           <FrontendPageLoader label={text.loading} />
         ) : error ? (
           <div className="mt-8 rounded-3xl border border-red-200 bg-white py-16 text-center">
@@ -161,7 +172,7 @@ export default function GalleryPage({ language = "fa" }) {
         ) : (
           <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {images.map((item) => {
-              const title = item.title?.fa || "";
+              const title = localizedTitle(item, locale);
               const alt = title || item.category;
               return (
                 <button
@@ -211,13 +222,13 @@ export default function GalleryPage({ language = "fa" }) {
           >
             <img
               src={resolveGalleryImageUrl(selected.image)}
-              alt={selected.title?.fa || selected.category}
+              alt={localizedTitle(selected, locale) || selected.category}
               className="block h-auto w-auto max-h-full max-w-full object-contain"
             />
           </div>
-          {selected.title?.fa && (
+          {localizedTitle(selected, locale) && (
             <div className="mx-auto w-full max-w-4xl shrink-0 rounded-2xl bg-white/10 px-4 py-3 text-center text-white backdrop-blur sm:px-6">
-              <p className="font-black">{selected.title.fa}</p>
+              <p className="font-black">{localizedTitle(selected, locale)}</p>
             </div>
           )}
         </div>,

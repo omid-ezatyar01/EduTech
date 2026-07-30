@@ -1,13 +1,14 @@
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "./http";
 import { getToken } from "./portal";
 
-const ACCESS_PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+const ACCESS_PROFILE_CACHE_TTL_MS = 30 * 1000;
 let accessProfileCache = null;
 let accessProfileRequest = null;
 
 export const fetchTeacherDashboard = async () => {
   const response = await fetch(`${getApiBase()}/teacher/dashboard`, {
     headers: buildAuthHeaders(),
+    cache: "no-store",
   });
 
   const data = await parseJsonResponse(response);
@@ -90,7 +91,13 @@ export const fetchTeacherProfile = async () => {
   });
 
   const data = await parseJsonResponse(response);
-  return data?.data || {};
+  const profile = data?.data || {};
+  accessProfileCache = {
+    token: getToken() || "",
+    data: profile,
+    updatedAt: Date.now(),
+  };
+  return profile;
 };
 
 export const fetchTeacherAccessProfile = async () => {
@@ -108,6 +115,7 @@ export const fetchTeacherAccessProfile = async () => {
 
   const promise = fetch(`${getApiBase()}/teacher/profile`, {
     headers: buildAuthHeaders(),
+    cache: "no-store",
   })
     .then(parseJsonResponse)
     .then((data) => {

@@ -9,6 +9,7 @@ import CourseRating from "../models/CourseRating.js";
 import DirectMessage from "../models/DirectMessage.js";
 import StudentNotification from "../models/StudentNotification.js";
 import TeacherNotification from "../models/TeacherNotification.js";
+import Coupon from "../models/Coupon.js";
 import { removeOldCourseThumbnailIfLocal } from "../utils/courseImage.js";
 import { removeCourseResourcePdfIfLocal } from "../utils/courseResourceFile.js";
 import { enqueueSessionCalendarRemoval } from "./studentCalendarSync.service.js";
@@ -36,6 +37,19 @@ export const deleteCourseWithRelationsByFilter = async (filter = {}) => {
   await Promise.all(
     calendarSessions.map((session) => enqueueSessionCalendarRemoval(session)),
   );
+  const [singleCourseCoupons, multiCourseCoupons] = await Promise.all([
+    Coupon.updateMany(
+      { $and: [{ courseIds: courseId }, { courseIds: { $size: 1 } }] },
+      {
+        $pull: { courseIds: courseId },
+        $set: { status: "inactive" },
+      },
+    ),
+    Coupon.updateMany(
+      { courseIds: courseId, "courseIds.1": { $exists: true } },
+      { $pull: { courseIds: courseId } },
+    ),
+  ]);
 
   const [
     resourceResult,
@@ -80,6 +94,9 @@ export const deleteCourseWithRelationsByFilter = async (filter = {}) => {
       messages: Number(messageResult?.deletedCount || 0),
       studentNotifications: Number(studentNotificationResult?.deletedCount || 0),
       teacherNotifications: Number(teacherNotificationResult?.deletedCount || 0),
+      couponsUpdated:
+        Number(singleCourseCoupons?.modifiedCount || 0) +
+        Number(multiCourseCoupons?.modifiedCount || 0),
     },
   };
 };

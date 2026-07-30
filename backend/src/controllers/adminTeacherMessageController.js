@@ -132,7 +132,7 @@ const listAdminTeacherConversations = async ({ search = "", unreadOnly = false }
     countMap.set(teacherId, current);
   });
 
-  let conversations = teacherIds
+  const allConversations = teacherIds
     .map((teacherId) => {
       const teacher = teacherMap.get(teacherId);
       if (!teacher) return null;
@@ -154,6 +154,8 @@ const listAdminTeacherConversations = async ({ search = "", unreadOnly = false }
       };
     })
     .filter(Boolean);
+  const stats = buildConversationStats(allConversations);
+  let conversations = allConversations;
 
   if (search) {
     conversations = conversations.filter((row) =>
@@ -171,7 +173,7 @@ const listAdminTeacherConversations = async ({ search = "", unreadOnly = false }
 
   return {
     conversations,
-    stats: buildConversationStats(conversations),
+    stats,
   };
 };
 

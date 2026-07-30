@@ -2,24 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 
 export default function UpcomingClassesTable({ classes, language = "fa" }) {
   const isFa = language === "fa";
+  const rows = useMemo(
+    () => (Array.isArray(classes) ? classes : []),
+    [classes],
+  );
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
 
-  const totalPages = Math.max(1, Math.ceil(classes.length / itemsPerPage));
+  const totalPages = Math.max(1, Math.ceil(rows.length / itemsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
   const paginatedClasses = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return classes.slice(start, start + itemsPerPage);
-  }, [classes, currentPage]);
+    const start = (safeCurrentPage - 1) * itemsPerPage;
+    return rows.slice(start, start + itemsPerPage);
+  }, [rows, safeCurrentPage]);
 
   useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [classes]);
+    const timer = window.setTimeout(() => setCurrentPage(1), 0);
+    return () => window.clearTimeout(timer);
+  }, [rows]);
 
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-6 pb-0 shadow-sm sm:pb-6">
@@ -86,8 +86,8 @@ export default function UpcomingClassesTable({ classes, language = "fa" }) {
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
+              disabled={safeCurrentPage === 1}
               className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isFa ? "قبلی" : "Previous"}
@@ -99,7 +99,7 @@ export default function UpcomingClassesTable({ classes, language = "fa" }) {
                 type="button"
                 onClick={() => setCurrentPage(page)}
                 className={`h-9 min-w-9 rounded-lg px-3 text-xs font-black transition ${
-                  currentPage === page
+                  safeCurrentPage === page
                     ? "bg-primary-600 text-white"
                     : "border border-slate-200 text-slate-700 hover:bg-slate-50"
                 }`}
@@ -110,8 +110,8 @@ export default function UpcomingClassesTable({ classes, language = "fa" }) {
 
             <button
               type="button"
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
+              disabled={safeCurrentPage === totalPages}
               className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isFa ? "بعدی" : "Next"}

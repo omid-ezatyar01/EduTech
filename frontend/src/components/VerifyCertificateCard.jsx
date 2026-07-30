@@ -55,7 +55,7 @@ export default function VerifyCertificateCard({
       setCode(requestedCode);
       setResult(data);
       setStatus("success");
-    } catch (_error) {
+    } catch {
       setResult(null);
       setStatus("error");
     } finally {
@@ -65,11 +65,13 @@ export default function VerifyCertificateCard({
 
   useEffect(() => {
     const prefetchedCode = String(initialCode || "").trim().toUpperCase();
-    setCode(prefetchedCode);
     if (!prefetchedCode) return;
 
     let isMounted = true;
     const verifyPrefilledCode = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      setCode(prefetchedCode);
       try {
         setIsLoading(true);
         setStatus("idle");
@@ -77,7 +79,7 @@ export default function VerifyCertificateCard({
         if (!isMounted) return;
         setResult(data);
         setStatus("success");
-      } catch (_error) {
+      } catch {
         if (!isMounted) return;
         setResult(null);
         setStatus("error");

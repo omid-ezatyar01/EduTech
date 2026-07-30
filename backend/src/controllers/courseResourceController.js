@@ -38,8 +38,12 @@ const ensureOwnedCourse = async (courseId, teacherId) => {
 };
 
 const ensureCourseResourceMutationsAllowed = (course) => {
-  if (course?.classEndedAt) {
-    throw new ApiError(400, "Ended courses cannot be changed by teacher");
+  if (
+    course?.classEndedAt ||
+    course?.classCancelledAt ||
+    course?.status === "cancelled"
+  ) {
+    throw new ApiError(400, "Ended or cancelled courses cannot be changed by teacher");
   }
 };
 

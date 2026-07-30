@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   BarChart3,
@@ -10,6 +10,12 @@ import {
   Wallet,
 } from "lucide-react";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
+import AdminPageLoader from "../components/common/AdminPageLoader.jsx";
+import {
+  buildAuthHeaders,
+  getApiBase,
+  parseJsonResponse,
+} from "../../services/http.js";
 import {
   Area,
   AreaChart,
@@ -23,34 +29,20 @@ import {
   YAxis,
 } from "recharts";
 
-const monthlyRevenue = [];
-const channelMix = [];
-const countryMix = [];
-const topCourses = [];
-
-const reportPeriods = {
-  "30d": {
+const EMPTY_REPORT = {
+  summary: {
     revenue: 0,
     students: 0,
     courses: 0,
     teachers: 0,
-    conversion: "0%",
+    conversion: 0,
   },
-  "90d": {
-    revenue: 0,
-    students: 0,
-    courses: 0,
-    teachers: 0,
-    conversion: "0%",
-  },
-  "180d": {
-    revenue: 0,
-    students: 0,
-    courses: 0,
-    teachers: 0,
-    conversion: "0%",
-  },
+  monthlyRevenue: [],
+  channelMix: [],
+  countryMix: [],
+  topCourses: [],
 };
+const CHANNEL_COLORS = ["#2563eb", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#06b6d4"];
 
 const PAGE_TEXT = {
   "Reports overview": "نمای کلی گزارش‌ها",
@@ -89,6 +81,8 @@ const PAGE_TEXT = {
   "of successful payments in this report snapshot.": "از پرداخت‌های موفق در این نمای گزارش.",
   "This card will update automatically when real payment-channel data is available.":
     "این کارت زمانی که داده واقعی کانال‌های پرداخت در دسترس باشد، خودکار به‌روزرسانی می‌شود.",
+  "Loading reports": "در حال بارگذاری گزارش‌ها",
+  "Failed to load reports.": "بارگذاری گزارش‌ها ناموفق بود.",
 };
 
 const translateText = (text, language) => {
@@ -122,13 +116,71 @@ function EmptyState({ label }) {
 
 export default function AdminReportsPage() {
   const { t, language, isRTL } = useAdminI18n();
-  const pageTr = (text) => translateText(t(text), language);
+  const pageTr = useCallback(
+    (text) => translateText(t(text), language),
+    [language, t],
+  );
   const [period, setPeriod] = useState("90d");
-  const summary = reportPeriods[period] || reportPeriods["90d"];
+  const [report, setReport] = useState(EMPTY_REPORT);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const summary = report.summary || EMPTY_REPORT.summary;
+  const monthlyRevenue = report.monthlyRevenue || [];
+  const channelMix = useMemo(
+    () => (report.channelMix || []).map((row, index) => ({
+      ...row,
+      color: CHANNEL_COLORS[index % CHANNEL_COLORS.length],
+    })),
+    [report.channelMix],
+  );
+  const countryMix = report.countryMix || [];
+  const topCourses = report.topCourses || [];
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch(
+          `${getApiBase()}/admin/reports?period=${encodeURIComponent(period)}`,
+          {
+            headers: buildAuthHeaders(),
+            cache: "no-store",
+          },
+        );
+        const payload = await parseJsonResponse(response);
+        if (!active) return;
+        setReport({
+          summary: payload?.data?.summary || EMPTY_REPORT.summary,
+          monthlyRevenue: Array.isArray(payload?.data?.monthlyRevenue)
+            ? payload.data.monthlyRevenue
+            : [],
+          channelMix: Array.isArray(payload?.data?.channelMix)
+            ? payload.data.channelMix
+            : [],
+          countryMix: Array.isArray(payload?.data?.countryMix)
+            ? payload.data.countryMix
+            : [],
+          topCourses: Array.isArray(payload?.data?.topCourses)
+            ? payload.data.topCourses
+            : [],
+        });
+      } catch (requestError) {
+        if (active) setError(requestError?.message || pageTr("Failed to load reports."));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, [pageTr, period]);
 
   const highestChannel = useMemo(
     () => [...channelMix].sort((left, right) => right.value - left.value)[0] || null,
-    [],
+    [channelMix],
   );
 
   const statsCards = [
@@ -162,12 +214,16 @@ export default function AdminReportsPage() {
     },
     {
       title: pageTr("Conversion"),
-      value: summary.conversion,
+      value: `${Number(summary.conversion || 0)}%`,
       note: pageTr("Estimated checkout conversion"),
       icon: TrendingUp,
       tone: "bg-rose-50 text-rose-700",
     },
   ];
+
+  if (loading) {
+    return <AdminPageLoader label={pageTr("Loading reports")} />;
+  }
 
   return (
     <section
@@ -210,6 +266,12 @@ export default function AdminReportsPage() {
           />
         ))}
       </div>
+
+      {error ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+          {error}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 2xl:grid-cols-[1.6fr_1fr]">
         <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">

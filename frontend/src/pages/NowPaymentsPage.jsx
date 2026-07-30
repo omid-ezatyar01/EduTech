@@ -392,6 +392,8 @@ export default function NowPaymentsPage({ language: appLanguage }) {
       : readStoredLanguage();
   const [darkMode] = useState(() => readStoredDarkMode());
   const [payment, setPayment] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshSeed, setRefreshSeed] = useState(0);
   const [qr, setQr] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
   const [error, setError] = useState("");
@@ -467,6 +469,10 @@ export default function NowPaymentsPage({ language: appLanguage }) {
     const resetTimer = window.setTimeout(() => {
       setTxHash("");
       setDidSendPayment(false);
+      setPayment(null);
+      setQr("");
+      setError("");
+      setLoading(true);
     }, 0);
 
     const load = async () => {
@@ -479,9 +485,15 @@ export default function NowPaymentsPage({ language: appLanguage }) {
 
         const qrPayload = resolveQrPayload(nextPayment);
 
-        if (qrPayload) {
-          const nextQr = await QRCode.toDataURL(qrPayload, { margin: 1, width: 440 });
-          if (mounted) setQr(nextQr);
+        if (!qrPayload) {
+          setQr("");
+        } else {
+          try {
+            const nextQr = await QRCode.toDataURL(qrPayload, { margin: 1, width: 440 });
+            if (mounted) setQr(nextQr);
+          } catch {
+            if (mounted) setQr("");
+          }
         }
       } catch (requestError) {
         if (!mounted) return;
@@ -493,6 +505,8 @@ export default function NowPaymentsPage({ language: appLanguage }) {
             "Unable to load payment details.",
           ),
         );
+      } finally {
+        if (mounted) setLoading(false);
       }
     };
 
@@ -503,7 +517,7 @@ export default function NowPaymentsPage({ language: appLanguage }) {
       window.clearTimeout(resetTimer);
       window.clearInterval(timer);
     };
-  }, [language, navigate, paymentAttemptId]);
+  }, [language, navigate, paymentAttemptId, refreshSeed]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -778,6 +792,40 @@ export default function NowPaymentsPage({ language: appLanguage }) {
   const expiredPaymentMessage = isFa
     ? "این درخواست پرداخت منقضی شده است. بعد از منقضی‌شدن دیگر نمی‌توانید TXID را ثبت یا بررسی کنید."
     : "This payment request has expired. Once expired, the TXID can no longer be submitted or verified.";
+
+  if (loading && !payment) {
+    return (
+      <section className={`min-h-screen px-4 py-6 ${pageClass}`}>
+        <div className="mx-auto max-w-[1120px] animate-pulse space-y-4">
+          <div className="h-24 rounded-3xl bg-slate-200/70" />
+          <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+            <div className="h-[520px] rounded-3xl bg-slate-200/70" />
+            <div className="h-[520px] rounded-3xl bg-slate-200/70" />
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (error && !payment) {
+    return (
+      <section className={`grid min-h-screen place-items-center px-4 ${pageClass}`} dir={isFa ? "rtl" : "ltr"}>
+        <div className={`${glassCardClass} ${panelBorderClass} w-full max-w-lg p-8 text-center`}>
+          <p className={`text-sm font-bold ${darkMode ? "text-rose-200" : "text-rose-700"}`}>{error}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              setRefreshSeed((value) => value + 1);
+            }}
+            className="mt-5 rounded-xl bg-primary-600 px-5 py-2.5 text-sm font-black text-white"
+          >
+            {isFa ? "تلاش دوباره" : "Try again"}
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className={`relative min-h-screen overflow-hidden px-1.5 py-2 sm:px-4 sm:py-4 lg:px-5 ${pageClass}`}>
@@ -1250,9 +1298,9 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                       )}
                       <span>{isFa ? "ثبت تراکنش و بررسی" : "Submit and verify"}</span>
                     </button>
-                  ) : (
+                  ) : payment?.providerUrl || payment?.recipientAddress ? (
                     <a
-                      href={payment?.providerUrl || payment?.recipientAddress || "#"}
+                      href={payment.providerUrl || payment.recipientAddress}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-[16px] bg-[linear-gradient(135deg,#3B82F6_0%,#2563EB_100%)] px-4 text-xs font-black text-white shadow-[0_14px_28px_rgba(37,99,235,0.28)] transition hover:scale-[1.01]"
@@ -1260,6 +1308,15 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                       <ExternalLink size={18} />
                       <span>{isFa ? "رفتن به صفحه پرداخت" : "Open payment page"}</span>
                     </a>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-[16px] bg-slate-300 px-4 text-xs font-black text-slate-600"
+                    >
+                      <ExternalLink size={18} />
+                      <span>{isFa ? "لینک پرداخت در دسترس نیست" : "Payment link unavailable"}</span>
+                    </button>
                   )}
                 </div>
               </div>

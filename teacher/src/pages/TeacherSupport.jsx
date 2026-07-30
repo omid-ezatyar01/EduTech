@@ -18,6 +18,7 @@ import {
   fetchMySupportTickets,
   fetchSupportTicket,
   markSupportTicketRead,
+  setSupportTicketOpenState,
   sendSupportMessage,
   updateSupportMessage,
 } from "../../services/supportService";
@@ -28,6 +29,7 @@ const copy = {
     newTicket: "New ticket", empty: "No support conversations yet.", select: "Select a conversation",
     category: "Request type", help: "Describe your question", create: "Start conversation",
     live: "Live", reconnecting: "Reconnecting",
+    reopen: "Reopen conversation",
     statuses: { open: "Open", in_progress: "In progress", waiting_for_user: "Waiting for you", resolved: "Resolved", closed: "Closed" },
     categories: { consultation: "Consultation", registration: "Registration", account: "Account", course: "Course", payment: "Payment", technical: "Technical", teaching: "Teaching", certificate: "Certificate", feedback: "Feedback & suggestion", complaint: "Complaint", other: "Other" },
   },
@@ -36,6 +38,7 @@ const copy = {
     newTicket: "تکت جدید", empty: "هنوز گفتگوی پشتیبانی ندارید.", select: "یک گفتگو را انتخاب کنید",
     category: "نوع درخواست", help: "پرسش خود را توضیح دهید", create: "شروع گفتگو",
     live: "زنده", reconnecting: "در حال اتصال",
+    reopen: "بازکردن دوباره گفتگو",
     statuses: { open: "باز", in_progress: "در حال بررسی", waiting_for_user: "منتظر پاسخ شما", resolved: "حل‌شده", closed: "بسته" },
     categories: { consultation: "مشوره", registration: "ثبت‌نام", account: "حساب", course: "کورس", payment: "پرداخت", technical: "مشکل فنی", teaching: "تدریس", certificate: "سرتیفیکیت", feedback: "بازخورد و پیشنهاد", complaint: "شکایت", other: "سایر" },
   },
@@ -93,6 +96,8 @@ export default function TeacherSupport() {
   const typingActiveRef = useRef(false);
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
+  const selectedTicketRef = useRef(selectedId);
+  selectedTicketRef.current = selectedId;
   usePersistentFormDraft({
     draftId: "support:new-ticket",
     value: form,
@@ -128,6 +133,7 @@ export default function TeacherSupport() {
       );
     }
     const data = await fetchSupportTicket(id, { before });
+    if (String(selectedTicketRef.current) !== String(id)) return;
     setChat((current) => {
       const sameTicket = current?.ticket?.id === data.ticket?.id;
       const currentMessages = sameTicket ? current.messages || [] : [];
@@ -370,6 +376,23 @@ export default function TeacherSupport() {
     setPageInfo({ hasMore: false, nextBefore: null });
     setSelectedId(ticketId);
   };
+  const reopenTicket = async () => {
+    if (!selectedId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const data = await setSupportTicketOpenState(selectedId, "open");
+      if (!data?.ticket) return;
+      setChat((current) => current ? { ...current, ticket: { ...current.ticket, ...data.ticket } } : current);
+      setTickets((current) => current.map((ticket) =>
+        ticket.id === data.ticket.id ? { ...ticket, ...data.ticket } : ticket));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const conversationLocked = ["resolved", "closed"].includes(chat?.ticket?.status);
   return <TeacherLayout teacher={teacher} language={language} onLanguageChange={setLanguage}>
     <header className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h1 className="flex items-center gap-2 text-2xl font-black"><Headphones className="text-[#0B4FD8]"/>{t.title}</h1><p className="mt-1 text-sm font-semibold text-slate-500">{t.subtitle}</p></div><div className="flex items-center gap-2"><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-black ${live ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{live ? <Wifi size={14}/> : <WifiOff size={14}/>} {live ? t.live : t.reconnecting}</span><button onClick={() => setCreating(true)} className="inline-flex items-center gap-2 rounded-xl bg-[#0B4FD8] px-4 py-2.5 text-sm font-black text-white"><Plus size={17}/>{t.newTicket}</button></div></header>
     {error && <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}
@@ -401,7 +424,8 @@ export default function TeacherSupport() {
           <form onSubmit={reply} className="border-t p-3">
             {replyingTo ? <div className="mb-2 flex items-center gap-2 rounded-xl border-s-4 border-blue-500 bg-blue-50 px-3 py-2"><div className="min-w-0 flex-1"><p className="text-[10px] font-black text-blue-700">{replyingTo.sender?.name || (language === "fa" ? "پیام" : "Message")}</p><p className="truncate text-xs text-slate-600">{replyingTo.body}</p></div><button type="button" onClick={() => setReplyingTo(null)}><X size={16}/></button></div> : null}
             {supportTyping ? <div className="mb-1 px-2 text-[11px] font-bold text-blue-700">{language === "fa" ? "پشتیبانی در حال نوشتن است…" : "Support is typing…"}</div> : null}
-            <div className="flex gap-2"><textarea ref={composerRef} value={draft} onChange={(e) => { setDraft(e.target.value); notifyTyping(Boolean(e.target.value.trim())); }} disabled={chat.ticket.status === "closed"} rows={2} maxLength={4000} placeholder={t.help} className="min-h-12 flex-1 resize-none rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"/><button onPointerDown={(event) => event.preventDefault()} onClick={() => composerRef.current?.focus({ preventScroll: true })} disabled={busy || !draft.trim() || chat.ticket.status === "closed"} className="grid w-12 place-items-center rounded-xl bg-[#0B4FD8] text-white disabled:opacity-40"><Send size={19}/></button></div>
+            {conversationLocked ? <button type="button" disabled={busy} onClick={reopenTicket} className="mb-2 w-full rounded-xl bg-blue-50 px-4 py-3 text-sm font-black text-blue-700 disabled:opacity-50">{t.reopen}</button> : null}
+            <div className="flex gap-2"><textarea ref={composerRef} value={draft} onChange={(e) => { setDraft(e.target.value); notifyTyping(Boolean(e.target.value.trim())); }} disabled={conversationLocked} rows={2} maxLength={4000} placeholder={t.help} className="min-h-12 flex-1 resize-none rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"/><button onPointerDown={(event) => event.preventDefault()} onClick={() => composerRef.current?.focus({ preventScroll: true })} disabled={busy || !draft.trim() || conversationLocked} className="grid w-12 place-items-center rounded-xl bg-[#0B4FD8] text-white disabled:opacity-40"><Send size={19}/></button></div>
           </form>
         </>}
       </div>

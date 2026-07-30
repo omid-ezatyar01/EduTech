@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import {
   ClipboardCheck,
   Clock,
@@ -58,7 +58,8 @@ const emptyForm = {
 
 const DEFAULT_ASSIGNMENTS_META = { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
 const DEFAULT_ASSIGNMENTS_STATS = { total: 0, published: 0, pendingReview: 0, dueSoon: 0 };
-const isManageableCourse = (course = {}) => !course?.classEndedAt;
+const isManageableCourse = (course = {}) =>
+  !course?.classEndedAt && !course?.classCancelledAt && course?.status !== "cancelled";
 
 const formatDateTime = (value, language) => {
   if (!value) return "-";
@@ -126,15 +127,20 @@ const resolveSubmissionAttachmentUrl = (value = "") => {
 
 export default function TeacherAssignments() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
   const isFa = language === "fa";
   const requestedCourseId = useMemo(
     () => new URLSearchParams(location.search).get("courseId") || "",
     [location.search],
   );
+  const requestedSearch = useMemo(
+    () => new URLSearchParams(location.search).get("q") || "",
+    [location.search],
+  );
   const initialAssignmentsCache = readTeacherPageCache(getAssignmentsCacheKey({
     page: 1,
-    search: "",
+    search: requestedSearch,
     courseId: requestedCourseId,
     status: "",
     type: "",
@@ -143,7 +149,7 @@ export default function TeacherAssignments() {
   const [items, setItems] = useState(initialAssignmentsCache?.items || []);
   const [meta, setMeta] = useState(initialAssignmentsCache?.meta || DEFAULT_ASSIGNMENTS_META);
   const [stats, setStats] = useState(initialAssignmentsCache?.stats || DEFAULT_ASSIGNMENTS_STATS);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(requestedSearch);
   const [courseId, setCourseId] = useState(requestedCourseId);
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
@@ -168,6 +174,8 @@ export default function TeacherAssignments() {
   const [selectedSubmissionDetail, setSelectedSubmissionDetail] = useState(null);
   const [downloadBusyId, setDownloadBusyId] = useState("");
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const assignmentsRequestRef = useRef(0);
+  const submissionsRequestRef = useRef(0);
   const assignmentDraftId = `assignment:${editing?.id || "create"}`;
   usePersistentFormDraft({
     draftId: assignmentDraftId,
@@ -202,6 +210,7 @@ export default function TeacherAssignments() {
   };
 
   const loadAssignments = useCallback(async (targetPage = page) => {
+    const requestId = ++assignmentsRequestRef.current;
     const cacheKey = getAssignmentsCacheKey({
       page: targetPage,
       search,
@@ -247,11 +256,9 @@ export default function TeacherAssignments() {
           ...(courseId ? { courseId } : {}),
         }),
       ]);
+      if (requestId !== assignmentsRequestRef.current) return;
 
-      const activeCourseIds = new Set((Array.isArray(courses) ? courses : []).map((course) => String(course?._id || "")));
-      const rows = (Array.isArray(listRes?.items) ? listRes.items : []).filter((item) =>
-        activeCourseIds.has(String(item?.courseId || "")),
-      );
+      const rows = Array.isArray(listRes?.items) ? listRes.items : [];
       const listMeta = listRes?.meta || {};
       const nextMeta = {
         page: Number(listMeta.page || targetPage || 1),
@@ -289,12 +296,12 @@ export default function TeacherAssignments() {
         stats: nextStats,
       });
     } catch (err) {
+      if (requestId !== assignmentsRequestRef.current) return;
       setError(err?.message || (isFa ? "بارگذاری تمرین‌ها ناموفق بود." : "Failed to load assignments."));
-      setItems([]);
     } finally {
-      setLoading(false);
+      if (requestId === assignmentsRequestRef.current) setLoading(false);
     }
-  }, [courseId, courses, isFa, page, search, status, type]);
+  }, [courseId, isFa, page, search, status, type]);
 
   useEffect(() => {
     let mounted = true;
@@ -324,7 +331,18 @@ export default function TeacherAssignments() {
   }, [requestedCourseId]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(requestedSearch);
+      setPage(1);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [requestedSearch]);
+
+  useEffect(() => {
     loadAssignments(page);
+    return () => {
+      assignmentsRequestRef.current += 1;
+    };
   }, [loadAssignments, page, refreshSeed]);
 
   useEffect(() => {
@@ -355,6 +373,10 @@ export default function TeacherAssignments() {
 
     if (!form.dueAt || Number.isNaN(dueAtMs)) {
       errors.dueAt = isFa ? "تاریخ مهلت معتبر نیست." : "Due date is invalid.";
+    } else if (!editing && dueAtMs <= Date.now()) {
+      errors.dueAt = isFa
+        ? "مهلت تمرین جدید باید در آینده باشد."
+        : "A new assignment deadline must be in the future.";
     }
 
     if (!Number.isFinite(maxScore) || maxScore < 1 || maxScore > 1000) {
@@ -401,6 +423,21 @@ export default function TeacherAssignments() {
     resetForm();
     setOpenForm(true);
   };
+
+  useEffect(() => {
+    if (!location.state?.openCreate) return undefined;
+    const timer = window.setTimeout(() => {
+      setForm(emptyForm);
+      setEditing(null);
+      setFormErrors({});
+      setOpenForm(true);
+      navigate(`${location.pathname}${location.search}`, {
+        replace: true,
+        state: null,
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname, location.search, location.state, navigate]);
 
   const openEdit = (item) => {
     setEditing(item);
@@ -469,7 +506,11 @@ export default function TeacherAssignments() {
   };
 
   const handleDelete = async (item) => {
-    const ok = window.confirm(isFa ? "این تمرین حذف شود؟" : "Delete this assignment?");
+    const ok = window.confirm(
+      isFa
+        ? "این تمرین و همه تسلیمی‌ها و نمره‌های مرتبط برای همیشه حذف شود؟"
+        : "Permanently delete this assignment and all related submissions and grades?",
+    );
     if (!ok) return;
 
     try {
@@ -486,6 +527,7 @@ export default function TeacherAssignments() {
   };
 
   const openSubmissions = async (item) => {
+    const requestId = ++submissionsRequestRef.current;
     try {
       setSubmissionsOpen(true);
       setSubmissionLoading(true);
@@ -496,6 +538,7 @@ export default function TeacherAssignments() {
         limit: 100,
         status: "all",
       });
+      if (requestId !== submissionsRequestRef.current) return;
       const rows = Array.isArray(data?.submissions) ? data.submissions : [];
       setSubmissions(rows);
       setSubmissionStats(data?.stats || {});
@@ -510,16 +553,18 @@ export default function TeacherAssignments() {
         }, {}),
       );
     } catch (err) {
+      if (requestId !== submissionsRequestRef.current) return;
       setError(err?.message || (isFa ? "بارگذاری تسلیمی‌ها ناموفق بود." : "Failed to load submissions."));
       setSubmissionsOpen(false);
       setSelectedAssignment(null);
       setSelectedSubmissionDetail(null);
     } finally {
-      setSubmissionLoading(false);
+      if (requestId === submissionsRequestRef.current) setSubmissionLoading(false);
     }
   };
 
   const closeSubmissionsModal = () => {
+    submissionsRequestRef.current += 1;
     setSubmissionsOpen(false);
     setSelectedAssignment(null);
     setSelectedSubmissionDetail(null);

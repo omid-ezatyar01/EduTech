@@ -68,13 +68,14 @@ export default function BlogArticlePage({ language = "fa" }) {
     try {
       const row = await fetchArticleBySlug(slug);
       setArticle(row);
-      const result = await fetchArticles({ category: row.category, limit: 4, sort: "latest" });
-      setRelated(result.articles.filter((item) => item.slug !== row.slug).slice(0, 3));
+      setLoadedSlug(slug);
+      const result = await fetchArticles({ category: row.category, limit: 4, sort: "latest" }).catch(() => ({ articles: [] }));
+      setRelated((result.articles || []).filter((item) => item.slug !== row.slug).slice(0, 3));
     } catch (err) { setError(err.status === 404 ? page.notFound : err.message || page.notFound); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { let active = true; fetchArticleBySlug(slug).then(async (row) => { if (!active) return; setArticle(row); setError(""); setLoadedSlug(slug); const result = await fetchArticles({ category: row.category, limit: 4, sort: "latest" }); if (active) setRelated(result.articles.filter((item) => item.slug !== row.slug).slice(0, 3)); }).catch((err) => { if (active) { setLoadedSlug(slug); setError(err.status === 404 ? page.notFound : err.message || page.notFound); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [page.notFound, slug]);
+  useEffect(() => { let active = true; fetchArticleBySlug(slug).then(async (row) => { if (!active) return; setArticle(row); setError(""); setLoadedSlug(slug); const result = await fetchArticles({ category: row.category, limit: 4, sort: "latest" }).catch(() => ({ articles: [] })); if (active) setRelated((result.articles || []).filter((item) => item.slug !== row.slug).slice(0, 3)); }).catch((err) => { if (active) { setLoadedSlug(slug); setError(err.status === 404 ? page.notFound : err.message || page.notFound); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [page.notFound, slug]);
 
   useEffect(() => {
     if (!article) return;

@@ -1,4 +1,4 @@
-import { buildAuthHeaders, fetchJsonWithCache, getApiBase, getApiCacheTtl, parseJsonResponse } from "./http.js";
+import { buildAuthHeaders, fetchJsonWithCache, getApiBase, getApiCacheTtl, invalidateApiCache, parseJsonResponse } from "./http.js";
 
 export const fetchPublicVideos = async ({ feed = "all", platform = "all", sort = "popular", page = 1, limit = 6, teacherId = "" } = {}) => {
   const authenticatedFeed = feed === "following" || feed === "saved";
@@ -34,7 +34,9 @@ export const fetchVideoSocialState = async () => {
 
 export const toggleVideoLike = async (videoId) => {
   const response = await fetch(`${getApiBase()}/videos/${videoId}/like`, { method: "POST", headers: buildAuthHeaders() });
-  return (await parseJsonResponse(response))?.data || {};
+  const data = (await parseJsonResponse(response))?.data || {};
+  invalidateApiCache((key) => String(key).includes("public-video"));
+  return data;
 };
 
 export const toggleVideoSave = async (videoId) => {

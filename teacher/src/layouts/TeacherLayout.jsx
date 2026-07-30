@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import TeacherSidebar from "../components/common/TeacherSidebar";
 import TeacherTopbar from "../components/common/TeacherTopbar";
 import TeacherSupportContactButton from "../components/common/TeacherSupportContactButton";
@@ -12,6 +12,20 @@ export default function TeacherLayout({ teacher, language, onLanguageChange, chi
     clearAuth({ notify: false });
     window.location.replace(PORTAL_CONFIG.loginPath);
   };
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setMobileSidebarOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobileSidebarOpen]);
 
   return (
     <div dir={isRTL ? "rtl" : "ltr"} className="h-[100dvh] overflow-hidden bg-[#F8FAFC]">
@@ -57,6 +71,7 @@ export default function TeacherLayout({ teacher, language, onLanguageChange, chi
           mobileSidebarOpen ? "opacity-100 xl:hidden" : "pointer-events-none opacity-0"
         }`}
         onClick={() => setMobileSidebarOpen(false)}
+        aria-hidden="true"
       />
 
       <div
@@ -69,6 +84,9 @@ export default function TeacherLayout({ teacher, language, onLanguageChange, chi
               ? "translate-x-full"
             : "-translate-x-full"
         }`}
+        role="dialog"
+        aria-modal={mobileSidebarOpen ? "true" : undefined}
+        aria-hidden={!mobileSidebarOpen}
       >
         <div className="h-full overflow-hidden [direction:ltr]">
           <div dir={isRTL ? "rtl" : "ltr"} className="h-full">

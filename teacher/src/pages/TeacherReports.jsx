@@ -70,6 +70,14 @@ const DEFAULT_REPORT = {
   },
   courses: [],
   coursesMeta: { total: 0 },
+  courseSummary: {
+    total: 0,
+    published: 0,
+    pending: 0,
+    draft: 0,
+    rejected: 0,
+    cancelled: 0,
+  },
   messages: {
     stats: {
       totalConversations: 0,
@@ -126,7 +134,7 @@ export default function TeacherReports() {
         const [dashboard, students, coursesPayload, messagePayload, earningsPayload] = await Promise.all([
           fetchTeacherDashboard(),
           fetchTeacherStudents({ page: 1, limit: 200 }),
-          fetchTeacherCourses({ page: 1, limit: 100 }),
+          fetchTeacherCourses({ page: 1, limit: 100, sortBy: "popular", sortOrder: "desc" }),
           // Messaging can be disabled platform-wide. Reports must still load the
           // independent course, student, and earnings data in that case.
           fetchTeacherMessageConversations({ page: 1, limit: 5 }).catch(() => DEFAULT_REPORT.messages),
@@ -140,9 +148,10 @@ export default function TeacherReports() {
           students: students || {},
           courses: Array.isArray(coursesPayload?.courses) ? coursesPayload.courses : [],
           coursesMeta: coursesPayload?.meta || { total: 0 },
+          courseSummary: coursesPayload?.extra?.courseSummary || {},
           messages: messagePayload || {},
           earnings: {
-            commissionRate: Number(earningsPayload?.commissionRate || 15),
+            commissionRate: Number(earningsPayload?.commissionRate ?? 15),
             totalRevenue: Number(earningsPayload?.totalRevenue || 0),
             platformCommission: Number(earningsPayload?.platformCommission || 0),
             teacherEarnings: Number(earningsPayload?.teacherEarnings || 0),
@@ -192,6 +201,14 @@ export default function TeacherReports() {
   }, [report.courses]);
 
   const courseStatusStats = useMemo(() => {
+    if (report.courseSummary && Number.isFinite(Number(report.courseSummary.total))) {
+      return {
+        published: Number(report.courseSummary.published || 0),
+        pending: Number(report.courseSummary.pending || 0),
+        draft: Number(report.courseSummary.draft || 0),
+        rejected: Number(report.courseSummary.rejected || 0),
+      };
+    }
     const summary = {
       published: 0,
       pending: 0,
@@ -208,7 +225,7 @@ export default function TeacherReports() {
     });
 
     return summary;
-  }, [report.courses]);
+  }, [report.courseSummary, report.courses]);
 
   const cards = [
     {
@@ -216,7 +233,7 @@ export default function TeacherReports() {
       icon: BookOpen,
       labelFa: "مجموع کورس‌ها",
       labelEn: "Total Courses",
-      value: Number(report.coursesMeta?.total || report.courses.length),
+      value: Number(report.coursesMeta?.total ?? report.courses.length),
       tone: "text-[#0B4FD8] bg-[#0B4FD8]/10",
     },
     {

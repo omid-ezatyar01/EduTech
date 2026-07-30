@@ -77,6 +77,7 @@ const preloadRoutes = [
   { key: "videos", test: (path) => path === "/teacher/videos", load: loadTeacherVideos },
   { key: "articles", test: (path) => path === "/teacher/articles", load: loadTeacherArticles },
   { key: "feedback", test: (path) => path === "/teacher/feedback", load: loadTeacherFeedback },
+  { key: "support", test: (path) => path === "/teacher/support", load: loadTeacherSupport },
   { key: "messages", test: (path) => path === "/teacher/messages", load: loadTeacherMessages },
   {
     key: "password-recovery",

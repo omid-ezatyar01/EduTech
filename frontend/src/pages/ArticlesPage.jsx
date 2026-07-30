@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, BookOpen, Clock3, Eye, Search, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { fetchArticles, resolveArticleCoverUrl } from "../../services/articleService.js";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
@@ -57,18 +57,61 @@ export default function ArticlesPage({ language = "fa" }) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const [loadMoreError, setLoadMoreError] = useState("");
+  const [resolvedRequestKey, setResolvedRequestKey] = useState("");
+  const requestIdRef = useRef(0);
+  const requestKey = `${category}:${search}:${sort}`;
 
   const load = async ({ nextPage = 1, append = false } = {}) => {
-    append ? setLoadingMore(true) : setLoading(true); setError("");
+    const requestId = ++requestIdRef.current;
+    append ? setLoadingMore(true) : setLoading(true);
+    if (append) setLoadMoreError("");
+    else setError("");
     try {
       const result = await fetchArticles({ page: nextPage, limit: 9, category, search, sort });
+      if (requestId !== requestIdRef.current) return;
       setArticles((previous) => append ? [...previous, ...result.articles] : result.articles);
       setMeta(result.meta);
-    } catch (err) { setError(err.message || page.empty); }
-    finally { setLoading(false); setLoadingMore(false); }
+      setResolvedRequestKey(requestKey);
+    } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+      if (append) setLoadMoreError(err.message || page.empty);
+      else {
+        setError(err.message || page.empty);
+        setResolvedRequestKey(requestKey);
+      }
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
   };
 
-  useEffect(() => { let active = true; fetchArticles({ page: 1, limit: 9, category, search, sort }).then((result) => { if (active) { setArticles(result.articles); setMeta(result.meta); setError(""); } }).catch((err) => { if (active) setError(err.message || page.empty); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [category, page.empty, search, sort]);
+  useEffect(() => {
+    let active = true;
+    const requestId = ++requestIdRef.current;
+    fetchArticles({ page: 1, limit: 9, category, search, sort })
+      .then((result) => {
+        if (!active || requestId !== requestIdRef.current) return;
+        setArticles(result.articles);
+        setMeta(result.meta);
+        setError("");
+        setLoadMoreError("");
+        setResolvedRequestKey(requestKey);
+      })
+      .catch((err) => {
+        if (!active || requestId !== requestIdRef.current) return;
+        setError(err.message || page.empty);
+        setResolvedRequestKey(requestKey);
+      })
+      .finally(() => {
+        if (active && requestId === requestIdRef.current) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [category, page.empty, requestKey, search, sort]);
   useEffect(() => { window.scrollTo(0, 0); }, []);
 
   const featured = articles[0] || null;
@@ -93,7 +136,7 @@ export default function ArticlesPage({ language = "fa" }) {
     </section>
     <main className="mx-auto max-w-[1180px] px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-2 overflow-x-auto pb-1">{categories.map((key) => <button key={key} onClick={() => setCategory(key)} className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-black ${category === key ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{key === "all" ? page.all : categoryNames[locale][key] || key}</button>)}</div><select value={sort} onChange={(event) => setSort(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700"><option value="latest">{page.latest}</option><option value="popular">{page.popular}</option></select></div>
-      {loading ? <FrontendPageLoader label={page.loading}/> : error ? <div className="mt-8 rounded-3xl border border-red-200 bg-white py-16 text-center"><p className="font-bold text-red-700">{error}</p><button onClick={() => load()} className="mt-4 rounded-xl bg-slate-950 px-5 py-3 text-sm font-black text-white">{page.retry}</button></div> : !featured ? <div className="mt-8 rounded-3xl border border-dashed border-slate-300 bg-white py-20 text-center"><BookOpen className="mx-auto text-slate-300" size={45}/><p className="mt-3 font-bold text-slate-500">{page.empty}</p></div> : <><div className="mt-8"><ArticleCard article={featured} locale={locale} page={page} featured={Boolean(featured.featured)}/></div>{remaining.length > 0 && <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">{remaining.map((article) => <ArticleCard key={article._id} article={article} locale={locale} page={page}/>)}</div>}{meta.hasMore && <div className="mt-8 text-center"><button disabled={loadingMore} onClick={() => load({ nextPage: Number(meta.page || 1) + 1, append: true })} className="rounded-xl bg-slate-950 px-6 py-3 text-sm font-black text-white disabled:opacity-60">{loadingMore ? "…" : page.more}</button></div>}</>}
+      {loading || resolvedRequestKey !== requestKey ? <FrontendPageLoader label={page.loading}/> : error ? <div className="mt-8 rounded-3xl border border-red-200 bg-white py-16 text-center"><p className="font-bold text-red-700">{error}</p><button onClick={() => load()} className="mt-4 rounded-xl bg-slate-950 px-5 py-3 text-sm font-black text-white">{page.retry}</button></div> : !featured ? <div className="mt-8 rounded-3xl border border-dashed border-slate-300 bg-white py-20 text-center"><BookOpen className="mx-auto text-slate-300" size={45}/><p className="mt-3 font-bold text-slate-500">{page.empty}</p></div> : <><div className="mt-8"><ArticleCard article={featured} locale={locale} page={page} featured={Boolean(featured.featured)}/></div>{remaining.length > 0 && <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">{remaining.map((article) => <ArticleCard key={article._id} article={article} locale={locale} page={page}/>)}</div>}{loadMoreError ? <div className="mt-8 text-center"><p className="text-sm font-bold text-rose-700">{loadMoreError}</p><button onClick={() => load({ nextPage: Number(meta.page || 1) + 1, append: true })} className="mt-3 rounded-xl border border-rose-200 bg-white px-5 py-2.5 text-sm font-black text-rose-700">{page.retry}</button></div> : meta.hasMore ? <div className="mt-8 text-center"><button disabled={loadingMore} onClick={() => load({ nextPage: Number(meta.page || 1) + 1, append: true })} className="rounded-xl bg-slate-950 px-6 py-3 text-sm font-black text-white disabled:opacity-60">{loadingMore ? "…" : page.more}</button></div> : null}</>}
     </main>
   </div>;
 }

@@ -87,13 +87,6 @@ const normalizeMonthlyGoal = (value) => {
 export default function TeacherDashboard() {
   const navigate = useNavigate();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
-  const cachedDashboard = readTeacherPageCache(DASHBOARD_CACHE_KEY);
-  const [dashboardData, setDashboardData] = useState(cachedDashboard || DEFAULT_DASHBOARD_DATA);
-  const [loading, setLoading] = useState(!cachedDashboard);
-  const [error, setError] = useState("");
-  const [refreshSeed, setRefreshSeed] = useState(0);
-  const [monthlyGoal, setMonthlyGoal] = useState(DEFAULT_MONTHLY_GOAL_USD);
-
   const teacher = useMemo(() => {
     const user = getAuthUser();
     return user || { name: "Teacher", email: "teacher@edutech.study", role: "teacher" };
@@ -107,22 +100,22 @@ export default function TeacherDashboard() {
       "teacher";
     return `edutech_teacher_monthly_goal:${teacherIdentity}`;
   }, [teacher]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const timer = setTimeout(() => {
-      const saved = (() => {
-        try {
-          return window.localStorage.getItem(monthlyGoalStorageKey);
-        } catch {
-          return null;
-        }
-      })();
-      if (!saved) return;
-      setMonthlyGoal(normalizeMonthlyGoal(saved));
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [monthlyGoalStorageKey]);
+  const cachedDashboard = readTeacherPageCache(DASHBOARD_CACHE_KEY);
+  const [dashboardData, setDashboardData] = useState(cachedDashboard || DEFAULT_DASHBOARD_DATA);
+  const [loading, setLoading] = useState(!cachedDashboard);
+  const [error, setError] = useState("");
+  const [refreshSeed, setRefreshSeed] = useState(0);
+  const [monthlyGoal, setMonthlyGoal] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_MONTHLY_GOAL_USD;
+    try {
+      const savedGoal = window.localStorage.getItem(monthlyGoalStorageKey);
+      return savedGoal === null
+        ? DEFAULT_MONTHLY_GOAL_USD
+        : normalizeMonthlyGoal(savedGoal);
+    } catch {
+      return DEFAULT_MONTHLY_GOAL_USD;
+    }
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -294,8 +287,12 @@ export default function TeacherDashboard() {
                 type="button"
                 key={action.key}
                 onClick={() => {
-                  if (action.key === "live") navigate("/teacher/live-classes");
-                  if (action.key === "assignment") navigate("/teacher/assignments");
+                  if (action.key === "live") {
+                    navigate("/teacher/live-classes", { state: { openCreate: true } });
+                  }
+                  if (action.key === "assignment") {
+                    navigate("/teacher/assignments", { state: { openCreate: true } });
+                  }
                   if (action.key === "resource") navigate("/teacher/resources");
                   if (action.key === "reports") navigate("/teacher/reports");
                 }}

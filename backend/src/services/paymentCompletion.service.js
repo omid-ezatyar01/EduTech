@@ -12,6 +12,7 @@ import {
   publishCourseEnrollmentEvents,
   publishCourseStarted,
 } from "./courseNotification.service.js";
+import { recordCouponRedemption } from "./coupon.service.js";
 
 const ACTIVE_STATUS = new Set(["PENDING", "SUCCEEDED", "DUPLICATE_PAYMENT", "MANUAL_REVIEW", "FAILED", "EXPIRED"]);
 const NON_TRANSACTIONAL_MONGO_PATTERNS = [
@@ -61,6 +62,22 @@ export const completePayment = async ({
           { order, attempt, course: null, rawWebhookPayload, rawVerificationPayload, note, transactionId: providerPaymentId || null, senderAccount },
           session,
         );
+        await recordCouponRedemption(
+          {
+            couponId: order.couponId,
+            couponCode: order.couponCode,
+            userId: order.userId,
+            courseId: order.courseId,
+            orderId: order._id,
+            paymentId: payment._id,
+            originalBaseAmountUsdCents:
+              order.originalBaseAmountUsdCents ?? order.baseAmountUsdCents,
+            discountAmountUsdCents: order.discountAmountUsdCents || 0,
+            finalBaseAmountUsdCents: order.baseAmountUsdCents,
+            redeemedAt: attempt.paidAt || paidAt,
+          },
+          session,
+        );
         result = { order, attempt, payment, enrollment: null, duplicate: false, alreadySucceeded: true };
         return;
       }
@@ -79,6 +96,22 @@ export const completePayment = async ({
 
         const payment = await syncLegacyPaymentRecord(
           { order, attempt, course: null, rawWebhookPayload, rawVerificationPayload, note, transactionId: providerPaymentId || null, senderAccount },
+          session,
+        );
+        await recordCouponRedemption(
+          {
+            couponId: order.couponId,
+            couponCode: order.couponCode,
+            userId: order.userId,
+            courseId: order.courseId,
+            orderId: order._id,
+            paymentId: payment._id,
+            originalBaseAmountUsdCents:
+              order.originalBaseAmountUsdCents ?? order.baseAmountUsdCents,
+            discountAmountUsdCents: order.discountAmountUsdCents || 0,
+            finalBaseAmountUsdCents: order.baseAmountUsdCents,
+            redeemedAt: attempt.paidAt || paidAt,
+          },
           session,
         );
 
@@ -110,6 +143,22 @@ export const completePayment = async ({
           { order, attempt, course: null, rawWebhookPayload, rawVerificationPayload, note, transactionId: providerPaymentId || null, senderAccount },
           session,
         );
+        await recordCouponRedemption(
+          {
+            couponId: order.couponId,
+            couponCode: order.couponCode,
+            userId: order.userId,
+            courseId: order.courseId,
+            orderId: order._id,
+            paymentId: payment._id,
+            originalBaseAmountUsdCents:
+              order.originalBaseAmountUsdCents ?? order.baseAmountUsdCents,
+            discountAmountUsdCents: order.discountAmountUsdCents || 0,
+            finalBaseAmountUsdCents: order.baseAmountUsdCents,
+            redeemedAt: attempt.paidAt || paidAt,
+          },
+          session,
+        );
         result = { order, attempt, payment, enrollment: null, duplicate: true };
         return;
       }
@@ -132,6 +181,24 @@ export const completePayment = async ({
 
       const payment = await syncLegacyPaymentRecord(
         { order: lockedOrder, attempt, course, rawWebhookPayload, rawVerificationPayload, note, transactionId: providerPaymentId || null, senderAccount },
+        session,
+      );
+      await recordCouponRedemption(
+        {
+          couponId: lockedOrder.couponId,
+          couponCode: lockedOrder.couponCode,
+          userId: lockedOrder.userId,
+          courseId: lockedOrder.courseId,
+          orderId: lockedOrder._id,
+          paymentId: payment._id,
+          originalBaseAmountUsdCents:
+            lockedOrder.originalBaseAmountUsdCents ??
+            lockedOrder.baseAmountUsdCents,
+          discountAmountUsdCents:
+            lockedOrder.discountAmountUsdCents || 0,
+          finalBaseAmountUsdCents: lockedOrder.baseAmountUsdCents,
+          redeemedAt: paidAt,
+        },
         session,
       );
 

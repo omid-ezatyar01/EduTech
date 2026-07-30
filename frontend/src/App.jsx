@@ -424,7 +424,16 @@ export default function App() {
           />
         )}
         <main>
-          <Suspense fallback={null}>
+          <Suspense
+            fallback={
+              <div className="mx-auto w-full max-w-[1340px] px-4 py-8 sm:px-6 lg:px-8">
+                <FrontendPageLoader
+                  label={language === "fa" ? "در حال بارگذاری صفحه" : "Loading page"}
+                  minHeight="min-h-[52vh]"
+                />
+              </div>
+            }
+          >
             <Routes>
             {/* Public Routes */}
             <Route path="/" element={<HomePage language={language} t={t} />} />
@@ -458,7 +467,7 @@ export default function App() {
               element={<EnglishRoadmapPage language={language} />}
             />
             <Route path="/blog/english" element={<Navigate to="/roadmaps/english" replace />} />
-            <Route path="/verify" element={<VerifyCertificatePage />} />
+            <Route path="/verify" element={<VerifyCertificatePage language={language} />} />
             <Route
               path="/privacy-policy"
               element={<PrivacyPolicyPage language={language} />}

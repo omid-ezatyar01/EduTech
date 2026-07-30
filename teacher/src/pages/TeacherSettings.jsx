@@ -107,7 +107,12 @@ const validateBankForm = (form = {}, isFa = true) => {
   const hasAnyValue = Object.values(normalized).some(Boolean);
 
   if (!hasAnyValue) {
-    return { ok: true, normalized };
+    return {
+      ok: false,
+      message: isFa
+        ? "برای ثبت روش پرداخت، اطلاعات بانکی را کامل کنید."
+        : "Complete your bank details before submitting a payment method.",
+    };
   }
 
   if (!["AF", "IR"].includes(normalized.country)) {
@@ -267,6 +272,27 @@ export default function TeacherSettings() {
 
     if (newPassword !== confirmPassword) {
       setError(isFa ? "رمزهای جدید یکسان نیستند." : "New passwords do not match.");
+      return;
+    }
+    if (
+      newPassword.length < 8 ||
+      !/[a-z]/.test(newPassword) ||
+      !/[A-Z]/.test(newPassword) ||
+      !/[0-9]/.test(newPassword)
+    ) {
+      setError(
+        isFa
+          ? "رمز جدید باید حداقل ۸ نویسه و شامل حرف بزرگ، حرف کوچک و عدد باشد."
+          : "The new password must be at least 8 characters and include uppercase, lowercase, and a number.",
+      );
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setError(
+        isFa
+          ? "رمز جدید باید با رمز فعلی متفاوت باشد."
+          : "The new password must be different from your current password.",
+      );
       return;
     }
 

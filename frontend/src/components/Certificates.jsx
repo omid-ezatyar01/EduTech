@@ -702,7 +702,10 @@ export default function Certificates({ language = "fa" }) {
           />
           {error ? (
             <div className="rounded-xl border border-rose-100 bg-rose-50 p-4 text-sm font-bold text-rose-700">
-              {error}
+              <p>{error}</p>
+              <button type="button" onClick={() => setRefreshSeed((value) => value + 1)} className="mt-3 rounded-xl bg-white px-4 py-2 text-xs font-black ring-1 ring-rose-200">
+                {isFa ? "تلاش دوباره" : "Try again"}
+              </button>
             </div>
           ) : null}
           <div className="grid gap-5">
@@ -710,7 +713,7 @@ export default function Certificates({ language = "fa" }) {
               <div className="rounded-[24px] border border-slate-200 bg-white py-16 text-center text-sm font-semibold text-slate-500">
                 {t.loading}
               </div>
-            ) : filteredCertificates.length ? (
+            ) : error ? null : filteredCertificates.length ? (
               filteredCertificates.map((cert) => (
                 <CertificateCard
                   key={cert.id}

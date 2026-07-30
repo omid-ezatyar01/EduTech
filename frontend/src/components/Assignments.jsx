@@ -96,10 +96,20 @@ export default function Assignments({ language = "fa" }) {
     try {
       setLoading(true);
       setError("");
-      const [rows, enrollments] = await Promise.all([
+      const [assignmentResult, enrollmentResult] = await Promise.allSettled([
         fetchStudentAssignments(),
         fetchStudentEnrollments(),
       ]);
+      if (assignmentResult.status === "rejected") throw assignmentResult.reason;
+      if (
+        enrollmentResult.status === "rejected" &&
+        isUnauthorizedError(enrollmentResult.reason)
+      ) {
+        throw enrollmentResult.reason;
+      }
+      const rows = assignmentResult.value;
+      const enrollments =
+        enrollmentResult.status === "fulfilled" ? enrollmentResult.value : [];
       if (mountedRef && !mountedRef.current) return;
       const statusLabelMap = {
         pending: t.statusPending,
@@ -148,24 +158,22 @@ export default function Assignments({ language = "fa" }) {
   }, [language, navigate, t.loadErrorFa, t.statusLocked, t.statusPending, t.statusReviewed, t.statusSubmitted]);
 
   useEffect(() => {
-    const mountedRef = { current: true };
-    loadAssignments(mountedRef);
     const handleRefresh = () => setRefreshSeed((prev) => prev + 1);
     window.addEventListener("auth_change", handleRefresh);
     window.addEventListener("edutech_data_changed", handleRefresh);
     return () => {
-      mountedRef.current = false;
       window.removeEventListener("auth_change", handleRefresh);
       window.removeEventListener("edutech_data_changed", handleRefresh);
     };
-  }, [loadAssignments]);
+  }, []);
 
   useEffect(() => {
     const mountedRef = { current: true };
-    if (refreshSeed > 0) {
+    const timer = window.setTimeout(() => {
       loadAssignments(mountedRef);
-    }
+    }, 0);
     return () => {
+      window.clearTimeout(timer);
       mountedRef.current = false;
     };
   }, [loadAssignments, refreshSeed]);
@@ -202,7 +210,7 @@ export default function Assignments({ language = "fa" }) {
       a.teacher.toLowerCase().includes(q);
     return matchTab && matchCourse && matchSearch;
   });
-  const isEmptyState = !loading && filteredAssignments.length === 0;
+  const isEmptyState = !loading && !error && filteredAssignments.length === 0;
 
   if (isRedirecting) return null;
 
@@ -259,7 +267,15 @@ export default function Assignments({ language = "fa" }) {
             {t.subtitle}
           </p>
         </div>
-        <button className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary-600 px-6 text-sm font-black text-white shadow-glow transition hover:-translate-y-0.5 hover:bg-primary-700">
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById("assignment-guide")
+              ?.scrollIntoView({ behavior: "smooth", block: "center" })
+          }
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary-600 px-6 text-sm font-black text-white shadow-glow transition hover:-translate-y-0.5 hover:bg-primary-700"
+        >
           <HelpCircle size={18} /> {t.guide}
         </button>
       </div>
@@ -346,7 +362,10 @@ export default function Assignments({ language = "fa" }) {
 
         {error ? (
           <div className="rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-            {error}
+            <p>{error}</p>
+            <button type="button" onClick={() => setRefreshSeed((value) => value + 1)} className="mt-3 rounded-xl bg-white px-4 py-2 text-xs font-black ring-1 ring-rose-200">
+              {isFa ? "تلاش دوباره" : "Try again"}
+            </button>
           </div>
         ) : null}
         {message ? (
@@ -362,7 +381,7 @@ export default function Assignments({ language = "fa" }) {
                 {t.loading}
               </h3>
             </div>
-          ) : filteredAssignments.length > 0 ? (
+          ) : error ? null : filteredAssignments.length > 0 ? (
             filteredAssignments.map((assignment) => (
               <AssignmentItem
                 key={assignment.id}
@@ -393,7 +412,9 @@ export default function Assignments({ language = "fa" }) {
         <AssignmentStatusChart stats={stats} language={language} />
       </div>
       <div className="mt-6">
-        <AssignmentHelpCard language={language} />
+        <div id="assignment-guide" className="scroll-mt-24">
+          <AssignmentHelpCard language={language} />
+        </div>
       </div>
       <div className="h-8" aria-hidden="true" />
 

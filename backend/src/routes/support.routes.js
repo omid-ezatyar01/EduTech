@@ -10,6 +10,7 @@ import {
   getMySupportTickets,
   getSupportTicket,
   markSupportTicketRead,
+  reopenSupportTicket,
   sendSupportMessage,
   updateSupportMessage,
   updateAdminSupportTicket,
@@ -22,6 +23,7 @@ import {
   supportMessageListSchema,
   supportTicketIdSchema,
   supportTicketListSchema,
+  reopenSupportTicketSchema,
   updateSupportTicketSchema,
   updateSupportMessageSchema,
 } from "../validators/support.validators.js";
@@ -130,5 +132,12 @@ router.patch(
   authorizeRoles("student", "teacher"),
   validateRequest(supportTicketIdSchema, "params"),
   markSupportTicketRead,
+);
+router.patch(
+  "/support/tickets/:ticketId",
+  authorizeRoles("student", "teacher"),
+  validateRequest(supportTicketIdSchema, "params"),
+  validateRequest(reopenSupportTicketSchema),
+  reopenSupportTicket,
 );
 export default router;

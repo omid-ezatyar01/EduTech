@@ -238,6 +238,9 @@ export const updateSupportStaff = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(404, "Support staff account not found");
   const payload = req.validated?.body || req.body;
   let profile = await SupportStaffProfile.findOne({ user: user._id });
+  let shouldRequeueTickets = false;
+  const previousStatus = user.status;
+  const previousTokenVersion = Number(user.tokenVersion || 0);
 
   if (payload.name !== undefined) user.name = payload.name;
   if (payload.phone !== undefined) user.phone = payload.phone;
@@ -245,9 +248,36 @@ export const updateSupportStaff = asyncHandler(async (req, res) => {
     user.status = payload.status;
     if (payload.status === "blocked") {
       user.tokenVersion = Number(user.tokenVersion || 0) + 1;
+      shouldRequeueTickets = true;
     }
   }
   await user.save();
+  if (shouldRequeueTickets) {
+    try {
+      await SupportTicket.updateMany(
+        {
+          assignedTo: user._id,
+          status: { $nin: ["resolved", "closed"] },
+          deletedAt: null,
+        },
+        {
+          $set: {
+            assignedTo: null,
+            claimedAt: null,
+            lastAssignedAt: new Date(),
+            lastAssignedBy: req.user._id,
+            unreadForSupport: 1,
+          },
+          $inc: { handoffCount: 1 },
+        },
+      );
+    } catch (error) {
+      user.status = previousStatus;
+      user.tokenVersion = previousTokenVersion;
+      await user.save().catch(() => null);
+      throw error;
+    }
+  }
   if (payload.specialization !== undefined) {
     profile = await SupportStaffProfile.findOneAndUpdate(
       { user: user._id },

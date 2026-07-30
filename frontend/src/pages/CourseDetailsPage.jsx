@@ -381,6 +381,7 @@ export default function CourseDetailsPage({ t }) {
   const [loading, setLoading] = useState(() => !cachedCourse);
   const [error, setError] = useState("");
   const [notFound, setNotFound] = useState(false);
+  const [retrySeed, setRetrySeed] = useState(0);
   const [isStartingPayment, setIsStartingPayment] = useState(false);
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
@@ -389,6 +390,7 @@ export default function CourseDetailsPage({ t }) {
   const [bankPaymentDetails, setBankPaymentDetails] = useState(null);
   const [hesabPayAmountLabel, setHesabPayAmountLabel] = useState("");
   const [cryptoPreviewLabel, setCryptoPreviewLabel] = useState("");
+  const [couponCode, setCouponCode] = useState("");
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [expandedDescriptionSlug, setExpandedDescriptionSlug] = useState("");
@@ -579,7 +581,7 @@ export default function CourseDetailsPage({ t }) {
     return () => {
       mounted = false;
     };
-  }, [courseIdentifier, language, navigate, slugParam]);
+  }, [courseIdentifier, language, navigate, retrySeed, slugParam]);
 
   useEffect(() => {
     if (loading) return undefined;
@@ -708,6 +710,7 @@ export default function CourseDetailsPage({ t }) {
         courseId,
         paymentMethod: "HESABPAY_HOSTED",
         pricingRegion,
+        couponCode,
       });
       if (session?.paymentUrl) {
         window.location.href = session.paymentUrl;
@@ -749,6 +752,7 @@ export default function CourseDetailsPage({ t }) {
         courseId,
         paymentMethod: "USDT_BSC_DIRECT",
         pricingRegion,
+        couponCode,
       });
       if (session?.paymentAttemptId) {
         navigate(`/payment/crypto?attemptId=${encodeURIComponent(session.paymentAttemptId)}`);
@@ -800,7 +804,7 @@ export default function CourseDetailsPage({ t }) {
 
     try {
       setIsBankDetailsLoading(true);
-      const details = await getCourseBankPaymentDetails(courseId, pricingRegion);
+      const details = await getCourseBankPaymentDetails(courseId, pricingRegion, couponCode);
       setBankPaymentDetails(details);
       setIsPaymentMethodModalOpen(false);
       setIsBankDetailsModalOpen(true);
@@ -834,6 +838,7 @@ export default function CourseDetailsPage({ t }) {
         paymentProof,
         senderAccount,
         note,
+        couponCode,
       });
       setBankPaymentDetails((current) => (current ? {
         ...current,
@@ -1181,12 +1186,26 @@ export default function CourseDetailsPage({ t }) {
       <section className="bg-slate-50 py-16">
         <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 text-center">
           <p className="text-lg font-black text-rose-600">{error || "Course not found"}</p>
-          <Link
-            to={breadcrumbBackPath}
-            className="mt-4 inline-flex rounded-lg bg-primary-600 px-5 py-3 text-sm font-black text-white"
-          >
-            {language === "fa" ? "برگشت به کورس‌ها" : "Back to courses"}
-          </Link>
+          <div className="mt-4 flex flex-wrap justify-center gap-3">
+            {!notFound ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  setRetrySeed((value) => value + 1);
+                }}
+                className="rounded-lg bg-primary-600 px-5 py-3 text-sm font-black text-white"
+              >
+                {language === "fa" ? "تلاش دوباره" : "Try again"}
+              </button>
+            ) : null}
+            <Link
+              to={breadcrumbBackPath}
+              className="inline-flex rounded-lg border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700"
+            >
+              {language === "fa" ? "برگشت به کورس‌ها" : "Back to courses"}
+            </Link>
+          </div>
         </div>
       </section>
     );
@@ -2005,6 +2024,9 @@ export default function CourseDetailsPage({ t }) {
         isBankPaymentAvailable={Boolean(course?.bankPaymentAvailable)}
         isLoading={isStartingPayment}
         isBankLoading={isBankDetailsLoading}
+        courseId={course?._id || course?.id || ""}
+        pricingRegion={pricingRegion}
+        onCouponApplied={setCouponCode}
       />
       <BankPaymentDetailsModal
         isOpen={isBankDetailsModalOpen}

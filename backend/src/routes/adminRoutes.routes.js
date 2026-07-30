@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getAdminDashboard,
+  getAdminReports,
   getAllUsers,
   createUserByAdmin,
   createTeacherByAdmin,
@@ -41,12 +42,21 @@ import {
   sendAdminTelegramTestPost,
   updateAdminTelegramSettings,
 } from "../controllers/adminTelegramController.js";
+import {
+  createAdminCoupon,
+  deactivateAdminCoupon,
+  getAdminCouponUsage,
+  getAdminCoupons,
+  getCouponCourseOptions,
+  updateAdminCoupon,
+} from "../controllers/couponController.js";
 
 import { protect, admin } from "../middlewares/authMiddleware.js";
 import validateRequest from "../middlewares/validateRequest.js";
 import {
   adminEntityIdParamSchema,
   adminPlatformSettingsSchema,
+  adminReportsQuerySchema,
   adminTelegramPostsQuerySchema,
   adminTelegramSettingsSchema,
   adminTeachersQuerySchema,
@@ -65,6 +75,12 @@ import {
   adminTeacherConversationParamSchema,
   sendMessageSchema,
 } from "../validators/message.validators.js";
+import {
+  adminCouponsQuerySchema,
+  couponIdParamSchema,
+  createCouponSchema,
+  updateCouponSchema,
+} from "../validators/coupon.validators.js";
 
 const router = express.Router();
 
@@ -73,6 +89,34 @@ router.use(protect);
 router.use(admin);
 
 router.get("/dashboard", getAdminDashboard);
+router.get(
+  "/reports",
+  validateRequest(adminReportsQuerySchema, "query"),
+  getAdminReports,
+);
+router.get(
+  "/coupons",
+  validateRequest(adminCouponsQuerySchema, "query"),
+  getAdminCoupons,
+);
+router.get("/coupons/course-options", getCouponCourseOptions);
+router.post("/coupons", validateRequest(createCouponSchema), createAdminCoupon);
+router.patch(
+  "/coupons/:id",
+  validateRequest(couponIdParamSchema, "params"),
+  validateRequest(updateCouponSchema),
+  updateAdminCoupon,
+);
+router.delete(
+  "/coupons/:id",
+  validateRequest(couponIdParamSchema, "params"),
+  deactivateAdminCoupon,
+);
+router.get(
+  "/coupons/:id/usage",
+  validateRequest(couponIdParamSchema, "params"),
+  getAdminCouponUsage,
+);
 router.get("/notifications", getAdminNotifications);
 router.patch("/notifications/read-all", markAllAdminNotificationsRead);
 router.patch(

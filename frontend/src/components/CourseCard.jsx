@@ -127,6 +127,7 @@ export default function CourseCard({
   const [bankPaymentDetails, setBankPaymentDetails] = useState(null);
   const [hesabPayAmountLabel, setHesabPayAmountLabel] = useState("");
   const [cryptoPreviewLabel, setCryptoPreviewLabel] = useState("");
+  const [couponCode, setCouponCode] = useState("");
   const buyLabel = isCourseFree
     ? language === "fa"
       ? "ثبت‌نام رایگان"
@@ -303,6 +304,7 @@ export default function CourseCard({
         courseId,
         paymentMethod: "HESABPAY_HOSTED",
         pricingRegion,
+        couponCode,
       });
       if (session?.paymentUrl) {
         window.location.href = session.paymentUrl;
@@ -343,6 +345,7 @@ export default function CourseCard({
         courseId,
         paymentMethod: "USDT_BSC_DIRECT",
         pricingRegion,
+        couponCode,
       });
       if (session?.paymentAttemptId) {
         navigate(`/payment/crypto?attemptId=${encodeURIComponent(session.paymentAttemptId)}`);
@@ -382,7 +385,7 @@ export default function CourseCard({
 
     try {
       setIsBankDetailsLoading(true);
-      const details = await getCourseBankPaymentDetails(courseId, pricingRegion);
+      const details = await getCourseBankPaymentDetails(courseId, pricingRegion, couponCode);
       setBankPaymentDetails(details);
       setIsPaymentMethodModalOpen(false);
       setIsBankDetailsModalOpen(true);
@@ -416,6 +419,7 @@ export default function CourseCard({
         paymentProof,
         senderAccount,
         note,
+        couponCode,
       });
       setBankPaymentDetails((current) => (current ? {
         ...current,
@@ -689,6 +693,9 @@ export default function CourseCard({
           isBankPaymentAvailable={Boolean(course?.bankPaymentAvailable)}
           isLoading={isStartingPayment}
           isBankLoading={isBankDetailsLoading}
+          courseId={course?._id || course?.id || ""}
+          pricingRegion={pricingRegion}
+          onCouponApplied={setCouponCode}
         />
         <BankPaymentDetailsModal
           isOpen={isBankDetailsModalOpen}

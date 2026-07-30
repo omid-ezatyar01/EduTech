@@ -6,6 +6,12 @@ import { getAuthUser } from "../../services/portal";
 import { getLocalizedRequestErrorMessage } from "../../services/http";
 
 const MAX_MESSAGE_LENGTH = 1200;
+let messageSequence = 0;
+
+const createMessageId = (role) => {
+  messageSequence += 1;
+  return `${role}-${messageSequence}`;
+};
 
 const createGreeting = (language, name, role) => {
   if (role === "guest" && language === "fa") {
@@ -56,18 +62,24 @@ const getSuggestedQuestions = (language, role) => {
 };
 
 export default function StudentAiChatWidget({ language = "fa" }) {
+  const user = useMemo(() => getAuthUser(), []);
+  const role = String(user?.role || "").trim().toLowerCase() || "guest";
+  const displayName = String(user?.name || "").trim();
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() => [
+    {
+      id: "welcome",
+      role: "assistant",
+      content: createGreeting(language, displayName, role),
+    },
+  ]);
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const scrollRef = useRef(null);
   const activeRequestRef = useRef(null);
   const location = useLocation();
   const isFa = language === "fa";
-  const user = useMemo(() => getAuthUser(), []);
-  const role = String(user?.role || "").trim().toLowerCase() || "guest";
-  const displayName = String(user?.name || "").trim();
   const suggestedQuestions = getSuggestedQuestions(language, role);
   const hasUserMessages = messages.some((message) => message.role === "user");
   const shouldShowSuggestedQuestions =
@@ -76,19 +88,6 @@ export default function StudentAiChatWidget({ language = "fa" }) {
   const handleClose = () => {
     setIsOpen(false);
   };
-
-  useEffect(() => {
-    setMessages((current) => {
-      if (current.length) return current;
-      return [
-        {
-          id: "welcome",
-          role: "assistant",
-          content: createGreeting(language, displayName, role),
-        },
-      ];
-    });
-  }, [language, displayName, role]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -164,12 +163,12 @@ export default function StudentAiChatWidget({ language = "fa" }) {
     const content = String(rawContent || "").trim();
     if (!content || content.length > MAX_MESSAGE_LENGTH || isSending) return;
 
-    const assistantId = `assistant-${Date.now()}`;
+    const assistantId = createMessageId("assistant");
 
     const nextMessages = [
       ...messages,
       {
-        id: `user-${Date.now()}`,
+        id: createMessageId("user"),
         role: "user",
         content,
       },
