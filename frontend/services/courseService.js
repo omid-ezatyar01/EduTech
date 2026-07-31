@@ -7,6 +7,7 @@ import {
   parseJsonResponse,
 } from "./http";
 import { resolveAvatarUrl } from "../src/utils/avatar";
+import { normalizeCourseSearchText, searchAndRankCourses } from "../src/utils/courseSearch.js";
 import {
   fetchMockPublicCategories,
   fetchMockPublishedCourseBySlug,
@@ -20,6 +21,8 @@ const PUBLIC_DETAIL_CACHE_TTL_MS = 10 * 60 * 1000;
 const PUBLIC_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
 const PUBLIC_CATEGORY_CACHE_TTL_MS = 30 * 60 * 1000;
 const publicCourseListCache = new Map();
+const publicCourseSearchCatalogCache = new Map();
+const publicCourseSearchCatalogRequests = new Map();
 const publicCourseDetailCache = new Map();
 const publicCategoryCache = new Map();
 
@@ -238,7 +241,7 @@ const hasExistingCourse = (enrollment = {}) => {
   return Boolean(course && typeof course === "object" && String(course.title || "").trim());
 };
 
-export const fetchPublishedCourses = async (query = {}) => {
+const fetchPublishedCoursesPage = async (query = {}) => {
   const cacheKey = buildPublicCacheKey("published-courses", query);
   const cached = readPublicCache(publicCourseListCache, cacheKey);
   if (cached) return cached;
@@ -272,6 +275,101 @@ export const fetchPublishedCourses = async (query = {}) => {
     courses: rows.map(mapCourse),
     meta,
   }, getApiCacheTtl({ publicTtl: PUBLIC_LIST_CACHE_TTL_MS }));
+};
+
+const fetchSearchableCourseCatalog = async (query = {}) => {
+  const catalogQuery = { ...query };
+  delete catalogQuery.search;
+  delete catalogQuery.page;
+  delete catalogQuery.limit;
+
+  const cacheKey = buildPublicCacheKey("published-course-search-catalog", catalogQuery);
+  const cached = readPublicCache(publicCourseSearchCatalogCache, cacheKey);
+  if (cached) return cached;
+  if (publicCourseSearchCatalogRequests.has(cacheKey)) {
+    return cloneValue(await publicCourseSearchCatalogRequests.get(cacheKey));
+  }
+
+  const request = (async () => {
+    const pageLimit = 100;
+    const firstPage = await fetchPublishedCoursesPage({
+      ...catalogQuery,
+      page: 1,
+      limit: pageLimit,
+    });
+    const totalPages = Math.max(1, Number(firstPage?.meta?.totalPages || 1));
+    const remainingPages = [];
+    const pageNumbers = Array.from({ length: totalPages - 1 }, (_, index) => index + 2);
+
+    for (let offset = 0; offset < pageNumbers.length; offset += 6) {
+      const batch = pageNumbers.slice(offset, offset + 6);
+      const batchResults = await Promise.all(
+        batch.map((page) =>
+          fetchPublishedCoursesPage({
+            ...catalogQuery,
+            page,
+            limit: pageLimit,
+          }),
+        ),
+      );
+      remainingPages.push(...batchResults);
+    }
+
+    const allCourses = [firstPage, ...remainingPages].flatMap((result) =>
+      Array.isArray(result?.courses) ? result.courses : [],
+    );
+    const uniqueCourses = [
+      ...new Map(
+        allCourses.map((course) => [
+          String(course?._id || course?.id || course?.slug || ""),
+          course,
+        ]),
+      ).values(),
+    ];
+
+    return writePublicCache(
+      publicCourseSearchCatalogCache,
+      cacheKey,
+      {
+        courses: uniqueCourses,
+        meta: firstPage?.meta || {},
+      },
+      getApiCacheTtl({ publicTtl: PUBLIC_LIST_CACHE_TTL_MS }),
+    );
+  })();
+
+  publicCourseSearchCatalogRequests.set(cacheKey, request);
+  try {
+    return cloneValue(await request);
+  } finally {
+    if (publicCourseSearchCatalogRequests.get(cacheKey) === request) {
+      publicCourseSearchCatalogRequests.delete(cacheKey);
+    }
+  }
+};
+
+export const fetchPublishedCourses = async (query = {}) => {
+  const search = normalizeCourseSearchText(query?.search);
+  if (!search) return fetchPublishedCoursesPage(query);
+
+  const page = Math.max(1, Number(query?.page || 1));
+  const limit = Math.max(1, Number(query?.limit || 10));
+  const catalog = await fetchSearchableCourseCatalog(query);
+  const rankedCourses = searchAndRankCourses(catalog?.courses, search);
+  const total = rankedCourses.length;
+  const start = (page - 1) * limit;
+
+  return {
+    courses: rankedCourses.slice(start, start + limit),
+    meta: {
+      ...(catalog?.meta || {}),
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      searchMode: "multilingual-relevance",
+    },
+  };
 };
 
 export const fetchPublishedCourseBySlug = async (slug, { force = false } = {}) => {
@@ -351,6 +449,8 @@ export const getCachedPublicCategories = () =>
 export const invalidatePublicCourseCaches = () => {
   publicCourseDetailCache.clear();
   publicCourseListCache.clear();
+  publicCourseSearchCatalogCache.clear();
+  publicCourseSearchCatalogRequests.clear();
   invalidateApiCache((key) => key.includes("/courses"));
 };
 
@@ -370,6 +470,8 @@ export const enrollCourse = async (courseId, pricingRegion = "international") =>
   );
   publicCourseDetailCache.clear();
   publicCourseListCache.clear();
+  publicCourseSearchCatalogCache.clear();
+  publicCourseSearchCatalogRequests.clear();
   return data?.data;
 };
 
@@ -452,6 +554,8 @@ export const submitCourseRating = async (payload = {}) => {
   );
   publicCourseDetailCache.clear();
   publicCourseListCache.clear();
+  publicCourseSearchCatalogCache.clear();
+  publicCourseSearchCatalogRequests.clear();
   return data?.data || null;
 };
 
@@ -470,6 +574,8 @@ export const updateStudentRating = async (ratingId, payload = {}) => {
   invalidateApiCache((key) => key.includes("/ratings") || key.includes("/courses") || key.includes("/teachers"));
   publicCourseDetailCache.clear();
   publicCourseListCache.clear();
+  publicCourseSearchCatalogCache.clear();
+  publicCourseSearchCatalogRequests.clear();
   return data?.data || null;
 };
 

@@ -1018,9 +1018,13 @@ export default function LiveCoursesPage({ t }) {
                     {language === "fa" ? "جستجو و فیلتر کورس‌ها" : "Search & Filter Courses"}
                   </h2>
                   <p className="mt-1 text-xs font-bold text-slate-500">
-                    {language === "fa"
-                      ? `${totalCourses} کورس یافت شد`
-                      : `${totalCourses} courses found`}
+                    {searchTerm.trim()
+                      ? language === "fa"
+                        ? `${totalCourses} نتیجهٔ مرتبط، به ترتیب بهترین تطابق`
+                        : `${totalCourses} related results, ranked by best match`
+                      : language === "fa"
+                        ? `${totalCourses} کورس یافت شد`
+                        : `${totalCourses} courses found`}
                   </p>
                 </div>
                 {activeFilterCount > 0 ? (
@@ -1042,7 +1046,7 @@ export default function LiveCoursesPage({ t }) {
                   <span className="mb-1.5 flex items-center justify-between gap-2 text-xs font-black text-slate-600">
                     <span>{language === "fa" ? "جستجوی فوری" : "Instant search"}</span>
                     <span className="text-[10px] font-bold text-teal-700">
-                      {language === "fa" ? "خودکار" : "Automatic"}
+                      {language === "fa" ? "فارسی + English" : "Persian + English"}
                     </span>
                   </span>
                   <div className="flex h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-500 transition focus-within:border-teal-400 focus-within:bg-white focus-within:ring-4 focus-within:ring-teal-50">

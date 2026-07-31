@@ -397,8 +397,8 @@ export default function MobileCourseCategoryPage({ t }) {
                 </p>
                 <p className="mt-1 text-xs font-semibold text-slate-500">
                   {language === "fa"
-                    ? "نتایج فقط از همین دسته‌بندی و فیلترهای انتخابی نمایش داده می‌شود."
-                    : "Results are limited to this category and the selected suggestions."}
+                    ? "نام کامل لازم نیست؛ بخشی از نام یا کلیدواژهٔ فارسی و انگلیسی را بنویسید."
+                    : "No full title needed—type part of a name or a Persian or English keyword."}
                 </p>
               </div>
               <div className="flex gap-2 sm:w-[420px]">
