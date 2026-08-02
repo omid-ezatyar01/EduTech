@@ -14,6 +14,7 @@ import {
   apiRateLimitKey,
   resolveApiRateLimitIdentity,
 } from "./middlewares/apiRateLimitIdentity.js";
+import CourseThumbnailAsset from "./models/CourseThumbnailAsset.js";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -152,6 +153,28 @@ app.use(
     },
   }),
 );
+
+// Local files are a fast cache; MongoDB is the durable source for course
+// thumbnails when a deployment replaces the runtime upload directory.
+app.get("/uploads/course-thumbnails/:filename", async (req, res, next) => {
+  try {
+    const filename = String(req.params.filename || "").trim();
+    if (!/^course-[\w.-]+\.webp$/i.test(filename)) return next();
+
+    const asset = await CourseThumbnailAsset.findOne({ filename }).lean();
+    if (!asset?.data) return next();
+
+    const body = Buffer.isBuffer(asset.data)
+      ? asset.data
+      : Buffer.from(asset.data.buffer || asset.data);
+    res.setHeader("Content-Type", asset.contentType || "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=2592000, immutable");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    return res.send(body);
+  } catch (error) {
+    return next(error);
+  }
+});
 
 app.use(
   "/public",

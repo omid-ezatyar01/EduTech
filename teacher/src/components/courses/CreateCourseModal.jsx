@@ -24,6 +24,10 @@ import {
 import usePersistentFormDraft, {
   clearTeacherFormDraft,
 } from "../../hooks/usePersistentFormDraft";
+import {
+  getCourseKeywordsError,
+  parseCourseKeywords,
+} from "../../utils/courseKeywords";
 
 const DAY_OPTIONS = [
   { key: "monday", enumKey: "MONDAY", labelFa: "دوشنبه", labelEn: "Monday" },
@@ -294,6 +298,7 @@ export default function CreateCourseModal({
   const getInitialForm = () => ({
     title: "",
     description: "",
+    keywordsText: "",
     category: firstCategory,
     subcategory: "",
     level: "beginner",
@@ -540,6 +545,8 @@ export default function CreateCourseModal({
           ? `توضیحات کامل باید بین ${DESCRIPTION_MIN_CHARS} تا ${DESCRIPTION_MAX_CHARS} کاراکتر باشد.`
           : `Detailed description must be between ${DESCRIPTION_MIN_CHARS} and ${DESCRIPTION_MAX_CHARS} characters.`;
       }
+      const keywordsError = getCourseKeywordsError(form.keywordsText, language);
+      if (keywordsError) return keywordsError;
       const previewVideoError = getPreviewVideoError(previewVideoUrls, language);
       if (previewVideoError) return previewVideoError;
       const thumbnail = form.thumbnailFile || null;
@@ -957,9 +964,10 @@ export default function CreateCourseModal({
         return;
       }
     }
-    const { pricingType, priceMode, regionalPrices, ...rest } = form;
+    const { pricingType, priceMode, regionalPrices, keywordsText, ...rest } = form;
     // Old locally saved drafts may still contain the removed tags field.
     delete rest.tagsText;
+    const tags = parseCourseKeywords(keywordsText);
     const isFree = pricingType === "free";
     const price = Number(form.price || 0);
     const teacherDiscountPercentage = Number(form.teacherDiscountPercentage || 0);
@@ -980,6 +988,7 @@ export default function CreateCourseModal({
     const endTime = form.endTime;
     const durationWeeks = sessionWeekCount;
     const totalSessions = Number(form.totalSessions || 0);
+    const keywordsError = getCourseKeywordsError(keywordsText, language);
 
     if (!selectedCourseLanguage) {
       setFormError(
@@ -987,6 +996,11 @@ export default function CreateCourseModal({
           ? "زبان کورس باید از زبان‌های تدریس پروفایل شما انتخاب شود."
           : "Course language must be selected from your profile teaching languages.",
       );
+      return;
+    }
+
+    if (keywordsError) {
+      setFormError(keywordsError);
       return;
     }
 
@@ -1240,6 +1254,7 @@ export default function CreateCourseModal({
       requirements,
       curriculumTopics,
       previewVideoUrls,
+      tags,
       timezone: form.timezone,
       certificate: {
         enabled: !isFree,
@@ -1440,6 +1455,22 @@ export default function CreateCourseModal({
               : `${String(form.description || "").trim().length} / ${DESCRIPTION_MAX_CHARS} chars (min ${DESCRIPTION_MIN_CHARS})`}
           </p>
           <div className="-mt-3 sm:col-span-2">{renderFieldError("description")}</div>
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-bold text-slate-600">
+              {language === "fa" ? "کلیدواژه‌های جستجوی کورس" : "Course search keywords"}
+            </label>
+            <input
+              value={form.keywordsText}
+              onChange={(event) => setForm({ ...form, keywordsText: event.target.value })}
+              placeholder={language === "fa" ? "مثال: پایتون، برنامه‌نویسی، تحلیل داده" : "Example: Python, programming, data analysis"}
+              className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold outline-none focus:border-primary-300"
+            />
+            <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
+              {language === "fa"
+                ? `${parseCourseKeywords(form.keywordsText).length} از ۱۰ کلیدواژه؛ با ویرگول جدا کنید. شاگردان می‌توانند کورس را با این واژه‌ها پیدا کنند.`
+                : `${parseCourseKeywords(form.keywordsText).length} of 10 keywords; separate them with commas. Students can find the course using these terms.`}
+            </p>
+          </div>
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-bold text-slate-600">
               {language === "fa" ? "تصویر کورس *" : "Course image *"}

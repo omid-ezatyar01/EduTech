@@ -611,7 +611,13 @@ export default function CourseDetailsPage({ t }) {
             description,
             image,
             imageAlt: courseTitle,
-            keywords: [courseTitle, teacherName, course.level, course.language].filter(Boolean),
+            keywords: [
+              courseTitle,
+              teacherName,
+              course.level,
+              course.language,
+              ...(Array.isArray(course.tags) ? course.tags : []),
+            ].filter(Boolean),
             robots: "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
             shouldIndex: true,
           },
@@ -918,26 +924,23 @@ export default function CourseDetailsPage({ t }) {
       ? "رایگان"
       : "Free"
     : coursePricing.finalLabel;
-  const usdBaseLabel =
-    coursePricing.pricingType === "regional" &&
-    coursePricing.currency !== "USD" &&
-    Number(coursePricing.finalPriceUsd) > 0
-      ? `${language === "fa" ? "مبنای پرداخت:" : "Checkout base:"} $${new Intl.NumberFormat("en-US", {
+  const usdBaseValue =
+    coursePricing.currency !== "USD" && Number(coursePricing.finalPriceUsd) > 0
+      ? `$${new Intl.NumberFormat("en-US", {
           minimumFractionDigits: Number.isInteger(Number(coursePricing.finalPriceUsd)) ? 0 : 2,
           maximumFractionDigits: 2,
         }).format(Number(coursePricing.finalPriceUsd))} USD`
       : "";
-  const exchangeRateLabel =
-    coursePricing.pricingType === "regional" &&
-    coursePricing.currency !== "USD" &&
-    Number(coursePricing.usdExchangeRate) > 0
-      ? `${coursePricing.usesInternationalPrice
-          ? language === "fa" ? "نرخ فعلی:" : "Current rate:"
-          : language === "fa" ? "نرخ کورس:" : "Course rate:"} 1 USD = ${new Intl.NumberFormat(
+  const exchangeRateValue =
+    coursePricing.currency !== "USD" && Number(coursePricing.usdExchangeRate) > 0
+      ? `1 USD = ${new Intl.NumberFormat(
           language === "fa" ? "fa-AF" : "en-US",
           { maximumFractionDigits: coursePricing.currency === "TOMAN" ? 0 : 2 },
         ).format(Number(coursePricing.usdExchangeRate))} ${coursePricing.currency}`
       : "";
+  const exchangeRateTitle = coursePricing.usesInternationalPrice
+    ? language === "fa" ? "نرخ فعلی:" : "Current rate:"
+    : language === "fa" ? "نرخ کورس:" : "Course rate:";
   const paymentPlan =
     course?.paymentPlan === "whole_period" ? "whole_period" : "monthly";
   const paymentPlanLabel =
@@ -1859,11 +1862,17 @@ export default function CourseDetailsPage({ t }) {
                     {coursePricing.originalLabel}
                   </p>
                 ) : null}
-                {usdBaseLabel ? (
-                  <p className="mt-1 text-xs font-bold text-slate-500" dir="ltr">{usdBaseLabel}</p>
+                {usdBaseValue ? (
+                  <p className="mt-1 text-start text-xs font-bold text-slate-500">
+                    <span>{language === "fa" ? "مبنای پرداخت:" : "Checkout base:"}</span>{" "}
+                    <bdi dir="ltr">{usdBaseValue}</bdi>
+                  </p>
                 ) : null}
-                {exchangeRateLabel ? (
-                  <p className="mt-0.5 text-[11px] font-semibold text-slate-400" dir="ltr">{exchangeRateLabel}</p>
+                {exchangeRateValue ? (
+                  <p className="mt-0.5 text-start text-[11px] font-semibold text-slate-400">
+                    <span>{exchangeRateTitle}</span>{" "}
+                    <bdi dir="ltr">{exchangeRateValue}</bdi>
+                  </p>
                 ) : null}
                 {!isCourseFree ? (
                   <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-center">
@@ -1967,11 +1976,17 @@ export default function CourseDetailsPage({ t }) {
                   {coursePricing.originalLabel}
                 </p>
               ) : null}
-              {usdBaseLabel ? (
-                <p className="mt-1 text-xs font-bold text-slate-500" dir="ltr">{usdBaseLabel}</p>
+              {usdBaseValue ? (
+                <p className="mt-1 truncate text-start text-xs font-bold text-slate-500">
+                  <span>{language === "fa" ? "مبنای پرداخت:" : "Checkout base:"}</span>{" "}
+                  <bdi dir="ltr">{usdBaseValue}</bdi>
+                </p>
               ) : null}
-              {exchangeRateLabel ? (
-                <p className="mt-0.5 text-[11px] font-semibold text-slate-400" dir="ltr">{exchangeRateLabel}</p>
+              {exchangeRateValue ? (
+                <p className="mt-0.5 truncate text-start text-[11px] font-semibold text-slate-400">
+                  <span>{exchangeRateTitle}</span>{" "}
+                  <bdi dir="ltr">{exchangeRateValue}</bdi>
+                </p>
               ) : null}
               {!isCourseFree ? (
                 <p className="truncate text-[10px] font-bold text-blue-700">

@@ -25,6 +25,10 @@ import usePersistentFormDraft, {
   clearTeacherFormDraft,
   mergeTeacherFormDraft,
 } from "../../hooks/usePersistentFormDraft";
+import {
+  getCourseKeywordsError,
+  parseCourseKeywords,
+} from "../../utils/courseKeywords";
 
 const DAY_OPTIONS = [
   { key: "monday", labelFa: "دوشنبه", labelEn: "Monday" },
@@ -412,6 +416,7 @@ const getInitialForm = (course, categories = [], defaultTimeZone = "") => {
   return {
     title: course?.title || "",
     description: course?.description || "",
+    keywordsText: (Array.isArray(course?.tags) ? course.tags : []).join(", "),
     category: String(categoryValue || ""),
     subcategory: String(subcategoryValue || ""),
     level: course?.level || "beginner",
@@ -681,6 +686,9 @@ export default function EditCourseModal({
   };
 
   const getEditStepValidationError = (step) => {
+    if (step === 1) {
+      return getCourseKeywordsError(form.keywordsText, language);
+    }
     if (step !== 4) return "";
 
     const isFree = form.pricingType === "free";
@@ -798,6 +806,8 @@ export default function EditCourseModal({
     const requirements = listFieldConfigs[2].items;
     const curriculumTopics = listFieldConfigs[3].items;
     const previewVideoUrls = parseVideoLinks(form.previewVideoUrlsText);
+    const tags = parseCourseKeywords(form.keywordsText);
+    const keywordsError = getCourseKeywordsError(form.keywordsText, language);
     const listFieldError = getInvalidListFieldError(listFieldConfigs, language);
     const thumbnail = form.thumbnailFile || null;
     const hasExistingThumbnail = Boolean(
@@ -819,6 +829,11 @@ export default function EditCourseModal({
           ? "زبان کورس باید از زبان‌های تدریس پروفایل شما انتخاب شود."
           : "Course language must be selected from your profile teaching languages.",
       );
+      return;
+    }
+
+    if (keywordsError) {
+      setFormError(keywordsError);
       return;
     }
 
@@ -1117,6 +1132,7 @@ export default function EditCourseModal({
       requirements,
       curriculumTopics,
       previewVideoUrls,
+      tags,
       thumbnailFile: thumbnail,
       });
       clearTeacherFormDraft(courseDraftId);
@@ -1294,6 +1310,22 @@ export default function EditCourseModal({
                 ? `${String(form.description || "").trim().length} / ${DESCRIPTION_MAX_CHARS} کاراکتر (حداقل ${DESCRIPTION_MIN_CHARS})`
                 : `${String(form.description || "").trim().length} / ${DESCRIPTION_MAX_CHARS} chars (min ${DESCRIPTION_MIN_CHARS})`}
             </p>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-bold text-slate-600">
+                {language === "fa" ? "کلیدواژه‌های جستجوی کورس" : "Course search keywords"}
+              </label>
+              <input
+                value={form.keywordsText}
+                onChange={(event) => setForm({ ...form, keywordsText: event.target.value })}
+                placeholder={language === "fa" ? "مثال: پایتون، برنامه‌نویسی، تحلیل داده" : "Example: Python, programming, data analysis"}
+                className="h-11 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-sm font-semibold outline-none focus:border-primary-300"
+              />
+              <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
+                {language === "fa"
+                  ? `${parseCourseKeywords(form.keywordsText).length} از ۱۰ کلیدواژه؛ با ویرگول جدا کنید. شاگردان می‌توانند کورس را با این واژه‌ها پیدا کنند.`
+                  : `${parseCourseKeywords(form.keywordsText).length} of 10 keywords; separate them with commas. Students can find the course using these terms.`}
+              </p>
+            </div>
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-bold text-slate-600">
                 {language === "fa" ? "تصویر کورس *" : "Course image *"}

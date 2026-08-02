@@ -455,6 +455,7 @@ export function useCourseRegionalPrice(course = {}, language = "fa") {
   const {
     pricingRegion,
     formatRegionalPrice,
+    rates,
   } = context;
 
   return useMemo(() => {
@@ -463,20 +464,29 @@ export function useCourseRegionalPrice(course = {}, language = "fa") {
       const originalCandidate = Number(course?.discountPrice || 0);
       const originalPrice =
         originalCandidate > finalPrice ? originalCandidate : 0;
+      const formattedFinalPrice = formatRegionalPrice(finalPrice, language);
+      const formattedOriginalPrice = originalPrice
+        ? formatRegionalPrice(originalPrice, language)
+        : null;
+      const usdExchangeRate = (() => {
+        if (formattedFinalPrice.currency === "AFN") return Number(rates?.AFN || 0) || null;
+        if (formattedFinalPrice.currency === "TOMAN") return Number(rates?.TOMAN || 0) || null;
+        if (formattedFinalPrice.currency === "IRR") return Number(rates?.IRR || 0) || null;
+        return null;
+      })();
       return {
         pricingType: "single",
         pricingRegion,
-        currency: formatRegionalPrice(finalPrice, language).currency,
-        finalPrice,
+        currency: formattedFinalPrice.currency,
+        finalPrice: formattedFinalPrice.amount,
         finalPriceUsd: finalPrice,
-        originalPrice,
+        originalPrice: formattedOriginalPrice?.amount || 0,
         originalPriceUsd: originalPrice,
-        finalLabel: formatRegionalPrice(finalPrice, language).label,
-        originalLabel: originalPrice
-          ? formatRegionalPrice(originalPrice, language).label
-          : "",
+        usdExchangeRate,
+        finalLabel: formattedFinalPrice.label,
+        originalLabel: formattedOriginalPrice?.label || "",
         isFree: Boolean(course?.isFree) || finalPrice <= 0,
-        usesInternationalPrice: false,
+        usesInternationalPrice: Boolean(usdExchangeRate),
       };
     }
 
@@ -555,7 +565,7 @@ export function useCourseRegionalPrice(course = {}, language = "fa") {
       isFree: Boolean(resolved.isFree) || finalPrice <= 0,
       usesInternationalPrice,
     };
-  }, [course, formatRegionalPrice, language, pricingRegion]);
+  }, [course, formatRegionalPrice, language, pricingRegion, rates]);
 }
 
 export function useRegionalCoursePrice(amountUsd, language = "fa") {

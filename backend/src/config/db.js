@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import { backfillCourseThumbnailAssets } from "../utils/courseImage.js";
 
 const SEVENTY_TWO_HOURS_IN_MILLISECONDS = 72 * 60 * 60 * 1000;
 
@@ -136,18 +137,24 @@ const ensureCourseTextSearchIndex = async () => {
   try {
     const coursesCollection = mongoose.connection.collection("courses");
     const indexes = await coursesCollection.indexes();
-    const textKey = { title: "text", description: "text" };
+    const textKey = { title: "text", description: "text", tags: "text" };
     const textIndexName = "course_text_search";
 
     const textIndexesToDrop = indexes.filter((index) => {
       if (index?.name === "_id_" || !index?.key) return false;
       const hasTextKey = Object.values(index.key).some((value) => value === "text");
       if (!hasTextKey) return false;
+      const indexedFields = Object.keys(index.weights || {}).sort();
+      const hasDesiredFields =
+        indexedFields.length === 3 &&
+        ["description", "tags", "title"].every(
+          (field, position) => indexedFields[position] === field,
+        );
       return (
         index.name !== textIndexName ||
         index.language_override !== "textSearchLanguage" ||
         index.default_language !== "none" ||
-        Object.prototype.hasOwnProperty.call(index.weights || {}, "shortDescription")
+        !hasDesiredFields
       );
     });
 
@@ -241,6 +248,15 @@ const ensureAdminCreatedTeacherDefaultPasswords = async () => {
 export const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI);
+    const courseThumbnailPaths = await mongoose.connection
+      .collection("courses")
+      .distinct("thumbnail", {
+        thumbnail: { $regex: "^/uploads/course-thumbnails/" },
+      });
+    const backedUpCourseThumbnails = await backfillCourseThumbnailAssets(courseThumbnailPaths);
+    if (backedUpCourseThumbnails > 0) {
+      console.log(`Backed up ${backedUpCourseThumbnails} course thumbnail(s) to durable storage`);
+    }
     await dropLegacyUniqueUsernameIndex();
     await ensureDirectMessageTtlIndex();
     await ensureCourseTextSearchIndex();
