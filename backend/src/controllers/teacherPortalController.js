@@ -207,13 +207,6 @@ const getRelativeTimeFa = (date) => {
   return `${Math.floor(diffHours / 24)} روز پیش`;
 };
 
-const enrollmentBaseProgress = {
-  pending: 0,
-  active: 35,
-  completed: 100,
-  cancelled: 0,
-};
-
 const buildAttendanceByEnrollmentMap = (liveSessions = []) => {
   const map = new Map();
 
@@ -254,7 +247,7 @@ const getAttendanceSummary = (attendanceMap, courseId, studentId) => {
   };
 };
 
-const deriveStudentMetrics = ({
+export const deriveStudentMetrics = ({
   enrollmentStatus,
   attendance,
   hasAttendanceData,
@@ -264,12 +257,16 @@ const deriveStudentMetrics = ({
   const assignmentProgress = assignmentTotal > 0
     ? Math.round((submittedAssignments / assignmentTotal) * 100)
     : null;
-  const progressParts = [enrollmentBaseProgress[enrollmentStatus] ?? 0];
+  const progressParts = [];
   if (assignmentProgress !== null) progressParts.push(assignmentProgress);
   if (hasAttendanceData) progressParts.push(attendance);
+
+  const hasInactiveEnrollment = enrollmentStatus === "pending" || enrollmentStatus === "cancelled";
   const progress = enrollmentStatus === "completed"
     ? 100
-    : Math.round(progressParts.reduce((sum, value) => sum + value, 0) / progressParts.length);
+    : hasInactiveEnrollment || progressParts.length === 0
+      ? 0
+      : Math.round(progressParts.reduce((sum, value) => sum + value, 0) / progressParts.length);
 
   let status = "active";
   if (enrollmentStatus === "pending" || enrollmentStatus === "cancelled") {
