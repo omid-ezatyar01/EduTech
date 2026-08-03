@@ -1,13 +1,10 @@
 import multer from "multer";
 import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { resolveUploadsPath } from "../config/uploadStorage.js";
 
 export const COURSE_RESOURCE_MAX_SIZE = 5 * 1024 * 1024;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const tempDirectory = path.resolve(__dirname, "../../uploads/tmp-course-resources");
+const tempDirectory = resolveUploadsPath("tmp-course-resources");
 
 fs.mkdirSync(tempDirectory, { recursive: true });
 

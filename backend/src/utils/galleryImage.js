@@ -1,11 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
 import { encodeWebpUnderLimit } from "./imageCompression.js";
+import { resolveUploadsPath } from "../config/uploadStorage.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const galleryDirectory = path.resolve(__dirname, "../../uploads/gallery");
+const galleryDirectory = resolveUploadsPath("gallery");
 
 export const saveGalleryImageFromBuffer = async (actorId, fileBuffer) => {
   await fs.mkdir(galleryDirectory, { recursive: true });

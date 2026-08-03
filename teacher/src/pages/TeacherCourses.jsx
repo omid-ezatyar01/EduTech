@@ -36,8 +36,9 @@ import {
   fetchGoogleAccountStatus,
   fetchGoogleAuthUrl,
 } from "../../services/liveSessionService";
+import { fetchTeacherProfile } from "../../services/teacherPortalService";
 import { getApiBase } from "../../services/http";
-import { getAuthUser } from "../../services/portal";
+import { getAuthUser, saveAuthUser } from "../../services/portal";
 import {
   clearTeacherPageCache,
   getTeacherPageCacheKey,
@@ -402,9 +403,8 @@ export default function TeacherCourses() {
   const location = useLocation();
   const { language, isRTL, setLanguage } = useTeacherLanguage();
 
-  const teacher = useMemo(
+  const [teacher, setTeacher] = useState(
     () => getAuthUser() || { name: "Teacher", email: "teacher@edutech.study" },
-    [],
   );
   const teacherLanguages = useMemo(() => getTeacherTeachingLanguages(teacher), [teacher]);
   const requestedSearch = new URLSearchParams(location.search).get("q") || "";
@@ -456,6 +456,30 @@ export default function TeacherCourses() {
     refreshOnFocus: false,
     refreshOnVisible: false,
   });
+
+  useEffect(() => {
+    let active = true;
+
+    const loadCurrentTeacherProfile = async () => {
+      try {
+        const profile = await fetchTeacherProfile();
+        if (!active || !profile) return;
+
+        setTeacher((current) => {
+          const nextTeacher = { ...(current || {}), ...profile };
+          saveAuthUser(nextTeacher);
+          return nextTeacher;
+        });
+      } catch {
+        // Keep the authenticated snapshot when profile refresh is unavailable.
+      }
+    };
+
+    loadCurrentTeacherProfile();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

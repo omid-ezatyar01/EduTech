@@ -326,11 +326,15 @@ function resolveCourseStartAt(course = {}) {
   return date;
 }
 
-function formatCountdown(targetDate, nowMs, language) {
+function formatCountdown(targetDate, nowMs, language, hasActuallyStarted = false) {
   if (!targetDate) return "";
   const diffMs = targetDate.getTime() - nowMs;
   if (diffMs <= 0) {
-    return language === "fa" ? "کورس شروع شده است" : "Course has started";
+    return hasActuallyStarted
+      ? language === "fa"
+        ? "کورس شروع شده است"
+        : "Course has started"
+      : "";
   }
 
   const totalMinutes = Math.ceil(diffMs / 60000);
@@ -907,10 +911,11 @@ export default function CourseDetailsPage({ t }) {
   }, [course?.maxStudents, course?.enrolledStudentsCount]);
 
   const sessionProgress = useMemo(() => {
-    if (!course) return null;
+    if (!course?.classStartedAt) return null;
     return calculateCourseProgressSnapshot(
       {
         ...course,
+        startDate: course.classStartedAt,
         schedule: Array.isArray(course.scheduleRows)
           ? course.scheduleRows
           : [],
@@ -973,7 +978,12 @@ export default function CourseDetailsPage({ t }) {
         language,
       )
     : null;
-  const countdownText = formatCountdown(courseStartAt, nowMs, language);
+  const countdownText = formatCountdown(
+    courseStartAt,
+    nowMs,
+    language,
+    Boolean(course?.classStartedAt),
+  );
   const levelText = formatLevel(course?.level, language);
   const courseLanguageText = formatCourseLanguage(course?.language, language);
   const durationText = formatDurationLabel(course?.duration, language);

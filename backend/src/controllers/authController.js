@@ -1,6 +1,5 @@
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import Joi from "joi";
@@ -20,15 +19,11 @@ import {
 import { notifyAdminTeacherApplicationReview } from "../services/webPush.service.js";
 import { encodeWebpUnderLimit } from "../utils/imageCompression.js";
 import { normalizeYouTubeUrl } from "../utils/youtubeUrl.js";
+import { resolveUploadsPath } from "../config/uploadStorage.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const avatarDirectory = path.resolve(__dirname, "../../uploads/avatars");
-const teacherCvDirectory = path.resolve(__dirname, "../../uploads/teacher-cv");
-const teacherCertificatesDirectory = path.resolve(
-  __dirname,
-  "../../uploads/teacher-certificates",
-);
+const avatarDirectory = resolveUploadsPath("avatars");
+const teacherCvDirectory = resolveUploadsPath("teacher-cv");
+const teacherCertificatesDirectory = resolveUploadsPath("teacher-certificates");
 const AVATAR_UPLOAD_MAX_BYTES = 500 * 1024;
 const TEACHER_CV_MAX_BYTES = 2 * 1024 * 1024;
 const TEACHER_CERTIFICATE_MAX_BYTES = Math.floor(1.5 * 1024 * 1024);

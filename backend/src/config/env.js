@@ -15,6 +15,7 @@ const envSchema = Joi.object({
   STUDENT_CLIENT_URL: Joi.string().trim().allow("").default(""),
   STUDENT_FRONTEND_URL: Joi.string().trim().allow("").default(""),
   COURSE_PUBLIC_ORIGIN: Joi.string().uri().allow("").default(""),
+  UPLOADS_DIR: Joi.string().trim().allow("").default(""),
   API_RATE_LIMIT_WINDOW_MS: Joi.number().integer().min(1000).default(15 * 60 * 1000),
   API_RATE_LIMIT_MAX: Joi.number().integer().min(1).default(300),
   API_AUTH_RATE_LIMIT_MAX: Joi.number().integer().min(1).default(3000),

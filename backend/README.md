@@ -327,6 +327,9 @@ What is included:
 ## Production Notes
 
 - Do not deploy the checked-in `.env` file as-is. Rotate secrets and set production values on the server.
+- Set `UPLOADS_DIR` to an absolute, persistent directory outside the Git checkout,
+  such as `/var/lib/edutech/uploads`. This prevents `git reset --hard` from
+  deleting course images and other user uploads.
 - `JWT_SECRET` should be a long random value.
 - `CLIENT_ORIGIN` should list only your real frontend origins in production.
 - `COURSE_PUBLIC_ORIGIN` is required in production for public share links and web-push URLs.
@@ -349,6 +352,27 @@ API_RATE_LIMIT_MAX=300
 API_AUTH_RATE_LIMIT_MAX=3000
 TRUST_PROXY=1
 ```
+
+### Persistent uploads and safe deployments
+
+Runtime uploads must live outside the repository. Before deploying this change
+for the first time, copy the existing files **before** running `git reset
+--hard`. Adjust `/var/www/edutech` if the checkout is elsewhere:
+
+```bash
+sudo install -d -o "$(id -un)" -g "$(id -gn)" /var/lib/edutech/uploads
+sudo cp -a /var/www/edutech/backend/uploads/. /var/lib/edutech/uploads/
+```
+
+Then add this value to the backend's production environment file:
+
+```env
+UPLOADS_DIR=/var/lib/edutech/uploads
+```
+
+After confirming the copied files exist, normal code deployments can safely use
+`git fetch origin main` and `git reset --hard origin/main`. Back up the persistent
+uploads directory independently; Git no longer stores user uploads.
 
 Run exactly one API process because the exchange-rate and course workers are
 singleton schedulers:

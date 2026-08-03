@@ -1,11 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
 import { encodeWebpUnderLimit } from "./imageCompression.js";
+import { resolveUploadsPath } from "../config/uploadStorage.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const articleCoverDirectory = path.resolve(__dirname, "../../uploads/article-covers");
+const articleCoverDirectory = resolveUploadsPath("article-covers");
 
 export const saveArticleCoverFromBuffer = async (actorId, fileBuffer) => {
   await fs.mkdir(articleCoverDirectory, { recursive: true });
@@ -23,6 +21,6 @@ export const saveArticleCoverFromBuffer = async (actorId, fileBuffer) => {
 
 export const removeArticleCoverIfLocal = async (coverPath) => {
   if (!coverPath || !String(coverPath).startsWith("/uploads/article-covers/")) return;
-  const filepath = path.resolve(__dirname, `../../${String(coverPath).replace(/^\//, "")}`);
+  const filepath = path.join(articleCoverDirectory, path.basename(String(coverPath)));
   await fs.unlink(filepath).catch(() => {});
 };

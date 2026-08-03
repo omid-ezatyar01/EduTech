@@ -25,3 +25,6 @@ verify/dist/
 # Runtime cache
 backend/cache/*
 !backend/cache/.gitkeep
+
+# User-generated runtime files belong in persistent storage, not Git.
+backend/uploads/

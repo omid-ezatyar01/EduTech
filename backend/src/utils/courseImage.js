@@ -1,12 +1,10 @@
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
 import { encodeWebpUnderLimit } from "./imageCompression.js";
 import CourseThumbnailAsset from "../models/CourseThumbnailAsset.js";
+import { resolveUploadsPath } from "../config/uploadStorage.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const courseImageDirectory = path.resolve(__dirname, "../../uploads/course-thumbnails");
+const courseImageDirectory = resolveUploadsPath("course-thumbnails");
 
 export const saveCourseThumbnailFromBuffer = async (actorId, fileBuffer) => {
   await fs.mkdir(courseImageDirectory, { recursive: true });

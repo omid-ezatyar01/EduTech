@@ -1,10 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
+import { resolveUploadsPath } from "../config/uploadStorage.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const courseResourceDirectory = path.resolve(__dirname, "../../uploads/course-resources");
+const courseResourceDirectory = resolveUploadsPath("course-resources");
 
 const sanitizeFilename = (value = "") =>
   String(value || "resource.pdf")
@@ -43,7 +41,7 @@ export const uploadedFileHasPdfSignature = async (file) => {
 
 export const removeCourseResourcePdfIfLocal = async (filePath) => {
   if (!filePath || !String(filePath).startsWith("/uploads/course-resources/")) return;
-  const oldFilePath = path.resolve(__dirname, `../../${String(filePath).replace(/^\//, "")}`);
+  const oldFilePath = path.join(courseResourceDirectory, path.basename(String(filePath)));
   await fs.unlink(oldFilePath).catch(() => {});
 };
 

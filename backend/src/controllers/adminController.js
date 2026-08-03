@@ -2,7 +2,6 @@ import Joi from "joi";
 import mongoose from "mongoose";
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
 import Course from "../models/Course.js";
 import Payment from "../models/Payment.js";
 import Enrollment from "../models/Enrollment.js";
@@ -25,14 +24,10 @@ import {
 } from "../services/telegramAnnouncement.service.js";
 import { buildCertificateId, normalizeCertificateId } from "../utils/certificate.js";
 import { validateAndNormalizeBankPaymentInfo } from "../utils/bankPaymentInfo.js";
+import { resolveUploadsPath } from "../config/uploadStorage.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const teacherCvDirectory = path.resolve(__dirname, "../../uploads/teacher-cv");
-const teacherCertificatesDirectory = path.resolve(
-  __dirname,
-  "../../uploads/teacher-certificates",
-);
+const teacherCvDirectory = resolveUploadsPath("teacher-cv");
+const teacherCertificatesDirectory = resolveUploadsPath("teacher-certificates");
 
 const removeOldTeacherCvIfLocal = async (cvPath = "") => {
   if (!cvPath || !cvPath.startsWith("/uploads/teacher-cv/")) return;

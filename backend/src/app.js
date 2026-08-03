@@ -15,12 +15,12 @@ import {
   resolveApiRateLimitIdentity,
 } from "./middlewares/apiRateLimitIdentity.js";
 import CourseThumbnailAsset from "./models/CourseThumbnailAsset.js";
+import { uploadsDirectory } from "./config/uploadStorage.js";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const uploadsDir = path.resolve(__dirname, "../uploads");
 const publicDir = path.resolve(__dirname, "../public");
 
 const normalizeOrigin = (value = "") => String(value || "").trim().replace(/\/+$/, "");
@@ -144,7 +144,7 @@ app.use(express.urlencoded({
 app.use(morgan(isProduction ? "combined" : "dev"));
 app.use(
   "/uploads",
-  express.static(uploadsDir, {
+  express.static(uploadsDirectory, {
     etag: true,
     maxAge: "30d",
     immutable: true,
