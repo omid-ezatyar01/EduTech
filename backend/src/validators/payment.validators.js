@@ -26,6 +26,7 @@ export const checkoutSchema = Joi.object({
   paymentMethod: Joi.string().valid("HESABPAY_HOSTED", "USDT_BSC_DIRECT").required(),
   pricingRegion: Joi.string().valid("afghanistan", "iran", "international"),
   couponCode: Joi.string().trim().uppercase().pattern(/^[A-Z0-9][A-Z0-9_-]{2,31}$/).allow(""),
+  restartExpired: Joi.boolean().default(false),
 }).required();
 
 export const submitBankTransferPaymentSchema = Joi.object({

@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Clock3, XCircle } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   confirmStudentPaymentRedirect,
+  createCheckout,
   getPaymentAttemptStatus,
   getStudentPaymentStatusByOrder,
   getStudentPaymentStatus,
@@ -68,9 +69,9 @@ const statusMeta = {
   },
   expired: {
     titleFa: "جلسه پرداخت منقضی شده است",
-    textFa: "اگر پول از حساب شما کم شده است، دوباره پرداخت نکنید و شناسه پرداخت را از بخش پرداخت‌ها پیگیری کنید.",
+    textFa: "اگر پول کم نشده است، می‌توانید جلسه پرداخت جدید ایجاد کنید. اگر پول کم شده است، دوباره پرداخت نکنید و شناسه را از بخش پرداخت‌ها پیگیری کنید.",
     titleEn: "Payment session expired",
-    textEn: "If your account was charged, do not pay again. Use the payment reference in Payment History for follow-up.",
+    textEn: "If you were not charged, you can create a new payment session. If you were charged, do not pay again and follow up using Payment History.",
     icon: XCircle,
     color: "text-rose-600 bg-rose-50 border-rose-100",
   },
@@ -112,7 +113,10 @@ export default function PaymentSuccessPage() {
   const hasPaymentReference = Boolean(reference || paymentAttemptId || orderId);
   const [status, setStatus] = useState("pending");
   const [courseTitle, setCourseTitle] = useState("");
+  const [courseId, setCourseId] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [error, setError] = useState("");
   const [retrySeed, setRetrySeed] = useState(0);
 
@@ -160,7 +164,11 @@ export default function PaymentSuccessPage() {
           payment?.status || payment?.payment?.status || "pending",
         ).toLowerCase();
         setStatus(nextStatus);
-        setCourseTitle(payment?.payment?.courseId?.title || payment?.course?.title || "");
+        const paymentDetails = payment?.payment || {};
+        const paymentCourse = paymentDetails.courseId || payment?.course || null;
+        setCourseTitle(paymentCourse?.title || payment?.course?.title || "");
+        setCourseId(String(paymentCourse?._id || paymentCourse || ""));
+        setPaymentMethod(String(paymentDetails.method || "").toUpperCase());
         setError("");
 
         if (["paid", "succeeded"].includes(nextStatus)) {
@@ -225,6 +233,53 @@ export default function PaymentSuccessPage() {
   const title = language === "fa" ? meta.titleFa : meta.titleEn;
   const text = language === "fa" ? meta.textFa : meta.textEn;
   const needsSupport = ["duplicate_payment", "manual_review"].includes(status);
+  const canRestartExpiredHesab =
+    status === "expired" &&
+    Boolean(courseId) &&
+    (!paymentMethod || paymentMethod === "HESABPAY_HOSTED");
+
+  const restartExpiredHesabPayment = async () => {
+    const confirmed = window.confirm(
+      language === "fa"
+        ? "فقط اگر پول از حساب شما کم نشده است ادامه دهید. آیا می‌خواهید یک جلسه پرداخت جدید ایجاد شود؟"
+        : "Continue only if your account was not charged. Create a new payment session?",
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsRestarting(true);
+      setError("");
+      const checkout = await createCheckout({
+        courseId,
+        paymentMethod: "HESABPAY_HOSTED",
+        restartExpired: true,
+      });
+      if (checkout?.paymentUrl) {
+        window.location.assign(checkout.paymentUrl);
+        return;
+      }
+      if (checkout?.paymentAttemptId) {
+        navigate(
+          `/payment/success?paymentAttemptId=${encodeURIComponent(checkout.paymentAttemptId)}`,
+          { replace: true },
+        );
+        setRetrySeed((value) => value + 1);
+        return;
+      }
+      throw new Error("Payment URL not received from server");
+    } catch (err) {
+      setError(
+        getLocalizedRequestErrorMessage(
+          err,
+          language,
+          "ایجاد جلسه پرداخت جدید ممکن نشد.",
+          "Unable to create a new payment session.",
+        ),
+      );
+    } finally {
+      setIsRestarting(false);
+    }
+  };
 
   return (
     <section className="min-h-[70vh] bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
@@ -285,6 +340,18 @@ export default function PaymentSuccessPage() {
         )}
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          {canRestartExpiredHesab ? (
+            <button
+              type="button"
+              onClick={restartExpiredHesabPayment}
+              disabled={isRestarting}
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-emerald-600 px-5 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isRestarting
+                ? language === "fa" ? "در حال ایجاد..." : "Creating..."
+                : language === "fa" ? "ایجاد جلسه پرداخت جدید" : "Start a new payment"}
+            </button>
+          ) : null}
           <Link
             to="/student/courses"
             className="inline-flex h-11 items-center justify-center rounded-xl bg-primary-600 px-5 text-sm font-black text-white transition hover:bg-primary-700"

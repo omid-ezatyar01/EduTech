@@ -73,6 +73,7 @@ export const createCheckout = async ({
   paymentMethod,
   pricingRegion = "international",
   couponCode = "",
+  restartExpired = false,
 }) => {
   const token = getStudentToken();
   if (!token) throw new Error("NOT_AUTHENTICATED");
@@ -90,6 +91,7 @@ export const createCheckout = async ({
         paymentMethod,
         pricingRegion,
         couponCode: String(couponCode || "").trim().toUpperCase(),
+        restartExpired: restartExpired === true,
       }),
     });
   } catch (error) {

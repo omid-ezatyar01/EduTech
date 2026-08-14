@@ -915,6 +915,65 @@ test("HesabPay checkout never reopens or replaces an issued pending hosted sessi
   assert.equal(providerSessionRequest.isDone(), false);
 });
 
+test("an explicit restart creates a fresh HesabPay session after expiry", async () => {
+  const expiredAttemptId = new mongoose.Types.ObjectId();
+  const expiredAttempt = {
+    _id: expiredAttemptId,
+    orderId: new mongoose.Types.ObjectId(),
+    userId: fakeStudent._id,
+    courseId: fakeCourse._id,
+    paymentReference: "PAY-expired-hesab-restart",
+    provider: "HESABPAY",
+    method: "HESABPAY_HOSTED",
+    baseAmountUsdCents: 1500,
+    amount: "1050",
+    currency: "AFN",
+    providerUrl: "https://developers.hesab.com/pay/EXPIRED/en",
+    issuanceState: "ISSUED",
+    status: "EXPIRED",
+    expiresAt: new Date(Date.now() - 60_000),
+  };
+
+  mockCourseCheckoutFlow();
+  mockingoose(PaymentAttempt).toReturn([expiredAttempt], "find");
+  mockingoose(PaymentAttempt).toReturn(null, "findOne");
+
+  nock("https://api.currencyfreaks.test")
+    .get("/v2.0/rates/latest")
+    .query(
+      (query) =>
+        query.apikey === "test-currencyfreaks-key" &&
+        query.symbols === "AFN",
+    )
+    .reply(200, { rates: { AFN: 70 } });
+  const providerSessionRequest = nock("https://api.hesab.test")
+    .post("/api/v1/payment/create-session")
+    .reply(200, {
+      status_code: 10,
+      success: true,
+      session_id: "hesab-restarted-session",
+      payment_url: "https://developers.hesab.com/pay/RESTARTED/en",
+    });
+
+  const res = mockRes();
+  await createCheckout(makeReq({
+    body: {
+      courseId: fakeCourse._id,
+      paymentMethod: "HESABPAY_HOSTED",
+      restartExpired: true,
+    },
+  }), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.resumed, false);
+  assert.notEqual(String(res.body.paymentAttemptId), String(expiredAttemptId));
+  assert.equal(
+    res.body.paymentUrl,
+    "https://developers.hesab.com/pay/RESTARTED/en",
+  );
+  assert.equal(providerSessionRequest.isDone(), true);
+});
+
 test("an issued expired direct payment remains recoverable instead of creating another charge", async () => {
   const orderId = new mongoose.Types.ObjectId();
   const attemptId = new mongoose.Types.ObjectId();
@@ -958,6 +1017,46 @@ test("an issued expired direct payment remains recoverable instead of creating a
   assert.equal(res.body.payment.qrPayload, "ethereum:public-payment-qr");
   assert.equal(res.body.payment.rawCreateSessionResponse, undefined);
   assert.equal(res.body.payment.providerUrl, undefined);
+});
+
+test("an explicit restart creates a fresh direct BSC quote after expiry", async () => {
+  const expiredAttemptId = new mongoose.Types.ObjectId();
+  const expiredAttempt = {
+    _id: expiredAttemptId,
+    orderId: new mongoose.Types.ObjectId(),
+    userId: fakeStudent._id,
+    courseId: fakeCourse._id,
+    paymentReference: "PAY-expired-direct-restart",
+    provider: "BSC_DIRECT",
+    method: "USDT_BSC_DIRECT",
+    baseAmountUsdCents: 1500,
+    amount: "15.000123",
+    currency: "USDT",
+    network: "BNB_CHAIN",
+    providerUrl: "ethereum:expired-direct-request",
+    recipientAddress: process.env.BSC_RECIPIENT_ADDRESS,
+    tokenMint: process.env.BSC_USDT_CONTRACT_ADDRESS,
+    status: "EXPIRED",
+    expiresAt: new Date(Date.now() - 60_000),
+  };
+
+  mockCourseCheckoutFlow();
+  mockingoose(PaymentAttempt).toReturn([expiredAttempt], "find");
+  mockingoose(PaymentAttempt).toReturn(null, "findOne");
+
+  const res = mockRes();
+  await createCheckout(makeReq({
+    body: {
+      courseId: fakeCourse._id,
+      paymentMethod: "USDT_BSC_DIRECT",
+      restartExpired: true,
+    },
+  }), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.provider, "BSC_DIRECT");
+  assert.notEqual(String(res.body.paymentAttemptId), String(expiredAttemptId));
+  assert.match(res.body.charge.amount, /^15\.\d{6}$/);
 });
 
 test("an issued payment blocks a second payment method for the same course", async () => {

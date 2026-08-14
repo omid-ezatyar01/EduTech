@@ -16,6 +16,7 @@ import {
   resolveCryptoPaymentAmount,
 } from "../utils/cryptoPayment.js";
 import {
+  createCheckout,
   getPaymentAttemptStatus,
   normalizeEvmTransactionHash,
   verifyDirectCryptoPayment,
@@ -390,6 +391,7 @@ export default function NowPaymentsPage({ language: appLanguage }) {
   const [txHash, setTxHash] = useState("");
   const [didSendPayment, setDidSendPayment] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [statusFeedback, setStatusFeedback] = useState("");
   const [nowMs, setNowMs] = useState(0);
   const isFa = language === "fa";
@@ -669,6 +671,47 @@ export default function NowPaymentsPage({ language: appLanguage }) {
     }
   };
 
+  const handleRestartExpiredPayment = async () => {
+    const courseId = String(payment?.courseId?._id || payment?.courseId || "").trim();
+    if (!courseId || isRestarting) return;
+
+    const confirmed = window.confirm(
+      isFa
+        ? "فقط اگر هیچ مبلغی برای این درخواست ارسال نکرده‌اید ادامه دهید. اگر پرداخت کرده‌اید، TXID همان تراکنش را در همین صفحه ثبت کنید. درخواست جدید ساخته شود؟"
+        : "Continue only if you did not send money for this request. If you paid, submit that transaction's TXID on this page. Create a new request?",
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsRestarting(true);
+      setError("");
+      const checkout = await createCheckout({
+        courseId,
+        paymentMethod: "USDT_BSC_DIRECT",
+        restartExpired: true,
+      });
+      if (!checkout?.paymentAttemptId) {
+        throw new Error("Payment attempt not received from server");
+      }
+      navigate(
+        `/payment/crypto?attemptId=${encodeURIComponent(checkout.paymentAttemptId)}`,
+        { replace: true },
+      );
+      setRefreshSeed((value) => value + 1);
+    } catch (requestError) {
+      setError(
+        getLocalizedRequestErrorMessage(
+          requestError,
+          language,
+          "ایجاد درخواست جدید پرداخت کریپتو ممکن نشد.",
+          "Unable to create a new crypto payment request.",
+        ),
+      );
+    } finally {
+      setIsRestarting(false);
+    }
+  };
+
   const helperText =
     error ||
     (isDirectBscFlow
@@ -762,8 +805,8 @@ export default function NowPaymentsPage({ language: appLanguage }) {
     ? "border-slate-700 bg-slate-900/70 text-slate-100 placeholder:text-slate-500"
     : "border-[#EAEAEA] bg-white/90 text-slate-950 placeholder:text-slate-400";
   const expiredPaymentMessage = isFa
-    ? "این درخواست برای پرداخت جدید منقضی شده است. اگر پول را پیش از پایان زمان فرستاده‌اید، هنوز می‌توانید TXID همان تراکنش را ثبت و بررسی کنید."
-    : "This request has expired for new payments. If you sent the money before the deadline, you can still submit and verify that transaction's TXID.";
+    ? "این درخواست منقضی شده است. اگر پول را پیش از پایان زمان فرستاده‌اید، TXID همان تراکنش را ثبت کنید. اگر هیچ مبلغی نفرستاده‌اید، یک درخواست جدید بسازید."
+    : "This request has expired. If you sent money before the deadline, submit that transaction's TXID. If you sent nothing, create a new request.";
 
   if (loading && !payment) {
     return (
@@ -1041,6 +1084,25 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                   }`}
                 >
                   {expiredPaymentMessage}
+                  {isDirectBscFlow ? (
+                    <button
+                      type="button"
+                      onClick={handleRestartExpiredPayment}
+                      disabled={isRestarting}
+                      className={`mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl px-4 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                        darkMode
+                          ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                          : "bg-emerald-600 text-white hover:bg-emerald-700"
+                      }`}
+                    >
+                      {isRestarting ? <Loader2 size={17} className="animate-spin" /> : <Wallet size={17} />}
+                      <span>
+                        {isRestarting
+                          ? isFa ? "در حال ایجاد..." : "Creating..."
+                          : isFa ? "ایجاد درخواست جدید کریپتو" : "Create new crypto request"}
+                      </span>
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
 

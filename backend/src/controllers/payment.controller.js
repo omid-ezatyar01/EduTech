@@ -990,6 +990,7 @@ export const createCheckout = async (req, res) => {
   try {
     const { courseId, paymentMethod, couponCode } = req.body || {};
     const method = String(paymentMethod || "").trim().toUpperCase();
+    const shouldRestartExpiredAttempt = req.body?.restartExpired === true;
     const pricingRegion = resolveStudentPricingRegion({
       profileCountry: req.user?.country,
       detectedRegion: req.body?.pricingRegion,
@@ -1065,6 +1066,10 @@ export const createCheckout = async (req, res) => {
         break;
       }
 
+      if (candidate.status === "EXPIRED" && shouldRestartExpiredAttempt) {
+        continue;
+      }
+
       const issued = candidate.method === "HESABPAY_HOSTED"
         ? isRecoverableHesabAttempt(candidate)
         : Boolean(
@@ -1087,6 +1092,9 @@ export const createCheckout = async (req, res) => {
           candidate,
           "Issued payment attempt aged out while awaiting final verification",
         );
+        if (shouldRestartExpiredAttempt) {
+          continue;
+        }
       }
 
       activeAttempt = candidate;
@@ -1175,7 +1183,8 @@ export const createCheckout = async (req, res) => {
         const reconciledAttempt = await reconcileSucceededAttempt(recoverableAttempt);
         return apiSuccess(res, toActivePaymentPayload(reconciledAttempt));
       }
-      const recoverableAttemptIssued = recoverableAttempt && (
+      const recoverableAttemptIssued = recoverableAttempt &&
+        !(recoverableAttempt.status === "EXPIRED" && shouldRestartExpiredAttempt) && (
         recoverableAttempt.status === "MANUAL_REVIEW" ||
         (
           recoverableAttempt.method === "HESABPAY_HOSTED"
@@ -1230,10 +1239,12 @@ export const createCheckout = async (req, res) => {
           isIssuedHesabAttempt(paymentAttempt) &&
           isExpiredByDate(paymentAttempt.expiresAt)
         ) {
+          const expiredAttempt = paymentAttempt;
           await expirePendingAttempt(
             paymentAttempt,
             "Issued HesabPay attempt aged out while awaiting final verification",
           );
+          paymentAttempt = shouldRestartExpiredAttempt ? null : expiredAttempt;
         }
       } else if (paymentAttempt) {
         paymentAttempt = await expirePendingAttempt(
@@ -1440,12 +1451,16 @@ export const createCheckout = async (req, res) => {
           (existingAttempt.providerUrl || existingAttempt.recipientAddress)
         ) {
           if (isExpiredByDate(existingAttempt.expiresAt)) {
+            const expiredAttempt = existingAttempt;
             await expirePendingAttempt(
               existingAttempt,
               "Issued direct BSC attempt aged out while awaiting verification",
             );
+            existingAttempt = shouldRestartExpiredAttempt ? null : expiredAttempt;
           }
-          return apiSuccess(res, toActivePaymentPayload(existingAttempt));
+          if (existingAttempt) {
+            return apiSuccess(res, toActivePaymentPayload(existingAttempt));
+          }
         }
 
         existingAttempt = await expireAttemptIfBasePriceChanged(
