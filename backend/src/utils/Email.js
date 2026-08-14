@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 const parsePort = (value, fallback = 465) => {
   const parsed = Number.parseInt(String(value || ""), 10);
@@ -21,7 +22,81 @@ const getSmtpConfig = () => {
 };
 
 const createTransporter = () => nodemailer.createTransport(getSmtpConfig());
-const getFromEmail = () => String(process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || "").trim();
+
+export const resolveEmailProvider = (env = process.env) => {
+  const configured = String(env.EMAIL_PROVIDER || "auto").trim().toLowerCase();
+  if (configured === "resend" || configured === "smtp") return configured;
+  return String(env.RESEND_API_KEY || "").trim() ? "resend" : "smtp";
+};
+
+let resendClient = null;
+let resendClientApiKey = "";
+
+const getResendClient = () => {
+  const apiKey = String(process.env.RESEND_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new EmailSendError("Resend is selected but RESEND_API_KEY is missing", {
+      code: "EMAIL_CONFIGURATION_ERROR",
+    });
+  }
+
+  if (!resendClient || resendClientApiKey !== apiKey) {
+    resendClient = new Resend(apiKey);
+    resendClientApiKey = apiKey;
+  }
+  return resendClient;
+};
+
+const sendEmailMessage = async ({ to, subject, html }) => {
+  const provider = resolveEmailProvider();
+
+  if (provider === "resend") {
+    const from = String(process.env.RESEND_FROM_EMAIL || "").trim();
+    if (!from) {
+      throw new EmailSendError("Resend is selected but RESEND_FROM_EMAIL is missing", {
+        code: "EMAIL_CONFIGURATION_ERROR",
+      });
+    }
+
+    const { data, error } = await getResendClient().emails.send({
+      from,
+      to,
+      subject,
+      html,
+    });
+
+    if (error || !data?.id) {
+      throw new EmailSendError(error?.message || "Resend did not accept the email", {
+        code: error?.name || "RESEND_SEND_FAILED",
+        reason: error?.message || "Resend returned no email ID",
+      });
+    }
+
+    return {
+      id: data.id,
+      messageId: data.id,
+      accepted: [to],
+      rejected: [],
+      response: "accepted by Resend",
+    };
+  }
+
+  const transport = createTransporter();
+  const result = await transport.sendMail({
+    from: String(process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || "").trim(),
+    to,
+    subject,
+    html,
+  });
+
+  return {
+    id: result?.messageId || "",
+    messageId: result?.messageId || "",
+    accepted: result?.accepted || [],
+    rejected: result?.rejected || [],
+    response: result?.response || "",
+  };
+};
 
 export class EmailSendError extends Error {
   constructor(message, { code = "EMAIL_SEND_FAILED", status = "failed", reason = "" } = {}) {
@@ -62,9 +137,7 @@ export const sendEduTechEmail = async ({
   footerNote = "This email was sent by EduTech.",
 }) => {
   try {
-    const transport = createTransporter();
-    const result = await transport.sendMail({
-      from: getFromEmail(),
+    return await sendEmailMessage({
       to,
       subject,
       html: `
@@ -114,16 +187,14 @@ export const sendEduTechEmail = async ({
       </html>
     `,
     });
-
-    return {
-      id: result?.messageId || "",
-      messageId: result?.messageId || "",
-      accepted: result?.accepted || [],
-      rejected: result?.rejected || [],
-      response: result?.response || "",
-    };
   } catch (error) {
-    console.error("SMTP email error:", error);
+    console.error("Email delivery error:", {
+      provider: resolveEmailProvider(),
+      message: error?.message,
+      name: error?.name,
+      code: error?.code,
+    });
+    if (error instanceof EmailSendError) throw error;
     throw new EmailSendError(error?.message || "Failed to send email", {
       reason: error?.message || "",
     });
@@ -138,9 +209,7 @@ export const sendOtpEmail = async ({
 }) => {
   const isPasswordReset = purpose === "password_reset";
   try {
-    const transport = createTransporter();
-    const result = await transport.sendMail({
-      from: getFromEmail(),
+    return await sendEmailMessage({
       to,
       subject: isPasswordReset
         ? "Reset your EduTech teacher password"
@@ -240,21 +309,14 @@ export const sendOtpEmail = async ({
       </html>
     `,
     });
-
-    return {
-      id: result?.messageId || "",
-      messageId: result?.messageId || "",
-      accepted: result?.accepted || [],
-      rejected: result?.rejected || [],
-      response: result?.response || "",
-    };
   } catch (error) {
-    console.error("SMTP OTP email error:", {
+    console.error("OTP email delivery error:", {
+      provider: resolveEmailProvider(),
       message: error?.message,
       name: error?.name,
       code: error?.code,
-      response: error?.response,
     });
+    if (error instanceof EmailSendError) throw error;
     const message = error?.message || "Failed to send OTP email";
     throw new EmailSendError(message, {
       code: "OTP_EMAIL_SEND_FAILED",

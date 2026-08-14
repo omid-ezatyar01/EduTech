@@ -76,6 +76,7 @@ const envSchema = Joi.object({
   APP_TIMEZONE: Joi.string().trim().default("Asia/Kabul"),
   MEET_LINK_VISIBLE_BEFORE_MINUTES: Joi.number().integer().min(0).default(0),
   MEET_LINK_DISABLE_AFTER_START_MINUTES: Joi.number().integer().min(0).default(10),
+  EMAIL_PROVIDER: Joi.string().trim().lowercase().valid("auto", "resend", "smtp").default("auto"),
   SMTP_HOST: Joi.string().trim().allow("").default(""),
   SMTP_PORT: Joi.number().integer().min(1).max(65535).default(465),
   SMTP_SECURE: Joi.boolean().truthy("true").falsy("false").default(true),
@@ -180,6 +181,10 @@ export const validateEnv = () => {
     }
   }
 
+  const emailProvider = String(value.EMAIL_PROVIDER || "auto").trim().toLowerCase();
+  const hasResendApiKey = Boolean(String(value.RESEND_API_KEY || "").trim());
+  const usesResend = emailProvider === "resend" || (emailProvider === "auto" && hasResendApiKey);
+  const usesSmtp = emailProvider === "smtp" || (emailProvider === "auto" && !hasResendApiKey);
   const hasAnySmtpConfig = [
     value.SMTP_HOST,
     value.SMTP_USER,
@@ -187,7 +192,16 @@ export const validateEnv = () => {
     value.SMTP_FROM_EMAIL,
   ].some((entry) => String(entry || "").trim());
 
-  if (hasAnySmtpConfig) {
+  if (usesResend) {
+    if (!hasResendApiKey) {
+      extraErrors.push("RESEND_API_KEY is required when Resend email is enabled");
+    }
+    if (!String(value.RESEND_FROM_EMAIL || "").trim()) {
+      extraErrors.push("RESEND_FROM_EMAIL is required when Resend email is enabled");
+    }
+  }
+
+  if (usesSmtp && (emailProvider === "smtp" || hasAnySmtpConfig)) {
     if (!String(value.SMTP_HOST || "").trim()) {
       extraErrors.push("SMTP_HOST is required when SMTP email is enabled");
     }
