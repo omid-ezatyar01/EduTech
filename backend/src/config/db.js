@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { backfillCourseThumbnailAssets } from "../utils/courseImage.js";
+import { expireStalePendingPaymentAttempts } from "../utils/paymentAttemptMigration.js";
 
 const SEVENTY_TWO_HOURS_IN_MILLISECONDS = 72 * 60 * 60 * 1000;
 
@@ -232,6 +233,17 @@ const repairDuplicatePaymentAccounting = async () => {
   }
 };
 
+const repairStalePendingPaymentAttempts = async () => {
+  const attemptsCollection = mongoose.connection.collection("paymentattempts");
+  const result = await expireStalePendingPaymentAttempts(attemptsCollection);
+
+  if (result.modifiedCount > 0) {
+    console.log(
+      `Expired ${result.modifiedCount} stale pending payment attempt(s) before enforcing checkout uniqueness`,
+    );
+  }
+};
+
 const ensureSingleActivePaymentAttemptIndex = async () => {
   const attemptsCollection = mongoose.connection.collection("paymentattempts");
   await attemptsCollection.createIndex(
@@ -262,6 +274,10 @@ export const connectDB = async () => {
     await ensureDirectMessageTtlIndex();
     await ensureCourseTextSearchIndex();
     await ensurePendingStatusForUnverifiedStudents();
+    // Legacy attempts can remain PENDING past expiresAt. Changing only those
+    // unverified rows to EXPIRED preserves webhook/transaction recovery while
+    // allowing the active-attempt uniqueness constraint to be installed.
+    await repairStalePendingPaymentAttempts();
     await repairDuplicatePaymentAccounting();
     // Payment checkout safety depends on this constraint. If existing active
     // duplicates prevent it from being created, fail startup instead of
