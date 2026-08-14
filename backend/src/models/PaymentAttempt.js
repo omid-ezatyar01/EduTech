@@ -137,6 +137,33 @@ const paymentAttemptSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    issuanceState: {
+      type: String,
+      enum: ["NOT_STARTED", "CREATING", "ISSUED", "AMBIGUOUS", "DEFINITIVELY_FAILED"],
+      default: "NOT_STARTED",
+      index: true,
+    },
+    issuanceStartedAt: {
+      type: Date,
+      default: null,
+    },
+    issuanceCompletedAt: {
+      type: Date,
+      default: null,
+    },
+    completionClaimToken: {
+      type: String,
+      default: null,
+    },
+    completionClaimExpiresAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    fulfillmentCompletedAt: {
+      type: Date,
+      default: null,
+    },
     customerEmail: {
       type: String,
       default: null,
@@ -209,6 +236,16 @@ const paymentAttemptSchema = new mongoose.Schema(
 paymentAttemptSchema.index({ userId: 1, createdAt: -1 });
 paymentAttemptSchema.index({ orderId: 1, createdAt: -1 });
 paymentAttemptSchema.index({ userId: 1, status: 1, createdAt: -1 });
+paymentAttemptSchema.index(
+  { orderId: 1 },
+  {
+    name: "one_active_attempt_per_order",
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ["PENDING", "MANUAL_REVIEW"] },
+    },
+  },
+);
 
 const PaymentAttempt = mongoose.model("PaymentAttempt", paymentAttemptSchema);
 

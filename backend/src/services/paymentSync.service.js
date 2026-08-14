@@ -3,11 +3,18 @@ import Payment from "../models/Payment.js";
 const mapStatus = (status = "") => {
   const normalized = String(status || "").toUpperCase();
   if (normalized === "SUCCEEDED") return "paid";
-  if (normalized === "DUPLICATE_PAYMENT") return "paid";
+  // A duplicate attempt means money may have moved after the order was already
+  // paid. Keep it out of revenue/payout queries until it is reviewed/refunded.
+  if (normalized === "DUPLICATE_PAYMENT") return "pending";
   if (normalized === "MANUAL_REVIEW") return "pending";
   if (normalized === "EXPIRED") return "expired";
   if (normalized === "FAILED") return "failed";
   return "pending";
+};
+
+const mapPaymentStatus = (status = "") => {
+  const mappedStatus = mapStatus(status);
+  return mappedStatus === "expired" ? "failed" : mappedStatus;
 };
 
 const mapMethod = (method = "") => {
@@ -53,7 +60,7 @@ export const syncLegacyPaymentRecord = async ({ order, attempt, course, transact
     provider: mapProvider(attempt.provider),
     paymentMethod: mapMethod(attempt.method),
     status: mapStatus(attempt.status),
-    paymentStatus: mapStatus(attempt.status),
+    paymentStatus: mapPaymentStatus(attempt.status),
     paymentReference: attempt.paymentReference,
     hesabSessionId: attempt.providerPaymentId || null,
     hesabPaymentUrl: attempt.providerUrl || null,
@@ -82,6 +89,9 @@ export const syncLegacyPaymentRecord = async ({ order, attempt, course, transact
 
   let paymentDoc;
   if (existing) {
+    // Reconciliation must not erase the historical enrollment link before the
+    // idempotent completion path decides whether that enrollment can change.
+    payload.enrollmentId = existing.enrollmentId || payload.enrollmentId;
     payload.pricingRegion = existing.pricingRegion || payload.pricingRegion;
     payload.sourcePriceAmount =
       existing.sourcePriceAmount ?? payload.sourcePriceAmount;

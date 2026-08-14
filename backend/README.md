@@ -6,6 +6,12 @@ This backend now supports a unified payment architecture for:
 - `USDT_BSC_DIRECT`
 - `NOWPAYMENTS_CRYPTO`
 
+> **Current routing caveat:** the checkout validator currently accepts only
+> `HESABPAY_HOSTED` and `USDT_BSC_DIRECT`, and the direct-BSC path is used for
+> every USDT amount. The NOWPayments creation branch is therefore not selectable
+> at runtime, while several sections below describe the intended `< 12` / `>= 12`
+> split. Resolve that product rule before enabling crypto checkout in production.
+
 The commercial course price remains authoritative in `USD` on the course record. The frontend currently presents that price as `USDT` for student checkout. Payment-specific quoting happens only when creating a payment attempt.
 
 ## Stack
@@ -179,6 +185,7 @@ Student-compatible aliases remain available:
 
 - `POST /api/v1/student/payments/create-session`
 - `POST /api/v1/student/payments/checkout`
+- `GET /api/v1/student/payments/status/order/:orderId`
 - `GET /api/v1/student/payments/:paymentAttemptId/status`
 - `GET /api/v1/student/payments/history`
 
@@ -189,9 +196,25 @@ Student-compatible aliases remain available:
 1. Backend reads the course USD price.
 2. Backend creates an AFN quote and stores it on the payment attempt.
 3. Backend creates the HesabPay session.
-4. Browser redirect is informational only.
-5. Payment completes only after verified server-side webhook processing.
-6. The webhook calls the shared `completePayment(...)` service.
+4. If the same pending checkout is requested again, backend returns its status
+   identifiers without reusing the one-time provider URL or creating another
+   session. A fresh session is available after the old attempt fails or expires.
+5. Browser redirect is informational only.
+6. Payment completes only after verified server-side webhook processing.
+7. The webhook calls the shared `completePayment(...)` service.
+
+Register this endpoint for both `payment_success` and `payment_failure` in the
+HesabPay developer dashboard:
+
+```text
+https://YOUR-PUBLIC-BACKEND/api/v1/payments/hesabpay/webhook
+```
+
+The endpoint must be public HTTPS. HesabPay cannot deliver server-to-server
+webhooks to `localhost`; when testing a real payment from local development,
+use a stable HTTPS tunnel and register that tunnel URL in the dashboard first.
+The success redirect only displays status and never grants course access by
+itself.
 
 ### NOWPayments / BSC
 
@@ -233,9 +256,11 @@ Student-compatible aliases remain available:
 
 ## Development
 
-Install dependencies and run the server:
+Create the local configuration, fill the required values, install dependencies,
+and run the server:
 
 ```bash
+cp .env.example .env.development
 npm install
 npm run dev
 ```
@@ -252,6 +277,11 @@ Health endpoint:
 GET /api/v1/health
 ```
 
+`npm run start:prod` uses `NODE_ENV=production`, so it loads `.env.production`
+instead of `.env.development` (after the shared `.env`, when present). Keep both
+files untracked and use production-only credentials and HTTPS origins in
+production.
+
 ## Tests
 
 Run backend tests:
@@ -265,6 +295,23 @@ Current automated coverage focuses on payment quoting, idempotency, and NOWPayme
 ## Environment Variables
 
 Keep the required NOWPayments, BSC, HesabPay, and Telegram values in `backend/.env.development` for local development.
+
+Local HesabPay development uses the official sandbox gateway:
+
+```env
+HESABPAY_BASE_URL=https://api-sandbox.hesab.com
+```
+
+Sandbox webhooks still require a public HTTPS tunnel; callbacks cannot reach
+`localhost`. Only a production deployment with a public HTTPS
+`BACKEND_PUBLIC_URL` should use the live gateway:
+
+```env
+HESABPAY_BASE_URL=https://api.hesab.com
+```
+
+The backend refuses to start when a non-empty HesabPay key is paired with the
+live gateway and a missing, non-HTTPS, or localhost backend callback origin.
 
 ### AI Chat
 

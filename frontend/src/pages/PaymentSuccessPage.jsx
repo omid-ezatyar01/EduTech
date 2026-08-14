@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock3, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, XCircle } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   confirmStudentPaymentRedirect,
   getPaymentAttemptStatus,
+  getStudentPaymentStatusByOrder,
   getStudentPaymentStatus,
 } from "../../services/paymentGateway.js";
+import { getAuthUser } from "../../services/portal.js";
 import {
   getLocalizedRequestErrorMessage,
   invalidateApiCache,
 } from "../../services/http.js";
+import {
+  forgetHostedPaymentAttempt,
+  resolveHostedPaymentReturn,
+} from "../utils/hostedPaymentReturn.js";
 
 const statusMeta = {
   paid: {
@@ -28,6 +34,22 @@ const statusMeta = {
     icon: CheckCircle2,
     color: "text-green-600 bg-green-50 border-green-100",
   },
+  duplicate_payment: {
+    titleFa: "پرداخت تکراری نیازمند پیگیری است",
+    textFa: "ممکن است پول این پرداخت پس از پرداخت قبلی کسر شده باشد. دوباره پرداخت نکنید؛ برای بررسی و بازپرداخت با پشتیبانی تماس بگیرید.",
+    titleEn: "Duplicate payment needs attention",
+    textEn: "Money may have been charged after an earlier payment completed. Do not pay again; contact support for review and a possible refund.",
+    icon: AlertTriangle,
+    color: "text-amber-700 bg-amber-50 border-amber-200",
+  },
+  manual_review: {
+    titleFa: "پرداخت نیازمند بررسی دستی است",
+    textFa: "دوباره پرداخت نکنید. پشتیبانی پرداخت و فعال‌سازی کورس را بررسی می‌کند.",
+    titleEn: "Payment needs manual review",
+    textEn: "Do not pay again. Support must review the payment and course activation.",
+    icon: AlertTriangle,
+    color: "text-amber-700 bg-amber-50 border-amber-200",
+  },
   pending: {
     titleFa: "پرداخت در حال بررسی است",
     textFa: "پرداخت دریافت شد و در حال بررسی است.",
@@ -44,14 +66,50 @@ const statusMeta = {
     icon: XCircle,
     color: "text-rose-600 bg-rose-50 border-rose-100",
   },
+  expired: {
+    titleFa: "جلسه پرداخت منقضی شده است",
+    textFa: "اگر پول از حساب شما کم شده است، دوباره پرداخت نکنید و شناسه پرداخت را از بخش پرداخت‌ها پیگیری کنید.",
+    titleEn: "Payment session expired",
+    textEn: "If your account was charged, do not pay again. Use the payment reference in Payment History for follow-up.",
+    icon: XCircle,
+    color: "text-rose-600 bg-rose-50 border-rose-100",
+  },
+  refunded: {
+    titleFa: "پرداخت بازپرداخت شده است",
+    textFa: "این پرداخت بازپرداخت شده است. برای جزئیات بیشتر تاریخچه پرداخت را بررسی کنید.",
+    titleEn: "Payment refunded",
+    textEn: "This payment was refunded. Check Payment History for details.",
+    icon: AlertTriangle,
+    color: "text-blue-700 bg-blue-50 border-blue-200",
+  },
+  cancelled: {
+    titleFa: "پرداخت لغو شده است",
+    textFa: "این پرداخت تکمیل نشده است.",
+    titleEn: "Payment cancelled",
+    textEn: "This payment was not completed.",
+    icon: XCircle,
+    color: "text-rose-600 bg-rose-50 border-rose-100",
+  },
+  canceled: {
+    titleFa: "پرداخت لغو شده است",
+    textFa: "این پرداخت تکمیل نشده است.",
+    titleEn: "Payment cancelled",
+    textEn: "This payment was not completed.",
+    icon: XCircle,
+    color: "text-rose-600 bg-rose-50 border-rose-100",
+  },
 };
 
 export default function PaymentSuccessPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const reference = searchParams.get("ref");
-  const paymentAttemptId = searchParams.get("paymentAttemptId");
-  const hasPaymentReference = Boolean(reference || paymentAttemptId);
+  const authUser = useMemo(() => getAuthUser() || {}, []);
+  const paymentReturn = useMemo(
+    () => resolveHostedPaymentReturn({ searchParams, user: authUser }),
+    [authUser, searchParams],
+  );
+  const { reference, paymentAttemptId, orderId } = paymentReturn;
+  const hasPaymentReference = Boolean(reference || paymentAttemptId || orderId);
   const [status, setStatus] = useState("pending");
   const [courseTitle, setCourseTitle] = useState("");
   const [loading, setLoading] = useState(true);
@@ -85,7 +143,7 @@ export default function PaymentSuccessPage() {
 
     const checkStatus = async () => {
       try {
-        if (!paymentAttemptId && attempts === 0) {
+        if (!paymentAttemptId && reference && attempts === 0) {
           await confirmStudentPaymentRedirect(reference).catch((err) => {
             if (err?.status !== 409) throw err;
           });
@@ -93,22 +151,39 @@ export default function PaymentSuccessPage() {
 
         const payment = paymentAttemptId
           ? await getPaymentAttemptStatus(paymentAttemptId)
-          : { payment: await getStudentPaymentStatus(reference) };
+          : reference
+            ? { payment: await getStudentPaymentStatus(reference) }
+            : await getStudentPaymentStatusByOrder(orderId);
         if (!isMounted) return;
 
-        const nextStatus = paymentAttemptId
-          ? String(payment?.status || "PENDING").toLowerCase()
-          : payment?.payment?.status || payment?.status || "pending";
+        const nextStatus = String(
+          payment?.status || payment?.payment?.status || "pending",
+        ).toLowerCase();
         setStatus(nextStatus);
         setCourseTitle(payment?.payment?.courseId?.title || payment?.course?.title || "");
         setError("");
 
-        if (nextStatus === "paid" || nextStatus === "succeeded") {
+        if (["paid", "succeeded"].includes(nextStatus)) {
+          forgetHostedPaymentAttempt({
+            paymentAttemptId: payment?.paymentAttemptId || paymentAttemptId,
+            reference: payment?.payment?.paymentReference || reference,
+            orderId: payment?.orderId || orderId,
+            user: authUser,
+          });
           redirectToCourses();
           return;
         }
 
-        if (nextStatus === "pending" && attempts < maxAttempts) {
+        if (["failed", "expired", "refunded", "cancelled", "canceled"].includes(nextStatus)) {
+          forgetHostedPaymentAttempt({
+            paymentAttemptId: payment?.paymentAttemptId || paymentAttemptId,
+            reference: payment?.payment?.paymentReference || reference,
+            orderId: payment?.orderId || orderId,
+            user: authUser,
+          });
+        }
+
+        if (["pending", "manual_review"].includes(nextStatus) && attempts < maxAttempts) {
           attempts += 1;
           pollTimer = setTimeout(checkStatus, 5000);
           return;
@@ -134,12 +209,22 @@ export default function PaymentSuccessPage() {
       isMounted = false;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [hasPaymentReference, language, navigate, paymentAttemptId, reference, retrySeed]);
+  }, [
+    authUser,
+    hasPaymentReference,
+    language,
+    navigate,
+    orderId,
+    paymentAttemptId,
+    reference,
+    retrySeed,
+  ]);
 
   const meta = statusMeta[status] || statusMeta.pending;
   const Icon = meta.icon;
   const title = language === "fa" ? meta.titleFa : meta.titleEn;
   const text = language === "fa" ? meta.textFa : meta.textEn;
+  const needsSupport = ["duplicate_payment", "manual_review"].includes(status);
 
   return (
     <section className="min-h-[70vh] bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
@@ -182,6 +267,20 @@ export default function PaymentSuccessPage() {
                 {language === "fa" ? "کورس:" : "Course:"} {courseTitle}
               </p>
             ) : null}
+            {needsSupport ? (
+              <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-start text-sm font-semibold leading-6 text-amber-900">
+                <p>
+                  {language === "fa"
+                    ? "این وضعیت موفقیت عادی نیست و به‌صورت خودکار به کورس‌های شما منتقل نمی‌شوید. شناسه پرداخت را برای پشتیبانی نگه دارید."
+                    : "This is not a normal success state, so you will not be redirected automatically. Keep the payment reference for support."}
+                </p>
+                {reference || paymentAttemptId ? (
+                  <p className="mt-2 break-all font-mono text-xs" dir="ltr">
+                    {reference || paymentAttemptId}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </>
         )}
 
@@ -198,6 +297,14 @@ export default function PaymentSuccessPage() {
           >
             {language === "fa" ? "تاریخچه پرداخت" : "Payment history"}
           </Link>
+          {needsSupport ? (
+            <Link
+              to="/student/support"
+              className="inline-flex h-11 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-5 text-sm font-black text-amber-800 transition hover:bg-amber-100"
+            >
+              {language === "fa" ? "تماس با پشتیبانی" : "Contact support"}
+            </Link>
+          ) : null}
         </div>
       </div>
     </section>

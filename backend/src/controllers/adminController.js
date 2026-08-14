@@ -25,6 +25,7 @@ import {
 import { buildCertificateId, normalizeCertificateId } from "../utils/certificate.js";
 import { validateAndNormalizeBankPaymentInfo } from "../utils/bankPaymentInfo.js";
 import { resolveUploadsPath } from "../config/uploadStorage.js";
+import { generateTemporaryPassword } from "../utils/temporaryPassword.js";
 
 const teacherCvDirectory = resolveUploadsPath("teacher-cv");
 const teacherCertificatesDirectory = resolveUploadsPath("teacher-certificates");
@@ -149,7 +150,6 @@ const reviewTeacherApplicationSchema = Joi.object({
   }).default({ push: false, telegram: false }),
 });
 
-const DEFAULT_ADMIN_CREATED_TEACHER_PASSWORD = "123456";
 const getTeacherCourseFilter = (teacherId) => ({
   $or: [{ teacher: teacherId }, { teacherId }, { createdBy: teacherId }],
 });
@@ -825,11 +825,12 @@ export const createTeacherByAdmin = async (req, res) => {
     const emailPrefix = String(email.split("@")[0] || "teacher").trim() || "teacher";
     const formattedName = emailPrefix;
 
+    const temporaryPassword = generateTemporaryPassword();
     const presetTeacherData = {
       name: formattedName,
       email,
       phone: "0700000000",
-      password: DEFAULT_ADMIN_CREATED_TEACHER_PASSWORD,
+      password: temporaryPassword,
       role: "teacher",
       status: "active",
       isEmailVerified: true,
@@ -838,10 +839,12 @@ export const createTeacherByAdmin = async (req, res) => {
     };
 
     const teacher = await User.create(presetTeacherData);
+    res.set("Cache-Control", "no-store");
 
     return res.status(201).json({
       message: "Teacher created successfully",
       teacher: cleanUser(teacher),
+      temporaryPassword,
     });
   } catch (error) {
     return res.status(500).json({

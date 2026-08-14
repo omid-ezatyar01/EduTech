@@ -1,4 +1,6 @@
 import { getApiBase, isConstrainedConnection } from "./http";
+import { getAuthUser } from "./portal.js";
+import { rememberHostedPaymentAttempt } from "../src/utils/hostedPaymentReturn.js";
 
 const REQUEST_TIMEOUT_MS = 12_000;
 let paymentHistoryCache = null;
@@ -107,13 +109,30 @@ export const createCheckout = async ({
     data.payment_url ||
     data?.payment?.url ||
     data?.payment?.paymentUrl;
+  const isHostedStatusResume =
+    String(data?.provider || "").toUpperCase() === "HESABPAY" &&
+    data?.resumed === true &&
+    Boolean(data?.paymentAttemptId || data?.paymentReference || data?.orderId);
 
   invalidateStudentPaymentHistoryCache();
-  if (!paymentUrl && !["NOWPAYMENTS", "BSC_DIRECT"].includes(String(data?.provider || "").toUpperCase())) {
+  if (
+    !paymentUrl &&
+    !isHostedStatusResume &&
+    !["NOWPAYMENTS", "BSC_DIRECT"].includes(String(data?.provider || "").toUpperCase())
+  ) {
     throw new Error("Payment URL not received from server");
   }
 
-  return { ...data, paymentUrl };
+  const checkout = { ...data, paymentUrl };
+  if (String(checkout?.provider || "").toUpperCase() === "HESABPAY") {
+    rememberHostedPaymentAttempt({
+      checkout,
+      courseId,
+      user: getAuthUser() || {},
+    });
+  }
+
+  return checkout;
 };
 
 export const validateCheckoutCoupon = async ({
@@ -268,7 +287,7 @@ export const getStudentPaymentStatus = async (reference) => {
   if (!response.ok || !data?.success) {
     throw makeHttpError("Unable to fetch payment status", response, data);
   }
-  if (["paid", "succeeded", "failed", "expired", "refunded"].includes(
+  if (["paid", "succeeded", "failed", "expired", "refunded", "manual_review", "duplicate_payment"].includes(
     String(data?.payment?.status || "").toLowerCase(),
   )) {
     invalidateStudentPaymentHistoryCache();
@@ -288,7 +307,39 @@ export const getPaymentAttemptStatus = async (paymentAttemptId) => {
   if (!response.ok || !data?.success) {
     throw makeHttpError("Unable to fetch payment status", response, data);
   }
-  if (["succeeded", "failed", "expired", "refunded"].includes(
+  if (["succeeded", "failed", "expired", "refunded", "manual_review", "duplicate_payment"].includes(
+    String(data?.status || data?.payment?.status || "").toLowerCase(),
+  )) {
+    invalidateStudentPaymentHistoryCache();
+  }
+  return data;
+};
+
+export const getStudentPaymentStatusByOrder = async (orderId) => {
+  const token = getStudentToken();
+  if (!token) throw new Error("NOT_AUTHENTICATED");
+
+  let response;
+  try {
+    response = await fetchWithTimeout(
+      `${getApiBase()}/student/payments/status/order/${encodeURIComponent(orderId)}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      },
+    );
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("Payment status request timed out", { cause: error });
+    }
+    throw new Error("Failed to reach payment server", { cause: error });
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.success) {
+    throw makeHttpError("Unable to fetch payment status", response, data);
+  }
+  if (["succeeded", "failed", "expired", "refunded", "manual_review", "duplicate_payment"].includes(
     String(data?.status || data?.payment?.status || "").toLowerCase(),
   )) {
     invalidateStudentPaymentHistoryCache();

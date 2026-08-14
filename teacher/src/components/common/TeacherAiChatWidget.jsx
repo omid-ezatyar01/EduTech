@@ -50,9 +50,16 @@ const getSuggestedQuestions = (language) => {
 
 export default function TeacherAiChatWidget({ language = "fa" }) {
   const location = useLocation();
+  const user = useMemo(() => getAuthUser(), []);
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() => [
+    {
+      id: "welcome",
+      role: "assistant",
+      content: createGreeting(language, String(user?.name || "").trim()),
+    },
+  ]);
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   usePersistentFormDraft({
@@ -62,25 +69,11 @@ export default function TeacherAiChatWidget({ language = "fa" }) {
   });
   const scrollRef = useRef(null);
   const activeRequestRef = useRef(null);
-  const user = useMemo(() => getAuthUser(), []);
   const isFa = language === "fa";
   const suggestedQuestions = getSuggestedQuestions(language);
   const handleClose = () => {
     setIsOpen(false);
   };
-
-  useEffect(() => {
-    setMessages((current) => {
-      if (current.length) return current;
-      return [
-        {
-          id: "welcome",
-          role: "assistant",
-          content: createGreeting(language, String(user?.name || "").trim()),
-        },
-      ];
-    });
-  }, [language, user]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -110,10 +103,10 @@ export default function TeacherAiChatWidget({ language = "fa" }) {
   const submitMessage = async (rawContent = "") => {
     const content = String(rawContent || "").trim();
     if (!content || content.length > MAX_MESSAGE_LENGTH || isSending) return;
-    const assistantId = `assistant-${Date.now()}`;
+    const assistantId = `assistant-${messages.length + 1}`;
     const nextMessages = [
       ...messages,
-      { id: `user-${Date.now()}`, role: "user", content },
+      { id: `user-${messages.length}`, role: "user", content },
       { id: assistantId, role: "assistant", content: "" },
     ];
     setMessages(nextMessages);

@@ -14,7 +14,11 @@ const envSchema = Joi.object({
   CLIENT_URL: Joi.string().trim().allow("").default(""),
   STUDENT_CLIENT_URL: Joi.string().trim().allow("").default(""),
   STUDENT_FRONTEND_URL: Joi.string().trim().allow("").default(""),
+  TEACHER_CLIENT_URL: Joi.string().trim().allow("").default(""),
+  TEACHER_FRONTEND_URL: Joi.string().trim().allow("").default(""),
   COURSE_PUBLIC_ORIGIN: Joi.string().uri().allow("").default(""),
+  PUBLIC_SITE_ORIGIN: Joi.string().uri().allow("").default(""),
+  CERTIFICATE_VERIFY_ORIGIN: Joi.string().uri().allow("").default(""),
   UPLOADS_DIR: Joi.string().trim().allow("").default(""),
   API_RATE_LIMIT_WINDOW_MS: Joi.number().integer().min(1000).default(15 * 60 * 1000),
   API_RATE_LIMIT_MAX: Joi.number().integer().min(1).default(300),
@@ -23,7 +27,8 @@ const envSchema = Joi.object({
   URL_ENCODED_LIMIT: Joi.string().trim().default("1mb"),
   URL_ENCODED_PARAMETER_LIMIT: Joi.number().integer().min(1).max(10000).default(100),
   HESABPAY_API_KEY: Joi.string().trim().allow("").default(""),
-  HESABPAY_BASE_URL: Joi.string().uri().default("https://api.hesab.com"),
+  HESABPAY_BASE_URL: Joi.string().uri().default("https://api-sandbox.hesab.com"),
+  HESABPAY_WEBHOOK_CLAIM_LEASE_MS: Joi.number().integer().min(5000).default(60000),
   HESABPAY_ALLOW_REDIRECT_CONFIRM: Joi.boolean().truthy("true").falsy("false").default(false),
   HESABPAY_DEV_FALLBACK_REDIRECT: Joi.boolean().truthy("true").falsy("false").default(false),
   HESABPAY_USD_TO_AFN_RATE: Joi.number().positive().default(70),
@@ -50,6 +55,7 @@ const envSchema = Joi.object({
   HESABPAY_EXCHANGE_RATE_TIMEOUT_MS: Joi.number().integer().min(1000).default(10000),
   HESABPAY_EXCHANGE_RATE_CACHE_TTL_MS: Joi.number().integer().min(1000).default(300000),
   HESABPAY_EXCHANGE_RATE_EMERGENCY_FALLBACK_RATE: Joi.number().positive().default(70),
+  CURRENCY_CONVERSION_DEBUG: Joi.boolean().truthy("true").falsy("false").default(false),
   NOWPAYMENTS_API_KEY: Joi.string().trim().allow("").default(""),
   NOWPAYMENTS_IPN_SECRET: Joi.string().trim().allow("").default(""),
   NOWPAYMENTS_BASE_URL: Joi.string().uri().default("https://api.nowpayments.io"),
@@ -86,14 +92,18 @@ const envSchema = Joi.object({
   GOOGLE_TEACHER_REDIRECT_URI: Joi.string().trim().allow("").default(""),
   GOOGLE_ADMIN_REDIRECT_URI: Joi.string().trim().allow("").default(""),
   GOOGLE_STUDENT_REDIRECT_URI: Joi.string().trim().allow("").default(""),
+  GOOGLE_STUDENT_CALENDAR_REDIRECT_URI: Joi.string().trim().allow("").default(""),
   GOOGLE_OAUTH_RESULT_REDIRECTS: Joi.string().trim().allow("").default(""),
   GOOGLE_OAUTH_RESULT_REDIRECT: Joi.string().trim().allow("").default(""),
   GOOGLE_OAUTH_RESULT_REDIRECT_BASE: Joi.string().trim().allow("").default(""),
+  GOOGLE_STUDENT_OAUTH_RESULT_REDIRECT: Joi.string().trim().allow("").default(""),
+  GOOGLE_TEACHER_OAUTH_RESULT_REDIRECT: Joi.string().trim().allow("").default(""),
+  GOOGLE_ADMIN_OAUTH_RESULT_REDIRECT: Joi.string().trim().allow("").default(""),
   GOOGLE_TOKEN_ENCRYPTION_KEY: Joi.string().trim().allow("").default(""),
   WEB_PUSH_VAPID_PUBLIC_KEY: Joi.string().trim().allow("").default(""),
   WEB_PUSH_VAPID_PRIVATE_KEY: Joi.string().trim().allow("").default(""),
   WEB_PUSH_CONTACT: Joi.string().trim().allow("").default(""),
-  BACKEND_PUBLIC_URL: Joi.string().trim().allow("").default(""),
+  BACKEND_PUBLIC_URL: Joi.string().trim().uri().allow("").default(""),
   TELEGRAM_BOT_TOKEN: Joi.string().trim().allow("").default(""),
   TELEGRAM_PUBLIC_CHANNEL_ID: Joi.string().trim().allow("").default(""),
   TELEGRAM_PUBLIC_CHANNEL_USERNAME: Joi.string().trim().allow("").default(""),
@@ -198,6 +208,44 @@ export const validateEnv = () => {
     }
     if (!String(value.NOWPAYMENTS_IPN_URL || "").trim()) {
       extraErrors.push("NOWPAYMENTS_IPN_URL is required when NOWPAYMENTS_API_KEY is set");
+    }
+  }
+
+  const hasHesabPayKey = Boolean(String(value.HESABPAY_API_KEY || "").trim());
+  let usesNonSandboxHesabGateway = false;
+  try {
+    usesNonSandboxHesabGateway =
+      new URL(String(value.HESABPAY_BASE_URL || "")).hostname.toLowerCase() !==
+      "api-sandbox.hesab.com";
+  } catch {
+    // Joi reports malformed URLs before these cross-field checks run.
+  }
+
+  if ((isProduction || usesNonSandboxHesabGateway) && hasHesabPayKey) {
+    const publicBackendUrl = String(value.BACKEND_PUBLIC_URL || "").trim();
+    if (!publicBackendUrl) {
+      extraErrors.push(
+        "BACKEND_PUBLIC_URL is required when live HesabPay is enabled",
+      );
+    } else if (
+      !/^https:\/\//i.test(publicBackendUrl) ||
+      /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(publicBackendUrl)
+    ) {
+      extraErrors.push(
+        "BACKEND_PUBLIC_URL must be a public https:// URL when live HesabPay is enabled",
+      );
+    }
+  }
+
+  if (isProduction && String(value.NOWPAYMENTS_API_KEY || "").trim()) {
+    const ipnUrl = String(value.NOWPAYMENTS_IPN_URL || "").trim();
+    if (
+      ipnUrl &&
+      (!/^https:\/\//i.test(ipnUrl) || /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(ipnUrl))
+    ) {
+      extraErrors.push(
+        "NOWPAYMENTS_IPN_URL must be a public https:// URL in production",
+      );
     }
   }
 

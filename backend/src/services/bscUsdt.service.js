@@ -288,13 +288,6 @@ const verifyDirectBscUsdtPaymentViaBscScan = async ({
   const normalizedRecipient = getAddress(expectedRecipientAddress || config.recipientAddress);
   const normalizedToken = getAddress(expectedTokenAddress || config.usdtContractAddress);
   const expectedTokenUnits = decimalToTokenUnits(expectedAmount, decimals);
-  const directContractTarget = transaction.to ? getAddress(transaction.to) : null;
-
-  if (directContractTarget !== normalizedToken) {
-    const error = new Error("Wrong token contract");
-    error.code = "WRONG_TOKEN_CONTRACT";
-    throw error;
-  }
 
   const parsedTransferLogs = Array.isArray(receipt.logs)
     ? receipt.logs
@@ -328,7 +321,7 @@ const verifyDirectBscUsdtPaymentViaBscScan = async ({
   const totalReceivedUnits = recipientTransfers.reduce((sum, item) => sum + BigInt(item.args.value.toString()), 0n);
   const actualAmount = tokenUnitsToDecimal(totalReceivedUnits, decimals);
 
-  if (totalReceivedUnits < expectedTokenUnits) {
+  if (totalReceivedUnits !== expectedTokenUnits) {
     const error = new Error("Incorrect amount");
     error.code = "INCORRECT_AMOUNT";
     error.actualAmount = actualAmount;
@@ -389,6 +382,11 @@ const verifyDirectBscUsdtPaymentViaRpc = async ({
 
   const currentBlockNumber = await provider.getBlockNumber();
   const block = await provider.getBlock(receipt.blockNumber);
+  if (!block?.timestamp) {
+    const error = new Error("Transaction block timestamp is unavailable");
+    error.code = "BLOCK_TIMESTAMP_UNAVAILABLE";
+    throw error;
+  }
   const confirmations = Math.max(0, Number(currentBlockNumber) - Number(receipt.blockNumber) + 1);
   if (confirmations < config.confirmationCount) {
     const error = new Error("Transaction is not confirmed enough yet");
@@ -399,13 +397,6 @@ const verifyDirectBscUsdtPaymentViaRpc = async ({
   const normalizedRecipient = getAddress(expectedRecipientAddress || config.recipientAddress);
   const normalizedToken = getAddress(expectedTokenAddress || config.usdtContractAddress);
   const expectedTokenUnits = decimalToTokenUnits(expectedAmount, decimals);
-  const directContractTarget = transaction.to ? getAddress(transaction.to) : null;
-
-  if (directContractTarget !== normalizedToken) {
-    const error = new Error("Wrong token contract");
-    error.code = "WRONG_TOKEN_CONTRACT";
-    throw error;
-  }
 
   const parsedTransferLogs = receipt.logs
     .filter((log) => {
@@ -434,7 +425,7 @@ const verifyDirectBscUsdtPaymentViaRpc = async ({
   const totalReceivedUnits = recipientTransfers.reduce((sum, item) => sum + BigInt(item.args.value.toString()), 0n);
   const actualAmount = tokenUnitsToDecimal(totalReceivedUnits, decimals);
 
-  if (totalReceivedUnits < expectedTokenUnits) {
+  if (totalReceivedUnits !== expectedTokenUnits) {
     const error = new Error("Incorrect amount");
     error.code = "INCORRECT_AMOUNT";
     error.actualAmount = actualAmount;

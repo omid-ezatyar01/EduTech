@@ -13,6 +13,9 @@ import QRCode from "qrcode";
 import { useLocation, useNavigate } from "react-router";
 import { getLocalizedRequestErrorMessage } from "../../services/http.js";
 import {
+  resolveCryptoPaymentAmount,
+} from "../utils/cryptoPayment.js";
+import {
   getPaymentAttemptStatus,
   normalizeEvmTransactionHash,
   verifyDirectCryptoPayment,
@@ -27,13 +30,6 @@ const readStoredLanguage = () => {
 };
 
 const readStoredDarkMode = () => localStorage.getItem("edutech-payment-dark") === "true";
-const BINANCE_BEP20_USDT_FEE_EXAMPLE = "0.01";
-
-const trimTrailingZeros = (value) =>
-  String(value || "0")
-    .replace(/(\.\d*?[1-9])0+$/u, "$1")
-    .replace(/\.0+$/u, "")
-    .trim();
 
 const getTxHashValidationMessage = (value, language = "fa") => {
   const rawValue = String(value || "");
@@ -102,8 +98,8 @@ const getDirectCryptoVerifyErrorMessage = (error, language = "fa") => {
 
   if (code === "INCORRECT_AMOUNT") {
     return isFa
-      ? `این پرداخت به خاطر کم‌رسیدن مبلغ تایید نشد.${actualReceivedAmount ? ` کیف پول مقصد ${actualReceivedAmount} ${expectedCurrency} دریافت کرده` : ""}${expectedAmount ? `، اما باید حداقل ${expectedAmount} ${expectedCurrency} دریافت می‌کرد.` : ""} اگر از Binance یا صرافی مشابه پرداخت می‌کنید، کارمزد شبکه را هم حساب کنید تا مبلغ نهایی کمتر نرسد.`
-      : `This payment was not confirmed because the received amount was too low.${actualReceivedAmount ? ` The destination wallet received ${actualReceivedAmount} ${expectedCurrency}` : ""}${expectedAmount ? `, but it needed to receive at least ${expectedAmount} ${expectedCurrency}.` : ""} If you pay from Binance or a similar exchange, include the network fee so the final received amount is not lower than required.`;
+      ? `مبلغ این پرداخت با مبلغ دقیق درخواست برابر نیست.${actualReceivedAmount ? ` کیف پول مقصد ${actualReceivedAmount} ${expectedCurrency} دریافت کرده` : ""}${expectedAmount ? `، اما مبلغ دقیق باید ${expectedAmount} ${expectedCurrency} باشد.` : ""}`
+      : `This payment does not match the exact quoted amount.${actualReceivedAmount ? ` The destination wallet received ${actualReceivedAmount} ${expectedCurrency}` : ""}${expectedAmount ? `, but the exact required amount is ${expectedAmount} ${expectedCurrency}.` : ""}`;
   }
 
   if (code === "TX_HASH_ALREADY_USED") {
@@ -130,12 +126,6 @@ const getDirectCryptoVerifyErrorMessage = (error, language = "fa") => {
     return isFa
       ? `بعد از ${cooldownAfterAttempts} تلاش ناموفق، باید کمی صبر کنید و دوباره تلاش کنید.${retryAfterSeconds > 0 ? ` حدود ${retryAfterSeconds} ثانیه دیگر.` : ""}`
       : `After ${cooldownAfterAttempts} failed attempts, please wait before trying again.${retryAfterSeconds > 0 ? ` Try again in about ${retryAfterSeconds} seconds.` : ""}`;
-  }
-
-  if (code === "PAYMENT_VERIFICATION_ATTEMPTS_EXCEEDED") {
-    return isFa
-      ? "تعداد تلاش‌های ناموفق برای این درخواست پرداخت بیش از حد مجاز شده است. لطفاً یک درخواست پرداخت جدید بسازید."
-      : "Too many failed verification attempts were made for this payment request. Please create a new payment request.";
   }
 
   if (code === "PAYMENT_REQUEST_EXPIRED" || code === "TX_MINED_AFTER_PAYMENT_EXPIRY") {
@@ -418,29 +408,11 @@ export default function NowPaymentsPage({ language: appLanguage }) {
   const isDirectBscFlow =
     String(payment?.provider || "").toUpperCase() === "BSC_DIRECT" ||
     String(payment?.method || "").toUpperCase() === "USDT_BSC_DIRECT";
-  const displayAmountValue = useMemo(() => {
-    if (isDirectBscFlow && String(displayCurrencyLabel).toUpperCase() === "USDT") {
-      const baseAmountUsdCents = Number(payment?.baseAmountUsdCents || 0);
-      if (Number.isFinite(baseAmountUsdCents) && baseAmountUsdCents > 0) {
-        return trimTrailingZeros((baseAmountUsdCents / 100).toFixed(6));
-      }
-    }
-
-    return trimTrailingZeros(String(payment?.amount || "").trim());
-  }, [displayCurrencyLabel, isDirectBscFlow, payment?.amount, payment?.baseAmountUsdCents]);
+  const displayAmountValue = useMemo(
+    () => resolveCryptoPaymentAmount(payment),
+    [payment],
+  );
   const amountLabel = `${displayAmountValue || "-"} ${displayCurrencyLabel}`.trim();
-  const binanceSendExampleLabel = useMemo(() => {
-    if (String(displayCurrencyLabel).toUpperCase() !== "USDT") return "";
-    const rawAmount = String(displayAmountValue || "").trim();
-    if (!rawAmount) return "";
-
-    try {
-      const total = trimTrailingZeros((Number(rawAmount) + Number(BINANCE_BEP20_USDT_FEE_EXAMPLE)).toFixed(6));
-      return `${total} USDT`;
-    } catch {
-      return "";
-    }
-  }, [displayAmountValue, displayCurrencyLabel]);
   const statusKey = String(payment?.status || "PENDING").toUpperCase();
   const isExpiredPayment = statusKey === "EXPIRED";
   const statusLabel = isFa
@@ -665,7 +637,7 @@ export default function NowPaymentsPage({ language: appLanguage }) {
   };
 
   const handleVerify = async () => {
-    if (!paymentAttemptId || !txHash.trim() || isVerifying || isExpiredPayment) return;
+    if (!paymentAttemptId || !txHash.trim() || isVerifying) return;
     if (txHashValidationMessage) {
       setError(txHashValidationMessage);
       setStatusFeedback(txHashValidationMessage);
@@ -790,8 +762,8 @@ export default function NowPaymentsPage({ language: appLanguage }) {
     ? "border-slate-700 bg-slate-900/70 text-slate-100 placeholder:text-slate-500"
     : "border-[#EAEAEA] bg-white/90 text-slate-950 placeholder:text-slate-400";
   const expiredPaymentMessage = isFa
-    ? "این درخواست پرداخت منقضی شده است. بعد از منقضی‌شدن دیگر نمی‌توانید TXID را ثبت یا بررسی کنید."
-    : "This payment request has expired. Once expired, the TXID can no longer be submitted or verified.";
+    ? "این درخواست برای پرداخت جدید منقضی شده است. اگر پول را پیش از پایان زمان فرستاده‌اید، هنوز می‌توانید TXID همان تراکنش را ثبت و بررسی کنید."
+    : "This request has expired for new payments. If you sent the money before the deadline, you can still submit and verify that transaction's TXID.";
 
   if (loading && !payment) {
     return (
@@ -1018,29 +990,12 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                       </div>
                     </div>
 
-                    {binanceSendExampleLabel ? (
-                      <div className="min-w-0 border-t border-slate-200/70 pt-4 dark:border-slate-800/70">
-                        <p className={`text-[11px] font-black ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                          {isFa ? "اگر با Binance پرداخت می‌کنید" : "If you pay with Binance"}
-                        </p>
-                          <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-0">
-                              <p className={`text-2xl font-black ${darkMode ? "text-white" : "text-slate-950"}`} dir="ltr">
-                                {binanceSendExampleLabel}
-                              </p>
-                            </div>
-                          <CopyButton
-                            compact
-                            copied={copiedKey === "binance-send-amount"}
-                            onClick={() => copyValue("binance-send-amount", binanceSendExampleLabel.replace(/\s*USDT$/i, ""))}
-                          >
-                            {{
-                              default: isFa ? "کپی" : "Copy",
-                              copied: isFa ? "کپی شد" : "Copied",
-                            }}
-                          </CopyButton>
-                        </div>
-                      </div>
+                    {isDirectBscFlow ? (
+                      <p className={`border-t border-slate-200/70 pt-4 text-xs font-semibold leading-6 dark:border-slate-800/70 ${darkMode ? "text-amber-200" : "text-amber-700"}`}>
+                        {isFa
+                          ? `اگر صرافی کارمزد برداشت می‌گیرد، برداشت را طوری تنظیم کنید که کیف پول مقصد دقیقاً ${amountLabel} دریافت کند. کارمزد ثابت نیست.`
+                          : `If an exchange charges a withdrawal fee, configure it so the destination wallet receives exactly ${amountLabel}. The fee is not fixed.`}
+                      </p>
                     ) : null}
                   </div>
                 </div>
@@ -1150,7 +1105,6 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                         type="checkbox"
                         checked={didSendPayment}
                         onChange={(event) => setDidSendPayment(event.target.checked)}
-                        disabled={isExpiredPayment}
                         className="h-5 w-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                       />
                       <span className={`text-sm font-black ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
@@ -1216,7 +1170,6 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                       if (statusFeedback) setStatusFeedback("");
                       if (error) setError("");
                     }}
-                    disabled={isExpiredPayment}
                     dir="ltr"
                     placeholder={isFa ? "مثال: 0x..." : "Example: 0x..."}
                     className={`mt-3 h-12 w-full rounded-[16px] border px-4 text-sm font-semibold outline-none transition focus:border-blue-400 ${
@@ -1286,8 +1239,7 @@ export default function NowPaymentsPage({ language: appLanguage }) {
                         isVerifying ||
                         !didSendPayment ||
                         !txHash.trim() ||
-                        Boolean(txHashValidationMessage) ||
-                        isExpiredPayment
+                        Boolean(txHashValidationMessage)
                       }
                       className="inline-flex h-12 w-full cursor-pointer items-center justify-center gap-2.5 rounded-[16px] border border-primary-300 bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_52%,#0f766e_100%)] px-4 text-sm font-black text-white shadow-[0_16px_30px_rgba(37,99,235,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(37,99,235,0.28)] focus:outline-none focus:ring-2 focus:ring-primary-200 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                     >

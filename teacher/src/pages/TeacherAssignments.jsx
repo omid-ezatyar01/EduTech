@@ -174,6 +174,7 @@ export default function TeacherAssignments() {
   const [selectedSubmissionDetail, setSelectedSubmissionDetail] = useState(null);
   const [downloadBusyId, setDownloadBusyId] = useState("");
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const coursesRef = useRef(courses);
   const assignmentsRequestRef = useRef(0);
   const submissionsRequestRef = useRef(0);
   const assignmentDraftId = `assignment:${editing?.id || "create"}`;
@@ -189,6 +190,10 @@ export default function TeacherAssignments() {
     refreshOnFocus: false,
     refreshOnVisible: false,
   });
+
+  useEffect(() => {
+    coursesRef.current = courses;
+  }, [courses]);
 
   const teacher = useMemo(() => {
     const user = getAuthUser();
@@ -290,7 +295,7 @@ export default function TeacherAssignments() {
       setMeta(nextMeta);
       setStats(nextStats);
       writeTeacherPageCache(cacheKey, {
-        courses,
+        courses: coursesRef.current,
         items: rows,
         meta: nextMeta,
         stats: nextStats,

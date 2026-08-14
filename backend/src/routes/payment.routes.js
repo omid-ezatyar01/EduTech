@@ -32,6 +32,7 @@ import {
   teacherBankTransferPaymentsQuerySchema,
   teacherIncomeQuerySchema,
   paymentAttemptIdParamSchema,
+  paymentOrderIdParamSchema,
   paymentStatusParamSchema,
   verifyDirectCryptoSchema,
 } from "../validators/payment.validators.js";
@@ -92,6 +93,13 @@ router.post(
   allowRoles("student"),
   validateRequest(checkoutSchema),
   createCheckout,
+);
+router.get(
+  "/student/payments/status/order/:orderId",
+  protect,
+  allowRoles("student"),
+  validateRequest(paymentOrderIdParamSchema, "params"),
+  getStudentPaymentStatus,
 );
 router.get(
   "/student/payments/status/:reference",

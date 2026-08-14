@@ -43,6 +43,25 @@ const shouldRetryNowPaymentsRequest = (error) => {
   return status >= 500 || status === 429;
 };
 
+const wrapNowPaymentsError = (error, fallbackMessage) => {
+  const providerStatus = Number(error?.response?.status || 0) || 502;
+  const providerData = error?.response?.data || null;
+  const providerMessage =
+    providerData?.message ||
+    providerData?.error ||
+    (error?.code === "ECONNABORTED" ? "NOWPayments request timed out" : "") ||
+    (error?.code ? `NOWPayments request failed (${error.code})` : "") ||
+    error?.message ||
+    fallbackMessage;
+
+  const wrapped = new Error(providerMessage);
+  wrapped.statusCode = providerStatus;
+  wrapped.provider = "NOWPAYMENTS";
+  wrapped.providerResponse = providerData;
+  wrapped.providerCode = error?.code || null;
+  return wrapped;
+};
+
 const sortKeysRecursive = (value) => {
   if (Array.isArray(value)) return value.map(sortKeysRecursive);
   if (!value || typeof value !== "object") return value;
@@ -121,22 +140,31 @@ export const createNowPaymentsPayment = async ({
     }
   }
 
-  const providerStatus = Number(lastError?.response?.status || 0) || 502;
-  const providerData = lastError?.response?.data || null;
-  const providerMessage =
-    providerData?.message ||
-    providerData?.error ||
-    (lastError?.code === "ECONNABORTED" ? "NOWPayments request timed out" : "") ||
-    (lastError?.code ? `NOWPayments request failed (${lastError.code})` : "") ||
-    lastError?.message ||
-    "NOWPayments request failed";
+  throw wrapNowPaymentsError(lastError, "NOWPayments request failed");
+};
 
-  const wrapped = new Error(providerMessage);
-  wrapped.statusCode = providerStatus;
-  wrapped.provider = "NOWPAYMENTS";
-  wrapped.providerResponse = providerData;
-  wrapped.providerCode = lastError?.code || null;
-  throw wrapped;
+export const getNowPaymentsPayment = async (providerPaymentId) => {
+  const paymentId = String(providerPaymentId || "").trim();
+  if (!paymentId) throw new Error("NOWPayments payment id is required");
+
+  const client = getClient();
+  let lastError = null;
+
+  for (let attemptNumber = 1; attemptNumber <= 2; attemptNumber += 1) {
+    try {
+      const response = await client.get(`/v1/payment/${encodeURIComponent(paymentId)}`);
+      return response.data;
+    } catch (error) {
+      lastError = error;
+      if (attemptNumber < 2 && shouldRetryNowPaymentsRequest(error)) {
+        await sleep(500);
+        continue;
+      }
+      break;
+    }
+  }
+
+  throw wrapNowPaymentsError(lastError, "Unable to fetch NOWPayments payment status");
 };
 
 export const verifyNowPaymentsIpnSignature = ({ signature, payload }) => {

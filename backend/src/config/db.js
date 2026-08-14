@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
 import { backfillCourseThumbnailAssets } from "../utils/courseImage.js";
 
 const SEVENTY_TWO_HOURS_IN_MILLISECONDS = 72 * 60 * 60 * 1000;
@@ -195,54 +194,56 @@ const ensurePendingStatusForUnverifiedStudents = async () => {
   }
 };
 
-const ensureAdminCreatedTeacherDefaultPasswords = async () => {
+const repairDuplicatePaymentAccounting = async () => {
   try {
-    const usersCollection = mongoose.connection.collection("users");
-    const adminCreatedTeachers = await usersCollection
-      .find(
+    const attemptsCollection = mongoose.connection.collection("paymentattempts");
+    const paymentsCollection = mongoose.connection.collection("payments");
+    const cursor = attemptsCollection.find(
+      { status: "DUPLICATE_PAYMENT" },
+      { projection: { _id: 1 } },
+    );
+    let repaired = 0;
+    let attemptIds = [];
+
+    const repairBatch = async () => {
+      if (!attemptIds.length) return;
+      const result = await paymentsCollection.updateMany(
         {
-          role: "teacher",
-          phone: "0700000000",
-          passwordChangedAt: null,
+          paymentAttemptId: { $in: attemptIds },
+          $or: [{ status: "paid" }, { paymentStatus: "paid" }],
         },
-        {
-          projection: {
-            _id: 1,
-            password: 1,
-          },
-        },
-      )
-      .toArray();
-
-    if (!adminCreatedTeachers.length) {
-      return;
-    }
-
-    const defaultPasswordHash = await bcrypt.hash("123456", 10);
-    let repairedCount = 0;
-
-    for (const teacher of adminCreatedTeachers) {
-      const alreadyMatches = await bcrypt.compare("123456", String(teacher.password || ""));
-      if (alreadyMatches) continue;
-
-      await usersCollection.updateOne(
-        { _id: teacher._id },
-        {
-          $set: {
-            password: defaultPasswordHash,
-          },
-        },
+        { $set: { status: "pending", paymentStatus: "pending" } },
       );
+      repaired += Number(result.modifiedCount || 0);
+      attemptIds = [];
+    };
 
-      repairedCount += 1;
+    for await (const attempt of cursor) {
+      attemptIds.push(attempt._id);
+      if (attemptIds.length >= 500) await repairBatch();
     }
+    await repairBatch();
 
-    if (repairedCount > 0) {
-      console.log(`Repaired ${repairedCount} admin-created teacher password(s) to the default value`);
+    if (repaired > 0) {
+      console.log(`Removed ${repaired} duplicate payment(s) from paid revenue pending refund review`);
     }
   } catch (error) {
-    console.warn(`Could not repair admin-created teacher passwords: ${error.message}`);
+    console.warn(`Could not repair duplicate payment accounting: ${error.message}`);
   }
+};
+
+const ensureSingleActivePaymentAttemptIndex = async () => {
+  const attemptsCollection = mongoose.connection.collection("paymentattempts");
+  await attemptsCollection.createIndex(
+    { orderId: 1 },
+    {
+      name: "one_active_attempt_per_order",
+      unique: true,
+      partialFilterExpression: {
+        status: { $in: ["PENDING", "MANUAL_REVIEW"] },
+      },
+    },
+  );
 };
 
 export const connectDB = async () => {
@@ -261,7 +262,11 @@ export const connectDB = async () => {
     await ensureDirectMessageTtlIndex();
     await ensureCourseTextSearchIndex();
     await ensurePendingStatusForUnverifiedStudents();
-    await ensureAdminCreatedTeacherDefaultPasswords();
+    await repairDuplicatePaymentAccounting();
+    // Payment checkout safety depends on this constraint. If existing active
+    // duplicates prevent it from being created, fail startup instead of
+    // accepting another potentially chargeable race.
+    await ensureSingleActivePaymentAttemptIndex();
     await migrateLegacyTeacherRatings();
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {

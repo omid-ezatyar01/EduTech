@@ -9,6 +9,10 @@ export const paymentAttemptIdParamSchema = Joi.object({
   paymentAttemptId: objectId.required(),
 });
 
+export const paymentOrderIdParamSchema = Joi.object({
+  orderId: objectId.required(),
+});
+
 export const courseIdParamSchema = Joi.object({
   courseId: objectId.required(),
 });

@@ -23,6 +23,11 @@ import {
   getDisplayCurrency,
   getDisplayCurrencyAmount,
 } from "../utils/currencyDisplay.js";
+import {
+  buildPaymentRecoveryPath,
+  getPaymentAttemptId,
+  resolvePaymentHistoryStatus,
+} from "../utils/paymentHistory.js";
 
 const DATE_FILTER_ALL = "all_time";
 const DATE_FILTER_LAST_MONTH = "last_month";
@@ -68,13 +73,6 @@ const toEnglishInvoiceDateTime = (value) => {
     minute: "2-digit",
     hour12: false,
   }).format(date);
-};
-
-const isLocallyExpiredPayment = (payment = {}, nowMs = Date.now()) => {
-  const rawStatus = String(payment?.status || payment?.paymentStatus || "").toLowerCase();
-  if (rawStatus !== "pending") return false;
-  const expiresAtMs = payment?.expiresAt ? new Date(payment.expiresAt).getTime() : Number.NaN;
-  return Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs;
 };
 
 const formatPaymentAmount = (amount, currency = "USD", language = "fa") => {
@@ -136,11 +134,7 @@ const toUiPayment = (payment, t, locale, language = "fa", nowMs = 0) => {
   const displayChargeAmount = getDisplayCurrencyAmount(chargeAmount, chargeCurrency);
   const displayChargeCurrency = getDisplayCurrency(chargeCurrency);
   const baseAmountNumber = resolveUsdEquivalent(payment);
-  const storedStatus = String(payment?.status || payment?.paymentStatus || "pending").toLowerCase();
-  const rawStatus =
-    nowMs > 0 && isLocallyExpiredPayment(payment, nowMs)
-      ? "expired"
-      : storedStatus;
+  const rawStatus = resolvePaymentHistoryStatus(payment, nowMs);
   const normalizedMethod = String(payment?.paymentMethod || "").toLowerCase();
   const statusMap = {
     paid: { uiStatus: "success", label: t.statusSuccess },
@@ -151,6 +145,8 @@ const toUiPayment = (payment, t, locale, language = "fa", nowMs = 0) => {
     canceled: { uiStatus: "failed", label: t.statusCancelled },
     expired: { uiStatus: "failed", label: t.statusExpired },
     refunded: { uiStatus: "refunded", label: t.statusRefunded },
+    manual_review: { uiStatus: "review", label: t.statusManualReview },
+    duplicate_payment: { uiStatus: "duplicate", label: t.statusDuplicatePayment },
   };
   const statusMeta = statusMap[rawStatus] || {
     uiStatus: "pending",
@@ -160,7 +156,8 @@ const toUiPayment = (payment, t, locale, language = "fa", nowMs = 0) => {
   const isPendingDirectBsc = rawStatus === "pending" && normalizedMethod === "usdt_bsc_direct";
   const isPendingHostedCrypto = rawStatus === "pending" && normalizedMethod === "nowpayments_crypto";
   const isPendingHesabPay = rawStatus === "pending" && normalizedMethod === "hesabpay";
-  const paymentUrl = payment?.hesabPaymentUrl || payment?.providerUrl || "";
+  const isExpiredDirectBsc = rawStatus === "expired" && normalizedMethod === "usdt_bsc_direct";
+  const recoveryPath = buildPaymentRecoveryPath(payment, nowMs);
 
   return {
     id: payment?._id || payment?.paymentReference,
@@ -181,19 +178,20 @@ const toUiPayment = (payment, t, locale, language = "fa", nowMs = 0) => {
     invoice: payment?.paymentReference || "-",
     transactionId: payment?.transactionSignature || payment?.transactionId || "-",
     transactionSignature: payment?.transactionSignature || "",
-    paymentAttemptId: payment?.paymentAttemptId?._id || payment?.paymentAttemptId || "",
+    paymentAttemptId: getPaymentAttemptId(payment),
     paymentReference: payment?.paymentReference || "",
     recipientAddress: payment?.recipientAddress || "",
     network: payment?.network || "",
-    paymentUrl,
     expiresAt: payment?.expiresAt || null,
-    canResumePendingPayment: ((isPendingDirectBsc || isPendingHostedCrypto) && Boolean(payment?.paymentAttemptId))
-      || (isPendingHesabPay && Boolean(paymentUrl)),
-    canManagePendingCrypto: (isPendingDirectBsc || isPendingHostedCrypto) && Boolean(payment?.paymentAttemptId),
-    supportsTxHashVerification: isPendingDirectBsc,
+    recoveryPath,
+    canResumePendingPayment: Boolean(recoveryPath),
+    canManagePendingCrypto: (isPendingDirectBsc || isPendingHostedCrypto || isExpiredDirectBsc)
+      && Boolean(getPaymentAttemptId(payment)),
+    supportsTxHashVerification: isPendingDirectBsc || isExpiredDirectBsc,
     isPendingDirectBsc,
     isPendingHostedCrypto,
     isPendingHesabPay,
+    isExpiredDirectBsc,
     rawStatus,
     createdAt: payment?.createdAt || null,
   };
@@ -246,7 +244,7 @@ const hasRealPaymentData = (payment = {}) => {
   const courseTitle = String(payment?.courseId?.title || payment?.course?.title || "").trim();
   const reference = String(payment?.paymentReference || "").trim();
   const amount = Number(payment?.amount);
-  const status = String(payment?.status || payment?.paymentStatus || "").trim().toLowerCase();
+  const status = resolvePaymentHistoryStatus(payment);
   const allowedStatuses = new Set([
     "paid",
     "succeeded",
@@ -256,6 +254,8 @@ const hasRealPaymentData = (payment = {}) => {
     "canceled",
     "expired",
     "refunded",
+    "manual_review",
+    "duplicate_payment",
   ]);
 
   return Boolean(courseTitle) && Boolean(reference) && Number.isFinite(amount) && amount > 0 && allowedStatuses.has(status);
@@ -271,6 +271,8 @@ export default function Payments({ language = "fa" }) {
     statusCancelled: isFa ? "لغو شده" : "Cancelled",
     statusExpired: isFa ? "منقضی" : "Expired",
     statusRefunded: isFa ? "بازپرداخت" : "Refunded",
+    statusManualReview: isFa ? "بررسی دستی" : "Manual review",
+    statusDuplicatePayment: isFa ? "پرداخت تکراری" : "Duplicate payment",
     allStatuses: isFa ? "همه وضعیت‌ها" : "All Statuses",
     allTime: isFa ? "همه زمان‌ها" : "All Time",
     lastMonth: isFa ? "ماه گذشته" : "Last Month",
@@ -327,8 +329,18 @@ export default function Payments({ language = "fa" }) {
       { value: "pending", label: t.statusPending },
       { value: "failed", label: t.statusFailed },
       { value: "refunded", label: t.statusRefunded },
+      { value: "review", label: t.statusManualReview },
+      { value: "duplicate", label: t.statusDuplicatePayment },
     ],
-    [t.allStatuses, t.statusFailed, t.statusPending, t.statusRefunded, t.statusSuccess],
+    [
+      t.allStatuses,
+      t.statusDuplicatePayment,
+      t.statusFailed,
+      t.statusManualReview,
+      t.statusPending,
+      t.statusRefunded,
+      t.statusSuccess,
+    ],
   );
   const dateOptions = useMemo(
     () => [
@@ -710,13 +722,8 @@ export default function Payments({ language = "fa" }) {
   };
 
   const handleResumePendingPayment = (payment) => {
-    if (payment?.canManagePendingCrypto && payment?.paymentAttemptId) {
-      navigate(`/payment/crypto?attemptId=${encodeURIComponent(payment.paymentAttemptId)}`);
-      return;
-    }
-
-    if (payment?.paymentMethodCode === "hesabpay" && payment?.paymentUrl) {
-      window.location.href = payment.paymentUrl;
+    if (payment?.recoveryPath) {
+      navigate(payment.recoveryPath);
       return;
     }
 

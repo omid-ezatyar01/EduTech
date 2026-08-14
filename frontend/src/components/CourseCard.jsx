@@ -306,6 +306,12 @@ export default function CourseCard({
         pricingRegion,
         couponCode,
       });
+      if (session?.resumed && session?.paymentAttemptId) {
+        navigate(
+          `/payment/success?paymentAttemptId=${encodeURIComponent(session.paymentAttemptId)}`,
+        );
+        return;
+      }
       if (session?.paymentUrl) {
         window.location.href = session.paymentUrl;
         return;

@@ -6,9 +6,14 @@ import Enrollment from "../models/Enrollment.js";
 import Order from "../models/Order.js";
 import PaymentAttempt from "../models/PaymentAttempt.js";
 import User from "../models/User.js";
-import { createPaymentSession, verifyWebhookSignature } from "../services/hesabpay.service.js";
+import {
+  createPaymentSession,
+  isValidHesabCheckoutUrl,
+  verifyWebhookSignature,
+} from "../services/hesabpay.service.js";
 import {
   createNowPaymentsPayment,
+  getNowPaymentsPayment,
   normalizeNowPaymentsCurrency,
   verifyNowPaymentsIpnSignature,
 } from "../services/nowpayments.service.js";
@@ -59,16 +64,147 @@ import {
   recordCouponRedemption,
   resolveCouponForCheckout,
 } from "../services/coupon.service.js";
+import {
+  getDirectCryptoTransactionTimeError,
+  shouldPenalizeDirectCryptoVerificationFailure,
+} from "../utils/directCryptoVerification.js";
+import {
+  claimHesabWebhookDelivery,
+  completeHesabWebhookDelivery,
+  failHesabWebhookDelivery,
+} from "../services/hesabWebhookReplay.service.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 const DIRECT_CRYPTO_VERIFY_COOLDOWN_AFTER_FAILED_ATTEMPTS = 5;
 const DIRECT_CRYPTO_VERIFY_COOLDOWN_MS = 60 * 1000;
-const DIRECT_CRYPTO_MAX_FAILED_VERIFY_ATTEMPTS = 8;
+const HESAB_SESSION_CREATION_GRACE_MS = 30 * 1000;
 const directCryptoVerifyGuard = new Map();
+
+const normalizeDirectBscTransactionHash = (value = "") =>
+  String(value || "").trim().toLowerCase();
+
+const getDirectBscTransactionHashMatcher = (value = "") => {
+  const normalizedHash = normalizeDirectBscTransactionHash(value);
+  const escapedHash = normalizedHash.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escapedHash}$`, "i");
+};
+
+const releaseDirectCryptoTransactionReservation = async ({
+  paymentAttemptId,
+  transactionHash,
+} = {}) => {
+  const normalizedHash = normalizeDirectBscTransactionHash(transactionHash);
+  if (!paymentAttemptId || !normalizedHash) return;
+
+  await PaymentAttempt.updateOne(
+    {
+      _id: paymentAttemptId,
+      status: { $in: ["PENDING", "EXPIRED"] },
+      transactionSignature: getDirectBscTransactionHashMatcher(normalizedHash),
+    },
+    { $unset: { transactionSignature: 1 } },
+  );
+};
 
 const apiError = (res, code, message, extra = {}) => res.status(code).json({ success: false, message, ...extra });
 const apiSuccess = (res, payload, code = 200) => res.status(code).json({ success: true, ...payload });
 const webhookAck = (res, payload = {}) => res.status(200).json({ success: true, acknowledged: true, ...payload });
+
+const compactObject = (value = {}) => Object.fromEntries(
+  Object.entries(value).filter(([, entry]) => entry !== undefined),
+);
+
+const toPlainObject = (value) => (
+  value && typeof value.toObject === "function" ? value.toObject() : value || {}
+);
+
+const getDocumentId = (value) => value?._id || value || undefined;
+
+const toStudentCourseDto = (value) => {
+  const course = toPlainObject(value);
+  if (!course || typeof course !== "object" || Array.isArray(course)) {
+    return getDocumentId(value);
+  }
+  return compactObject({
+    _id: getDocumentId(course),
+    title: course.title,
+    price: course.price,
+    currency: course.currency,
+  });
+};
+
+const toStudentPaymentAttemptDto = (value) => {
+  const attempt = toPlainObject(value);
+  return compactObject({
+    _id: getDocumentId(attempt),
+    orderId: getDocumentId(attempt.orderId),
+    courseId: getDocumentId(attempt.courseId),
+    paymentReference: attempt.paymentReference,
+    provider: attempt.provider,
+    method: attempt.method,
+    baseAmountUsdCents: attempt.baseAmountUsdCents,
+    originalBaseAmountUsdCents: attempt.originalBaseAmountUsdCents,
+    amount: attempt.amount,
+    currency: attempt.currency,
+    network: attempt.network,
+    exchangeRate: attempt.exchangeRate,
+    recipientAddress: attempt.recipientAddress,
+    tokenMint: attempt.tokenMint,
+    qrPayload:
+      attempt.method === "USDT_BSC_DIRECT"
+        ? attempt.rawCreateSessionResponse?.qrPayload
+        : undefined,
+    status: attempt.status,
+    expiresAt: attempt.expiresAt,
+    paidAt: attempt.paidAt,
+    createdAt: attempt.createdAt,
+    updatedAt: attempt.updatedAt,
+  });
+};
+
+const toStudentPaymentHistoryDto = (value, attemptValue = null) => {
+  const payment = toPlainObject(value);
+  const attempt = attemptValue ? toPlainObject(attemptValue) : null;
+  const attemptSummary = attempt
+    ? compactObject({
+        _id: getDocumentId(attempt),
+        orderId: getDocumentId(attempt.orderId),
+        status: attempt.status,
+        expiresAt: attempt.expiresAt,
+      })
+    : getDocumentId(payment.paymentAttemptId);
+
+  return compactObject({
+    _id: getDocumentId(payment),
+    orderId: getDocumentId(payment.orderId),
+    courseId: toStudentCourseDto(payment.courseId || payment.course),
+    paymentAttemptId: attemptSummary,
+    baseAmountUsdCents: payment.baseAmountUsdCents,
+    originalBaseAmountUsdCents: payment.originalBaseAmountUsdCents,
+    pricingRegion: payment.pricingRegion,
+    sourcePriceAmount: payment.sourcePriceAmount,
+    sourcePriceCurrency: payment.sourcePriceCurrency,
+    amount: payment.amount,
+    gatewayAmount: payment.gatewayAmount,
+    currency: payment.currency,
+    gatewayCurrency: payment.gatewayCurrency,
+    exchangeRate: payment.exchangeRate,
+    provider: payment.provider,
+    paymentMethod: payment.paymentMethod,
+    status: payment.status,
+    paymentStatus: payment.paymentStatus,
+    attemptStatus: attempt?.status,
+    paymentReference: payment.paymentReference,
+    transactionId: payment.transactionId,
+    transactionSignature: attempt?.transactionSignature || payment.transactionSignature,
+    network: payment.network,
+    recipientAddress: payment.recipientAddress,
+    expiresAt: attempt?.expiresAt || payment.expiresAt,
+    paidAt: payment.paidAt,
+    createdAt: payment.createdAt,
+    updatedAt: payment.updatedAt,
+  });
+};
 
 const resolveStudentClientUrl = () => {
   const explicit = process.env.STUDENT_CLIENT_URL || process.env.STUDENT_FRONTEND_URL;
@@ -133,6 +269,105 @@ const expireAttemptIfStale = async (attempt, reason) => {
   attempt.note = reason || "Payment attempt expired";
   await attempt.save();
   return null;
+};
+
+const isIssuedHesabAttempt = (attempt) =>
+  isValidHesabCheckoutUrl(attempt?.providerUrl);
+
+const getHesabIssuanceState = (attempt) =>
+  String(attempt?.issuanceState || "NOT_STARTED").toUpperCase();
+
+const isFreshUnstartedHesabAttempt = (attempt) => {
+  if (getHesabIssuanceState(attempt) !== "NOT_STARTED") return false;
+  const createdAtMs = attempt?.createdAt
+    ? new Date(attempt.createdAt).getTime()
+    : Number.NaN;
+  return (
+    Number.isFinite(createdAtMs) &&
+    createdAtMs > Date.now() - HESAB_SESSION_CREATION_GRACE_MS
+  );
+};
+
+const isAmbiguousHesabAttempt = (attempt) =>
+  ["CREATING", "AMBIGUOUS", "ISSUED"].includes(getHesabIssuanceState(attempt));
+
+const isRecoverableHesabAttempt = (attempt) => Boolean(
+  isIssuedHesabAttempt(attempt) ||
+  isAmbiguousHesabAttempt(attempt) ||
+  isFreshUnstartedHesabAttempt(attempt),
+);
+
+const expirePendingAttempt = async (attempt, reason) => {
+  if (!attempt || attempt.status !== "PENDING") return attempt;
+
+  const expiredAt = new Date();
+  attempt.status = "EXPIRED";
+  attempt.expiresAt = expiredAt;
+  attempt.note = reason || "Payment attempt expired";
+  await attempt.save();
+  await Payment.updateOne(
+    {
+      paymentAttemptId: attempt._id,
+      paymentStatus: "pending",
+    },
+    {
+      $set: {
+        status: "expired",
+        paymentStatus: "failed",
+        failedAt: expiredAt,
+        expiresAt: expiredAt,
+        note: attempt.note,
+      },
+    },
+  );
+  return null;
+};
+
+const getStudentAttemptStatusUrl = (attempt) => (
+  attempt?.method === "HESABPAY_HOSTED"
+    ? `/payment/success?paymentAttemptId=${encodeURIComponent(String(attempt._id))}`
+    : `/payment/crypto?attemptId=${encodeURIComponent(String(attempt?._id || ""))}`
+);
+
+const toActivePaymentPayload = (attempt, { resumed = true } = {}) => compactObject({
+  orderId: getDocumentId(attempt?.orderId),
+  paymentAttemptId: getDocumentId(attempt),
+  paymentReference: attempt?.paymentReference,
+  provider: attempt?.provider,
+  resumed,
+  status: attempt?.status,
+  statusUrl: getStudentAttemptStatusUrl(attempt),
+  paymentUrl: null,
+  charge: compactObject({
+    amount: attempt?.amount,
+    currency: attempt?.currency,
+    network: attempt?.network,
+  }),
+  expiresAt: attempt?.expiresAt,
+  payment: toStudentPaymentAttemptDto(attempt),
+});
+
+const reconcileSucceededAttempt = async (attempt) => {
+  if (!attempt || attempt.status !== "SUCCEEDED") return attempt;
+
+  const paidAt =
+    attempt.paidAt ||
+    attempt.orderId?.paidAt ||
+    attempt.createdAt ||
+    new Date();
+  await completePayment({
+    paymentAttemptId: attempt._id,
+    providerPaymentId: attempt.providerPaymentId,
+    blockchainReference: attempt.blockchainReference,
+    transactionSignature: attempt.transactionSignature,
+    note: attempt.note || "Payment status reconciliation",
+    paidAt,
+    verifiedAt: attempt.verifiedAt || paidAt,
+  });
+
+  const refreshedAttempt = await PaymentAttempt.findById(attempt._id)
+    .populate("orderId", "status paidAt");
+  return refreshedAttempt || attempt;
 };
 
 const isExpiredByDate = (value) => {
@@ -269,7 +504,7 @@ const getCourseForCheckout = async (courseId, pricingRegion = "international") =
   };
 };
 
-const findOrCreatePendingOrder = async ({
+const getOrderSnapshotPayload = ({
   userId,
   courseId,
   baseAmountUsdCents,
@@ -281,61 +516,92 @@ const findOrCreatePendingOrder = async ({
   sourceRateRetrievedAt = null,
   platformCommissionRate = null,
   couponSnapshot = null,
-}, session = null) => {
+}) => ({
+  userId,
+  courseId,
+  baseAmountUsdCents,
+  pricingRegion,
+  sourcePriceAmount,
+  sourcePriceCurrency,
+  sourceExchangeRate,
+  sourceExchangeRateSource,
+  sourceRateRetrievedAt,
+  platformCommissionRate,
+  originalBaseAmountUsdCents:
+    couponSnapshot?.originalBaseAmountUsdCents ?? baseAmountUsdCents,
+  couponId: couponSnapshot?.couponId || null,
+  couponCode: couponSnapshot?.couponCode || "",
+  couponType: couponSnapshot?.couponType || null,
+  couponValue: couponSnapshot?.couponValue ?? null,
+  discountAmountUsdCents: couponSnapshot?.discountAmountUsdCents || 0,
+});
+
+const orderSnapshotMatches = (order, snapshot) => (
+  Number(order.baseAmountUsdCents || 0) === Number(snapshot.baseAmountUsdCents || 0) &&
+  order.pricingRegion === snapshot.pricingRegion &&
+  Number(order.sourcePriceAmount ?? -1) === Number(snapshot.sourcePriceAmount ?? -1) &&
+  String(order.sourcePriceCurrency || "") === String(snapshot.sourcePriceCurrency || "") &&
+  Number(order.sourceExchangeRate ?? -1) === Number(snapshot.sourceExchangeRate ?? -1) &&
+  Number(order.platformCommissionRate ?? -1) === Number(snapshot.platformCommissionRate ?? -1) &&
+  String(order.couponId || "") === String(snapshot.couponId || "") &&
+  Number(order.discountAmountUsdCents || 0) === Number(snapshot.discountAmountUsdCents || 0)
+);
+
+const findOrCreatePendingOrder = async (input, session = null) => {
+  const snapshot = getOrderSnapshotPayload(input);
+  const { userId, courseId } = snapshot;
   const existing = await Order.findOne({ userId, courseId, status: "PENDING" }).session(session);
   if (existing) {
-    if (
-      Number(existing.baseAmountUsdCents || 0) !== Number(baseAmountUsdCents || 0) ||
-      existing.pricingRegion !== pricingRegion ||
-      Number(existing.sourcePriceAmount ?? -1) !== Number(sourcePriceAmount ?? -1) ||
-      String(existing.sourcePriceCurrency || "") !== String(sourcePriceCurrency || "") ||
-      Number(existing.sourceExchangeRate ?? -1) !== Number(sourceExchangeRate ?? -1) ||
-      Number(existing.platformCommissionRate ?? -1) !== Number(platformCommissionRate ?? -1) ||
-      String(existing.couponId || "") !== String(couponSnapshot?.couponId || "") ||
-      Number(existing.discountAmountUsdCents || 0) !==
-        Number(couponSnapshot?.discountAmountUsdCents || 0)
-    ) {
-      existing.baseAmountUsdCents = baseAmountUsdCents;
-      existing.pricingRegion = pricingRegion;
-      existing.sourcePriceAmount = sourcePriceAmount;
-      existing.sourcePriceCurrency = sourcePriceCurrency;
-      existing.sourceExchangeRate = sourceExchangeRate;
-      existing.sourceExchangeRateSource = sourceExchangeRateSource;
-      existing.sourceRateRetrievedAt = sourceRateRetrievedAt;
-      existing.platformCommissionRate = platformCommissionRate;
-      existing.originalBaseAmountUsdCents =
-        couponSnapshot?.originalBaseAmountUsdCents ?? baseAmountUsdCents;
-      existing.couponId = couponSnapshot?.couponId || null;
-      existing.couponCode = couponSnapshot?.couponCode || "";
-      existing.couponType = couponSnapshot?.couponType || null;
-      existing.couponValue = couponSnapshot?.couponValue ?? null;
-      existing.discountAmountUsdCents =
-        couponSnapshot?.discountAmountUsdCents || 0;
+    const snapshotMatches = orderSnapshotMatches(existing, snapshot);
+    if (!snapshotMatches) {
+      const attemptExistsQuery = PaymentAttempt.exists({ orderId: existing._id });
+      if (session) attemptExistsQuery.session(session);
+      const hasAttempts = Boolean(await attemptExistsQuery);
+      if (hasAttempts) {
+        return { order: existing, snapshotMatches: false, hasAttempts: true };
+      }
+
+      const createdAtMs = existing.createdAt
+        ? new Date(existing.createdAt).getTime()
+        : Number.NaN;
+      if (
+        Number.isFinite(createdAtMs) &&
+        createdAtMs > Date.now() - HESAB_SESSION_CREATION_GRACE_MS
+      ) {
+        return {
+          order: existing,
+          snapshotMatches: false,
+          hasAttempts: false,
+          initializing: true,
+        };
+      }
+
+      Object.assign(existing, snapshot);
       await existing.save({ session });
     }
-    return existing;
+    return { order: existing, snapshotMatches: true, hasAttempts: false };
   }
 
-  return Order.create([{
-    userId,
-    courseId,
-    baseAmountUsdCents,
-    pricingRegion,
-    sourcePriceAmount,
-    sourcePriceCurrency,
-    sourceExchangeRate,
-    sourceExchangeRateSource,
-    sourceRateRetrievedAt,
-    platformCommissionRate,
-    originalBaseAmountUsdCents:
-      couponSnapshot?.originalBaseAmountUsdCents ?? baseAmountUsdCents,
-    couponId: couponSnapshot?.couponId || null,
-    couponCode: couponSnapshot?.couponCode || "",
-    couponType: couponSnapshot?.couponType || null,
-    couponValue: couponSnapshot?.couponValue ?? null,
-    discountAmountUsdCents: couponSnapshot?.discountAmountUsdCents || 0,
-    status: "PENDING",
-  }], session ? { session } : undefined).then((rows) => rows[0]);
+  let order;
+  try {
+    order = await Order.create(
+      [{ ...snapshot, status: "PENDING" }],
+      session ? { session } : undefined,
+    ).then((rows) => rows[0]);
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    const winnerQuery = Order.findOne({ userId, courseId, status: "PENDING" });
+    if (session) winnerQuery.session(session);
+    const winner = await winnerQuery;
+    if (!winner) throw error;
+    return {
+      order: winner,
+      snapshotMatches: orderSnapshotMatches(winner, snapshot),
+      hasAttempts: false,
+      initializing: true,
+    };
+  }
+  return { order, snapshotMatches: true, hasAttempts: false };
 };
 
 const createPaymentAttemptRecord = async ({ order, user, course, paymentReference = null, method, amount, currency, network = null, provider = null, exchangeRate = null, exchangeRateSource = null, rateRetrievedAt = null, providerPaymentId = null, blockchainReference = null, transactionSignature = null, providerUrl = null, expiresAt = null, rawCreateSessionResponse = null, recipientAddress = null, tokenMint = null }, session = null) => {
@@ -431,6 +697,195 @@ const createPaymentAttemptRecord = async ({ order, user, course, paymentReferenc
   await attempt.save({ session });
 
   return { attempt, legacyPayment };
+};
+
+const NOWPAYMENTS_PROGRESS_STATUSES = new Set([
+  "waiting",
+  "confirming",
+  "confirmed",
+  "sending",
+]);
+
+const resolveNowPaymentsPaidAt = ({ attempt, payload } = {}) => {
+  const existingPaidAt = attempt?.paidAt ? new Date(attempt.paidAt) : null;
+  if (existingPaidAt && Number.isFinite(existingPaidAt.getTime())) {
+    return existingPaidAt;
+  }
+
+  for (const value of [payload?.finished_at, payload?.payment_updated_at, payload?.updated_at]) {
+    if (!value) continue;
+    const providerPaidAt = new Date(value);
+    if (Number.isFinite(providerPaidAt.getTime())) return providerPaidAt;
+  }
+
+  return new Date();
+};
+
+const applyNowPaymentsStatus = async ({ attempt, payload, source = "status" } = {}) => {
+  if (!attempt || !payload || typeof payload !== "object") {
+    throw new Error("Invalid NOWPayments reconciliation data");
+  }
+
+  const payloadPaymentId = payload?.payment_id ? String(payload.payment_id) : "";
+  const payloadOrderId = String(payload?.order_id || "").trim();
+  if (
+    payloadPaymentId &&
+    attempt.providerPaymentId &&
+    payloadPaymentId !== String(attempt.providerPaymentId)
+  ) {
+    throw new Error("NOWPayments payment id mismatch");
+  }
+  if (payloadOrderId && payloadOrderId !== String(attempt.paymentReference || "")) {
+    throw new Error("NOWPayments order id mismatch");
+  }
+
+  const paymentStatus = String(payload?.payment_status || "").trim().toLowerCase();
+  const isAlreadyPaid = ["SUCCEEDED", "DUPLICATE_PAYMENT"].includes(attempt.status);
+  const markManualReview = async (note) => {
+    attempt.status = "MANUAL_REVIEW";
+    attempt.note = note;
+    attempt.verifiedAt = new Date();
+    if (source === "ipn") attempt.rawWebhookPayload = payload;
+    else attempt.rawVerificationPayload = payload;
+    await attempt.save();
+    return { manualReview: true, status: attempt.status };
+  };
+
+  // Provider notifications can arrive out of order. Once this attempt has
+  // completed, no later payload may downgrade it. A repeated finished event
+  // only re-runs idempotent fulfillment so a partially completed local write
+  // can be repaired.
+  if (isAlreadyPaid) {
+    if (paymentStatus !== "finished") {
+      return { ignored: true, status: attempt.status };
+    }
+
+    return completePayment({
+      paymentAttemptId: attempt._id,
+      providerPaymentId: payloadPaymentId || attempt.providerPaymentId,
+      transactionSignature:
+        String(payload?.payin_hash || payload?.txn_id || payload?.txid || "").trim() || null,
+      rawWebhookPayload: source === "ipn" ? payload : null,
+      rawVerificationPayload: source === "ipn" ? null : payload,
+      note: source === "ipn"
+        ? "NOWPayments IPN verification replay"
+        : "NOWPayments provider status reconciliation replay",
+      paidAt: resolveNowPaymentsPaidAt({ attempt, payload }),
+      verifiedAt: new Date(),
+    });
+  }
+
+  if (attempt.status === "MANUAL_REVIEW") {
+    const hasCompleteProviderAmounts = [
+      "pay_amount",
+      "pay_currency",
+      "price_amount",
+      "price_currency",
+      "actually_paid",
+    ].every((field) => payload[field] !== undefined && payload[field] !== null && payload[field] !== "");
+
+    // A sparse status/IPN response must not erase a prior partial-payment or
+    // amount-mismatch decision. Only a complete, final provider snapshot can
+    // be revalidated below; otherwise an administrator must resolve it.
+    if (paymentStatus !== "finished" || !hasCompleteProviderAmounts) {
+      return { manualReview: true, status: attempt.status };
+    }
+  }
+
+  const payAmount = String(payload?.pay_amount || "").trim();
+  const normalizedPayAmount = payAmount ? roundUpDecimalAmount(payAmount, 2) : "";
+  if (
+    normalizedPayAmount &&
+    normalizedPayAmount !== String(attempt.amount || "").trim()
+  ) {
+    return markManualReview("NOWPayments quoted amount mismatch");
+  }
+
+  const payloadCurrency = payload?.pay_currency
+    ? normalizeNowPaymentsCurrency(payload.pay_currency)
+    : null;
+  const currencyMismatch = payloadCurrency && (
+    String(payloadCurrency.currency || "").toUpperCase() !==
+      String(attempt.currency || "").toUpperCase() ||
+    (
+      payloadCurrency.network &&
+      attempt.network &&
+      String(payloadCurrency.network).toUpperCase() !== String(attempt.network).toUpperCase()
+    )
+  );
+  if (currencyMismatch) {
+    return markManualReview("NOWPayments payment currency or network mismatch");
+  }
+
+  const payloadPriceCurrency = String(payload?.price_currency || "").trim().toUpperCase();
+  if (payloadPriceCurrency && payloadPriceCurrency !== "USD") {
+    return markManualReview("NOWPayments price currency mismatch");
+  }
+  if (
+    payload?.price_amount !== undefined &&
+    normalizeUsdToCents(payload.price_amount) !== Number(attempt.baseAmountUsdCents || 0)
+  ) {
+    return markManualReview("NOWPayments course price mismatch");
+  }
+
+  if (paymentStatus === "finished" && payload?.actually_paid !== undefined) {
+    const actuallyPaid = Number(payload.actually_paid);
+    const expectedAmount = Number(attempt.amount || 0);
+    if (
+      !Number.isFinite(actuallyPaid) ||
+      !Number.isFinite(expectedAmount) ||
+      actuallyPaid + 1e-8 < expectedAmount
+    ) {
+      return markManualReview("NOWPayments actual paid amount is below the checkout quote");
+    }
+  }
+
+  attempt.providerPaymentId = payloadPaymentId || attempt.providerPaymentId;
+  if (source === "ipn") attempt.rawWebhookPayload = payload;
+  else attempt.rawVerificationPayload = payload;
+
+  if (paymentStatus === "finished") {
+    return completePayment({
+      paymentAttemptId: attempt._id,
+      providerPaymentId: attempt.providerPaymentId,
+      transactionSignature:
+        String(payload?.payin_hash || payload?.txn_id || payload?.txid || "").trim() || null,
+      rawWebhookPayload: source === "ipn" ? payload : null,
+      rawVerificationPayload: source === "ipn" ? null : payload,
+      note: source === "ipn"
+        ? "NOWPayments IPN verification"
+        : "NOWPayments provider status reconciliation",
+      paidAt: resolveNowPaymentsPaidAt({ attempt, payload }),
+      verifiedAt: new Date(),
+    });
+  }
+
+  if (paymentStatus === "partially_paid") {
+    attempt.status = "MANUAL_REVIEW";
+    attempt.note = "NOWPayments partial payment";
+    attempt.verifiedAt = new Date();
+    await attempt.save();
+    return { manualReview: true, status: attempt.status };
+  }
+
+  if (["failed", "refunded"].includes(paymentStatus)) {
+    attempt.status = "FAILED";
+    attempt.failedAt = new Date();
+    await attempt.save();
+    return { status: attempt.status };
+  }
+
+  if (paymentStatus === "expired") {
+    attempt.status = "EXPIRED";
+    await attempt.save();
+    return { status: attempt.status };
+  }
+
+  if (NOWPAYMENTS_PROGRESS_STATUSES.has(paymentStatus)) {
+    attempt.status = "PENDING";
+  }
+  await attempt.save();
+  return { status: attempt.status };
 };
 
 export const getUsdToAfnQuote = async (req, res) => {
@@ -577,6 +1032,80 @@ export const createCheckout = async (req, res) => {
       return apiError(res, 400, "You are already enrolled in this course");
     }
 
+    const unresolvedAttempts = await PaymentAttempt.find({
+      userId: req.user._id,
+      courseId: course._id,
+      status: { $in: ["PENDING", "EXPIRED", "MANUAL_REVIEW", "SUCCEEDED"] },
+    }).sort({ createdAt: -1 });
+    let activeAttempt = null;
+    for (const candidate of unresolvedAttempts || []) {
+      if (candidate.status === "SUCCEEDED") {
+        const reconciledAttempt = await reconcileSucceededAttempt(candidate);
+        const recoveredEnrollment = await Enrollment.findOne({
+          studentId: req.user._id,
+          courseId: course._id,
+        });
+        await expireEnrollmentIfNeeded(recoveredEnrollment, course);
+        if (
+          recoveredEnrollment &&
+          recoveredEnrollment.enrollmentStatus === "active" &&
+          recoveredEnrollment.accessStatus === "allowed" &&
+          !isEnrollmentExpired(recoveredEnrollment)
+        ) {
+          return apiSuccess(res, toActivePaymentPayload(reconciledAttempt));
+        }
+        if (!recoveredEnrollment) {
+          throw new Error("Succeeded payment fulfillment could not be recovered");
+        }
+        continue;
+      }
+
+      if (candidate.status === "MANUAL_REVIEW") {
+        activeAttempt = candidate;
+        break;
+      }
+
+      const issued = candidate.method === "HESABPAY_HOSTED"
+        ? isRecoverableHesabAttempt(candidate)
+        : Boolean(
+            candidate.providerPaymentId ||
+            candidate.providerUrl ||
+            candidate.recipientAddress,
+          );
+      if (!issued) {
+        if (candidate.status === "PENDING") {
+          await expirePendingAttempt(
+            candidate,
+            "Orphaned payment attempt expired before provider session issuance",
+          );
+        }
+        continue;
+      }
+
+      if (candidate.status === "PENDING" && isExpiredByDate(candidate.expiresAt)) {
+        await expirePendingAttempt(
+          candidate,
+          "Issued payment attempt aged out while awaiting final verification",
+        );
+      }
+
+      activeAttempt = candidate;
+      break;
+    }
+
+    if (activeAttempt) {
+      if (activeAttempt.method === method) {
+        return apiSuccess(res, toActivePaymentPayload(activeAttempt));
+      }
+      return apiError(res, 409, "Another payment request is still active for this course", {
+        code: "ACTIVE_PAYMENT_EXISTS",
+        activePayment: toStudentPaymentAttemptDto(activeAttempt),
+        paymentAttemptId: activeAttempt._id,
+        paymentReference: activeAttempt.paymentReference,
+        statusUrl: getStudentAttemptStatusUrl(activeAttempt),
+      });
+    }
+
     const platformCommissionRate = await getTeacherDeductionPercentage();
     let hesabPayQuote = null;
     let regionalDisplaySnapshot;
@@ -616,21 +1145,77 @@ export const createCheckout = async (req, res) => {
             }
           : await quoteAfnFromUsdCents(baseAmountUsdCents);
     }
-    const order = await findOrCreatePendingOrder(
-      {
-        userId: req.user._id,
-        courseId: course._id,
-        baseAmountUsdCents,
-        pricingRegion,
-        sourcePriceAmount: regionalDisplaySnapshot.amount,
-        sourcePriceCurrency: regionalDisplaySnapshot.currency,
-        sourceExchangeRate: regionalDisplaySnapshot.exchangeRate,
-        sourceExchangeRateSource: regionalDisplaySnapshot.exchangeRateSource,
-        sourceRateRetrievedAt: regionalDisplaySnapshot.rateRetrievedAt,
-        platformCommissionRate,
-        couponSnapshot,
-      },
-    );
+    const orderInput = {
+      userId: req.user._id,
+      courseId: course._id,
+      baseAmountUsdCents,
+      pricingRegion,
+      sourcePriceAmount: regionalDisplaySnapshot.amount,
+      sourcePriceCurrency: regionalDisplaySnapshot.currency,
+      sourceExchangeRate: regionalDisplaySnapshot.exchangeRate,
+      sourceExchangeRateSource: regionalDisplaySnapshot.exchangeRateSource,
+      sourceRateRetrievedAt: regionalDisplaySnapshot.rateRetrievedAt,
+      platformCommissionRate,
+      couponSnapshot,
+    };
+    let orderResult = await findOrCreatePendingOrder(orderInput);
+    let { order } = orderResult;
+    if (!orderResult.snapshotMatches && orderResult.initializing) {
+      return apiError(res, 409, "Another checkout quote is being initialized for this course", {
+        code: "CHECKOUT_INITIALIZING",
+        orderId: order._id,
+      });
+    }
+    if (!orderResult.snapshotMatches && orderResult.hasAttempts) {
+      const recoverableAttempt = await PaymentAttempt.findOne({
+        orderId: order._id,
+        status: { $in: ["PENDING", "EXPIRED", "MANUAL_REVIEW", "SUCCEEDED"] },
+      }).sort({ createdAt: -1 });
+      if (recoverableAttempt?.status === "SUCCEEDED") {
+        const reconciledAttempt = await reconcileSucceededAttempt(recoverableAttempt);
+        return apiSuccess(res, toActivePaymentPayload(reconciledAttempt));
+      }
+      const recoverableAttemptIssued = recoverableAttempt && (
+        recoverableAttempt.status === "MANUAL_REVIEW" ||
+        (
+          recoverableAttempt.method === "HESABPAY_HOSTED"
+            ? isRecoverableHesabAttempt(recoverableAttempt)
+            : Boolean(
+                recoverableAttempt.providerPaymentId ||
+                recoverableAttempt.providerUrl ||
+                recoverableAttempt.recipientAddress,
+              )
+        )
+      );
+      if (recoverableAttemptIssued) {
+        if (
+          recoverableAttempt.status === "PENDING" &&
+          isExpiredByDate(recoverableAttempt.expiresAt)
+        ) {
+          await expirePendingAttempt(
+            recoverableAttempt,
+            "Issued payment attempt aged out while awaiting final verification",
+          );
+        }
+        if (recoverableAttempt.method === method) {
+          return apiSuccess(res, toActivePaymentPayload(recoverableAttempt));
+        }
+        return apiError(res, 409, "Another payment request is still recoverable for this course", {
+          code: "ACTIVE_PAYMENT_EXISTS",
+          activePayment: toStudentPaymentAttemptDto(recoverableAttempt),
+          paymentAttemptId: recoverableAttempt._id,
+          paymentReference: recoverableAttempt.paymentReference,
+          statusUrl: getStudentAttemptStatusUrl(recoverableAttempt),
+        });
+      }
+
+      // An Order is an immutable quote once any payment attempt references it.
+      // Rotate the pending Order instead of rewriting the accepted snapshot.
+      order.status = "CANCELLED";
+      await order.save();
+      orderResult = await findOrCreatePendingOrder(orderInput);
+      ({ order } = orderResult);
+    }
 
     if (method === "HESABPAY_HOSTED") {
       const quote = hesabPayQuote;
@@ -640,32 +1225,31 @@ export const createCheckout = async (req, res) => {
         status: "PENDING",
       }).sort({ createdAt: -1 });
 
-      paymentAttempt = await expireAttemptIfBasePriceChanged(
-        paymentAttempt,
-        baseAmountUsdCents,
-        "HesabPay attempt expired",
-        couponSnapshot?.couponId,
-      );
-      if (
-        paymentAttempt &&
-        Number(paymentAttempt.amount || 0) !== Number(quote.amount || 0)
-      ) {
-        paymentAttempt.status = "EXPIRED";
-        paymentAttempt.expiresAt = new Date();
-        paymentAttempt.note = "HesabPay attempt expired after the price or exchange rate changed";
-        await paymentAttempt.save();
-        paymentAttempt = null;
+      if (paymentAttempt && isRecoverableHesabAttempt(paymentAttempt)) {
+        if (
+          isIssuedHesabAttempt(paymentAttempt) &&
+          isExpiredByDate(paymentAttempt.expiresAt)
+        ) {
+          await expirePendingAttempt(
+            paymentAttempt,
+            "Issued HesabPay attempt aged out while awaiting final verification",
+          );
+        }
+      } else if (paymentAttempt) {
+        paymentAttempt = await expirePendingAttempt(
+          paymentAttempt,
+          "Safely unissued HesabPay attempt expired before provider session creation",
+        );
       }
-      paymentAttempt = await expireAttemptIfStale(
-        paymentAttempt,
-        "HesabPay attempt expired after checkout timeout",
-      );
 
       if (paymentAttempt) {
         return apiSuccess(res, {
           orderId: order._id,
           paymentAttemptId: paymentAttempt._id,
+          paymentReference: paymentAttempt.paymentReference,
           provider: "HESABPAY",
+          resumed: true,
+          statusUrl: `/payment/success?paymentAttemptId=${encodeURIComponent(String(paymentAttempt._id))}`,
           basePrice: {
             amount: formatUsdCents(baseAmountUsdCents),
             currency: "USD",
@@ -674,39 +1258,83 @@ export const createCheckout = async (req, res) => {
           pricingRegion,
           charge: {
             amount: paymentAttempt.amount,
-            currency: "AFN",
+            currency: paymentAttempt.currency || "AFN",
           },
           exchangeRate: paymentAttempt.exchangeRate || quote.exchangeRate,
-          paymentUrl: paymentAttempt.providerUrl,
+          expiresAt: paymentAttempt.expiresAt,
+          paymentUrl: null,
           coupon: couponResponse(couponSnapshot),
         });
       }
 
       const clientUrl = resolveStudentClientUrl();
-      const redirectSuccessUrl = `${clientUrl}/payment/success?orderId=${order._id}`;
-      const redirectFailureUrl = `${clientUrl}/payment/failure?orderId=${order._id}`;
-      const attemptSeed = makePaymentReference();
-      const { attempt, legacyPayment } = await createPaymentAttemptRecord({
-        order,
-        user: req.user,
-        course,
-        method: "HESABPAY_HOSTED",
-        amount: quote.amount,
-        currency: "AFN",
-        network: "AFN",
-        provider: "HESABPAY",
-        exchangeRate: quote.exchangeRate,
-        exchangeRateSource: quote.exchangeRateSource,
-        rateRetrievedAt: quote.rateRetrievedAt,
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-        providerUrl: null,
-        rawCreateSessionResponse: null,
-      });
+      let attempt;
+      let legacyPayment;
+      try {
+        ({ attempt, legacyPayment } = await createPaymentAttemptRecord({
+          order,
+          user: req.user,
+          course,
+          method: "HESABPAY_HOSTED",
+          amount: quote.amount,
+          currency: "AFN",
+          network: "AFN",
+          provider: "HESABPAY",
+          exchangeRate: quote.exchangeRate,
+          exchangeRateSource: quote.exchangeRateSource,
+          rateRetrievedAt: quote.rateRetrievedAt,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+          providerUrl: null,
+          rawCreateSessionResponse: null,
+        }));
+      } catch (attemptError) {
+        if (attemptError?.code === 11000) {
+          const winningAttempt = await PaymentAttempt.findOne({
+            orderId: order._id,
+            status: { $in: ["PENDING", "MANUAL_REVIEW"] },
+          }).sort({ createdAt: -1 });
+          if (winningAttempt) {
+            return apiSuccess(res, toActivePaymentPayload(winningAttempt));
+          }
+        }
+        throw attemptError;
+      }
+
+      // Persist the provider-call boundary before any network request. A crash
+      // after this point is ambiguous and must never be recycled automatically.
+      const issuanceStartedAt = new Date();
+      const issuanceClaim = await PaymentAttempt.updateOne(
+        {
+          _id: attempt._id,
+          status: "PENDING",
+          issuanceState: "NOT_STARTED",
+        },
+        {
+          $set: {
+            issuanceState: "CREATING",
+            issuanceStartedAt,
+          },
+        },
+      );
+      if (Number(issuanceClaim?.modifiedCount || 0) !== 1) {
+        const currentAttempt = await PaymentAttempt.findById(attempt._id);
+        return apiSuccess(res, toActivePaymentPayload(currentAttempt || attempt));
+      }
+      attempt.issuanceState = "CREATING";
+      attempt.issuanceStartedAt = issuanceStartedAt;
+      const redirectQuery = new URLSearchParams({
+        paymentAttemptId: String(attempt._id),
+        ref: String(attempt.paymentReference),
+        orderId: String(order._id),
+      }).toString();
+      const redirectSuccessUrl = `${clientUrl}/payment/success?${redirectQuery}`;
+      const redirectFailureUrl = `${clientUrl}/payment/failure?${redirectQuery}`;
 
       let sessionData;
       try {
         sessionData = await createPaymentSession({
           email: req.user.email,
+          userId: attempt._id,
           currency: "AFN",
           amount: Number(quote.amount),
           items: [{
@@ -720,21 +1348,53 @@ export const createCheckout = async (req, res) => {
           redirectFailureUrl,
         });
       } catch (sessionError) {
-        attempt.status = "FAILED";
-        attempt.failedAt = new Date();
+        const definitiveFailure = sessionError?.definitiveFailure === true;
+        const failedAt = new Date();
+        attempt.status = definitiveFailure ? "FAILED" : "MANUAL_REVIEW";
+        attempt.failedAt = definitiveFailure ? failedAt : null;
+        attempt.issuanceState = definitiveFailure
+          ? "DEFINITIVELY_FAILED"
+          : "AMBIGUOUS";
+        attempt.issuanceCompletedAt = failedAt;
+        attempt.note = definitiveFailure
+          ? "HesabPay definitively rejected the session request"
+          : "HesabPay session result is ambiguous; verify before retrying";
         await attempt.save();
-        legacyPayment.status = "failed";
-        legacyPayment.paymentStatus = "failed";
-        legacyPayment.failedAt = new Date();
+        legacyPayment.status = definitiveFailure ? "failed" : "pending";
+        legacyPayment.paymentStatus = definitiveFailure ? "failed" : "pending";
+        legacyPayment.failedAt = definitiveFailure ? failedAt : null;
+        legacyPayment.note = attempt.note;
         await legacyPayment.save();
         throw sessionError;
       }
 
-      const paymentUrl = sessionData?.payment_url || sessionData?.paymentUrl || (sessionData?.session_id ? `https://checkout.hesabpay.com/pay/${sessionData.session_id}` : null);
-      if (!paymentUrl) return apiError(res, 502, "HesabPay did not return a payment URL");
+      const paymentUrl = sessionData?.payment_url;
+      if (
+        sessionData?.success !== true ||
+        Number(sessionData?.status_code) !== 10 ||
+        !isValidHesabCheckoutUrl(paymentUrl)
+      ) {
+        attempt.status = "MANUAL_REVIEW";
+        attempt.failedAt = null;
+        attempt.issuanceState = "AMBIGUOUS";
+        attempt.issuanceCompletedAt = new Date();
+        attempt.note = "HesabPay did not return a valid successful checkout session";
+        await attempt.save();
+        legacyPayment.status = "pending";
+        legacyPayment.paymentStatus = "pending";
+        legacyPayment.failedAt = null;
+        legacyPayment.note = attempt.note;
+        await legacyPayment.save();
+        return apiError(res, 502, attempt.note);
+      }
 
-      attempt.providerPaymentId = sessionData.session_id || sessionData.payment_id || attemptSeed;
+      const providerPaymentId = sessionData.session_id || sessionData.payment_id || null;
+      if (providerPaymentId) {
+        attempt.providerPaymentId = String(providerPaymentId);
+      }
       attempt.providerUrl = paymentUrl;
+      attempt.issuanceState = "ISSUED";
+      attempt.issuanceCompletedAt = new Date();
       attempt.rawCreateSessionResponse = sessionData?.rawResponse || sessionData;
       attempt.expiresAt = sessionData.expires_at ? new Date(sessionData.expires_at) : attempt.expiresAt;
       await attempt.save();
@@ -748,7 +1408,9 @@ export const createCheckout = async (req, res) => {
       return apiSuccess(res, {
         orderId: order._id,
         paymentAttemptId: attempt._id,
+        paymentReference: attempt.paymentReference,
         provider: "HESABPAY",
+        resumed: false,
         basePrice: {
           amount: formatUsdCents(baseAmountUsdCents),
           currency: "USD",
@@ -772,6 +1434,19 @@ export const createCheckout = async (req, res) => {
           method: "USDT_BSC_DIRECT",
           status: "PENDING",
         }).sort({ createdAt: -1 });
+
+        if (
+          existingAttempt &&
+          (existingAttempt.providerUrl || existingAttempt.recipientAddress)
+        ) {
+          if (isExpiredByDate(existingAttempt.expiresAt)) {
+            await expirePendingAttempt(
+              existingAttempt,
+              "Issued direct BSC attempt aged out while awaiting verification",
+            );
+          }
+          return apiSuccess(res, toActivePaymentPayload(existingAttempt));
+        }
 
         existingAttempt = await expireAttemptIfBasePriceChanged(
           existingAttempt,
@@ -835,28 +1510,42 @@ export const createCheckout = async (req, res) => {
         const directQuote = createUniqueUsdtBscAmount(baseAmountUsdCents);
         const chargeAmount = directQuote.totalAmount;
         const directDetails = getDirectBscPaymentDetails(chargeAmount, paymentReference);
-        const { attempt } = await createPaymentAttemptRecord({
-          order,
-          user: req.user,
-          course,
-          paymentReference,
-          method: "USDT_BSC_DIRECT",
-          amount: chargeAmount,
-          currency: "USDT",
-          network: normalizeBscNetworkLabel(),
-          provider: "BSC_DIRECT",
-          exchangeRate: "1",
-          exchangeRateSource: null,
-          expiresAt: new Date(Date.now() + Number(process.env.BSC_PAYMENT_EXPIRY_MINUTES || 60) * 60 * 1000),
-          providerUrl: directDetails.paymentUrl,
-          rawCreateSessionResponse: {
-            baseAmount: directQuote.baseAmount,
-            totalAmount: chargeAmount,
-            qrPayload: directDetails.qrPayload,
-          },
-          recipientAddress: directDetails.recipientAddress,
-          tokenMint: directDetails.tokenMint,
-        });
+        let attempt;
+        try {
+          ({ attempt } = await createPaymentAttemptRecord({
+            order,
+            user: req.user,
+            course,
+            paymentReference,
+            method: "USDT_BSC_DIRECT",
+            amount: chargeAmount,
+            currency: "USDT",
+            network: normalizeBscNetworkLabel(),
+            provider: "BSC_DIRECT",
+            exchangeRate: "1",
+            exchangeRateSource: null,
+            expiresAt: new Date(Date.now() + Number(process.env.BSC_PAYMENT_EXPIRY_MINUTES || 60) * 60 * 1000),
+            providerUrl: directDetails.paymentUrl,
+            rawCreateSessionResponse: {
+              baseAmount: directQuote.baseAmount,
+              totalAmount: chargeAmount,
+              qrPayload: directDetails.qrPayload,
+            },
+            recipientAddress: directDetails.recipientAddress,
+            tokenMint: directDetails.tokenMint,
+          }));
+        } catch (attemptError) {
+          if (attemptError?.code === 11000) {
+            const winningAttempt = await PaymentAttempt.findOne({
+              orderId: order._id,
+              status: { $in: ["PENDING", "MANUAL_REVIEW"] },
+            }).sort({ createdAt: -1 });
+            if (winningAttempt) {
+              return apiSuccess(res, toActivePaymentPayload(winningAttempt));
+            }
+          }
+          throw attemptError;
+        }
 
         return apiSuccess(res, {
           orderId: order._id,
@@ -1031,6 +1720,13 @@ export const createCheckout = async (req, res) => {
         `NOWPayments error: ${error.message || "Unable to create crypto payment"}`,
       );
     }
+    if (error?.provider === "HESABPAY") {
+      return apiError(
+        res,
+        error.status && error.status >= 400 && error.status < 500 ? 400 : 502,
+        `HesabPay error: ${error.message || "Unable to create payment session"}`,
+      );
+    }
     return apiError(res, 500, "Internal server error");
   }
 };
@@ -1073,7 +1769,7 @@ export const verifyDirectCryptoPayment = async (req, res) => {
   try {
     const { paymentAttemptId } = req.params;
     const { txHash } = req.body || {};
-    const normalizedTxHash = String(txHash || "").trim();
+    const normalizedTxHash = normalizeDirectBscTransactionHash(txHash);
 
     let attempt = await PaymentAttempt.findById(paymentAttemptId).populate("orderId", "status userId courseId");
     if (!attempt || String(attempt.userId) !== String(req.user._id)) {
@@ -1085,39 +1781,28 @@ export const verifyDirectCryptoPayment = async (req, res) => {
       return apiError(res, 409, "This payment attempt does not support direct crypto verification");
     }
 
-    if (attempt.status === "PENDING") {
-      const refreshedAttempt = await expireAttemptIfStale(
-        attempt,
-        "Direct BSC crypto attempt expired before verification",
-      );
-      if (!refreshedAttempt) {
-        attempt = await PaymentAttempt.findById(paymentAttemptId).populate("orderId", "status userId courseId");
-      } else {
-        attempt = refreshedAttempt;
-      }
-    }
-
     if (attempt.status === "SUCCEEDED") {
+      attempt = await reconcileSucceededAttempt(attempt);
       clearDirectCryptoGuardState(guardKey);
       return apiSuccess(res, {
         orderId: attempt.orderId?._id || attempt.orderId,
         paymentAttemptId: attempt._id,
         status: attempt.status,
         orderStatus: attempt.orderId?.status || "PAID",
-        payment: attempt,
+        payment: toStudentPaymentAttemptDto(attempt),
       });
     }
 
-    if (attempt.status === "EXPIRED" || isExpiredByDate(attempt.expiresAt)) {
-      if (attempt.status !== "EXPIRED") {
-        attempt.status = "EXPIRED";
-        attempt.note = attempt.note || "Payment attempt expired before verification";
-        await attempt.save();
-      }
+    if (attempt.status === "PENDING" && isExpiredByDate(attempt.expiresAt)) {
+      attempt.status = "EXPIRED";
+      attempt.note = attempt.note || "Payment attempt expired before verification";
+      await attempt.save();
+    }
 
-      return apiError(res, 409, "This payment request has expired and can no longer be verified", {
-        code: "PAYMENT_REQUEST_EXPIRED",
-        expiresAt: attempt.expiresAt || null,
+    if (!["PENDING", "EXPIRED"].includes(attempt.status)) {
+      return apiError(res, 409, "This payment request cannot be verified in its current state", {
+        code: "PAYMENT_REQUEST_NOT_VERIFIABLE",
+        status: attempt.status,
       });
     }
 
@@ -1133,18 +1818,6 @@ export const verifyDirectCryptoPayment = async (req, res) => {
         retryAt: retryAt.toISOString(),
         cooldownAfterAttempts: DIRECT_CRYPTO_VERIFY_COOLDOWN_AFTER_FAILED_ATTEMPTS,
       });
-    }
-
-    if (Number(attempt.verificationAttempts || 0) >= DIRECT_CRYPTO_MAX_FAILED_VERIFY_ATTEMPTS) {
-      return apiError(
-        res,
-        429,
-        "Too many failed verification attempts for this payment request",
-        {
-          code: "PAYMENT_VERIFICATION_ATTEMPTS_EXCEEDED",
-          maxAttempts: DIRECT_CRYPTO_MAX_FAILED_VERIFY_ATTEMPTS,
-        },
-      );
     }
 
     const verificationBlockedUntilMs = attempt.verificationBlockedUntil
@@ -1168,7 +1841,7 @@ export const verifyDirectCryptoPayment = async (req, res) => {
 
     const existingTxUsage = await PaymentAttempt.findOne({
       _id: { $ne: attempt._id },
-      transactionSignature: normalizedTxHash,
+      transactionSignature: getDirectBscTransactionHashMatcher(normalizedTxHash),
     }).select("_id status");
     if (existingTxUsage) {
       return apiError(res, 409, "This transaction hash has already been used", {
@@ -1180,12 +1853,15 @@ export const verifyDirectCryptoPayment = async (req, res) => {
       const reservedAttempt = await PaymentAttempt.findOneAndUpdate(
         {
           _id: attempt._id,
-          status: "PENDING",
+          status: { $in: ["PENDING", "EXPIRED"] },
           $or: [
             { transactionSignature: { $exists: false } },
             { transactionSignature: null },
             { transactionSignature: "" },
-            { transactionSignature: normalizedTxHash },
+            {
+              transactionSignature:
+                getDirectBscTransactionHashMatcher(normalizedTxHash),
+            },
           ],
         },
         {
@@ -1201,7 +1877,8 @@ export const verifyDirectCryptoPayment = async (req, res) => {
         if (
           latestAttempt &&
           latestAttempt.transactionSignature &&
-          String(latestAttempt.transactionSignature).trim() !== normalizedTxHash
+          normalizeDirectBscTransactionHash(latestAttempt.transactionSignature) !==
+            normalizedTxHash
         ) {
           return apiError(res, 409, "Another transaction hash is already attached to this payment request", {
             code: "PAYMENT_REQUEST_ALREADY_LOCKED",
@@ -1228,16 +1905,23 @@ export const verifyDirectCryptoPayment = async (req, res) => {
         expectedAmount: attempt.amount,
       });
     } catch (verificationError) {
-      const runtimeFailureState = markDirectCryptoGuardFailure(guardKey);
-      const nextVerificationAttempts = Number(attempt.verificationAttempts || 0) + 1;
-      const verificationBlockedUntil = runtimeFailureState.blockUntil ||
-        (nextVerificationAttempts >= DIRECT_CRYPTO_VERIFY_COOLDOWN_AFTER_FAILED_ATTEMPTS
-          ? new Date(Date.now() + DIRECT_CRYPTO_VERIFY_COOLDOWN_MS)
-          : null);
+      const code = String(verificationError.code || "").toUpperCase();
+      const shouldPenalize = shouldPenalizeDirectCryptoVerificationFailure(code);
+      const runtimeFailureState = shouldPenalize
+        ? markDirectCryptoGuardFailure(guardKey)
+        : { blockUntil: null };
+      const nextVerificationAttempts = Number(attempt.verificationAttempts || 0) +
+        (shouldPenalize ? 1 : 0);
+      const verificationBlockedUntil = shouldPenalize
+        ? runtimeFailureState.blockUntil ||
+          (nextVerificationAttempts >= DIRECT_CRYPTO_VERIFY_COOLDOWN_AFTER_FAILED_ATTEMPTS
+            ? new Date(Date.now() + DIRECT_CRYPTO_VERIFY_COOLDOWN_MS)
+            : null)
+        : attempt.verificationBlockedUntil || null;
       await PaymentAttempt.updateOne(
         {
           _id: attempt._id,
-          status: "PENDING",
+          status: { $in: ["PENDING", "EXPIRED"] },
         },
         {
           $set: {
@@ -1248,7 +1932,6 @@ export const verifyDirectCryptoPayment = async (req, res) => {
           $unset: { transactionSignature: 1 },
         },
       );
-      const code = String(verificationError.code || "").toUpperCase();
       console.warn("verifyDirectCryptoPayment rejected transaction", {
         paymentAttemptId: String(attempt?._id || ""),
         txHash: normalizedTxHash,
@@ -1277,19 +1960,27 @@ export const verifyDirectCryptoPayment = async (req, res) => {
       return apiError(res, 502, "Unable to verify blockchain payment right now", { code: code || "BLOCKCHAIN_VERIFY_UNAVAILABLE" });
     }
 
-    const txMinedAtMs = verificationResult?.blockTimestamp
-      ? new Date(verificationResult.blockTimestamp).getTime()
-      : Number.NaN;
-    const attemptCreatedAtMs = attempt?.createdAt ? new Date(attempt.createdAt).getTime() : Number.NaN;
-    const attemptExpiresAtMs = attempt?.expiresAt ? new Date(attempt.expiresAt).getTime() : Number.NaN;
+    const transactionTimeError = getDirectCryptoTransactionTimeError({
+      blockTimestamp: verificationResult?.blockTimestamp,
+      attemptCreatedAt: attempt?.createdAt,
+      attemptExpiresAt: attempt?.expiresAt,
+    });
 
-    if (Number.isFinite(txMinedAtMs) && Number.isFinite(attemptCreatedAtMs) && txMinedAtMs < attemptCreatedAtMs) {
+    if (transactionTimeError === "TX_OLDER_THAN_PAYMENT_REQUEST") {
+      await releaseDirectCryptoTransactionReservation({
+        paymentAttemptId: attempt._id,
+        transactionHash: normalizedTxHash,
+      });
       return apiError(res, 409, "This transaction is older than this payment request", {
         code: "TX_OLDER_THAN_PAYMENT_REQUEST",
       });
     }
 
-    if (Number.isFinite(txMinedAtMs) && Number.isFinite(attemptExpiresAtMs) && txMinedAtMs > attemptExpiresAtMs) {
+    if (transactionTimeError === "TX_MINED_AFTER_PAYMENT_EXPIRY") {
+      await releaseDirectCryptoTransactionReservation({
+        paymentAttemptId: attempt._id,
+        transactionHash: normalizedTxHash,
+      });
       return apiError(res, 409, "This transaction was mined after this payment request expired", {
         code: "TX_MINED_AFTER_PAYMENT_EXPIRY",
         expiresAt: attempt?.expiresAt || null,
@@ -1301,7 +1992,7 @@ export const verifyDirectCryptoPayment = async (req, res) => {
       transactionSignature: normalizedTxHash,
       rawVerificationPayload: verificationResult,
       note: "Direct BSC USDT verification",
-      paidAt: new Date(),
+      paidAt: verificationResult.blockTimestamp || attempt.paidAt || new Date(),
       verifiedAt: new Date(),
       senderAccount: verificationResult.senderAddress,
     });
@@ -1325,7 +2016,7 @@ export const verifyDirectCryptoPayment = async (req, res) => {
       status: freshAttempt?.status || attempt.status,
       orderStatus: freshAttempt?.orderId?.status || "PENDING",
       duplicate: result?.duplicate || false,
-      payment: freshAttempt || attempt,
+      payment: toStudentPaymentAttemptDto(freshAttempt || attempt),
     });
   } catch (error) {
     console.error("verifyDirectCryptoPayment error:", error.message || error);
@@ -1339,40 +2030,143 @@ export const createHesabPaySession = async (req, res) => {
 };
 
 export const hesabPayWebhook = async (req, res) => {
+  let deliveryClaim = null;
+  const rejectClaimedDelivery = async (statusCode, message) => {
+    if (deliveryClaim?.state === "CLAIMED") {
+      await failHesabWebhookDelivery({
+        receiptId: deliveryClaim.receipt?._id,
+        claimToken: deliveryClaim.claimToken,
+      });
+      deliveryClaim = null;
+    }
+    return apiError(res, statusCode, message);
+  };
+
   try {
     const webhookData = req.body;
-    if (!webhookData || typeof webhookData !== "object") return webhookAck(res, { message: "Invalid webhook payload" });
+    if (!webhookData || typeof webhookData !== "object") {
+      return apiError(res, 400, "Invalid webhook payload");
+    }
     const { signature, timestamp } = webhookData;
-    if (!signature || !timestamp) return webhookAck(res, { message: "Missing signature or timestamp" });
+    if (!signature || !timestamp) {
+      return apiError(res, 400, "Missing signature or timestamp");
+    }
+    if (
+      String(signature).length > 4096 ||
+      String(timestamp).length > 128
+    ) {
+      return apiError(res, 400, "Invalid signature or timestamp");
+    }
 
     const verifyResult = await verifyWebhookSignature(signature, timestamp);
-    const isVerified = verifyResult?.success === true && (verifyResult?.status_code === undefined || Number(verifyResult.status_code) === 10);
-    if (!isVerified) return webhookAck(res, { message: "Invalid webhook signature" });
+    if (verifyResult?.success !== true) {
+      return apiError(res, 401, "Invalid webhook signature");
+    }
 
-    const paymentReference = webhookData?.items?.[0]?.id;
-    if (!paymentReference) return webhookAck(res, { message: "Missing payment reference in webhook items" });
+    deliveryClaim = await claimHesabWebhookDelivery({
+      signature,
+      timestamp,
+      payload: webhookData,
+    });
+    if (deliveryClaim.state === "PAYLOAD_MISMATCH") {
+      return apiError(res, 409, "Webhook credential was reused with a different payload");
+    }
+    if (deliveryClaim.state === "PROCESSED") {
+      return webhookAck(res, {
+        duplicate: true,
+        message: "Webhook was already processed",
+      });
+    }
+    if (deliveryClaim.state === "IN_PROGRESS") {
+      return apiError(res, 503, "Webhook is already being processed");
+    }
+    if (deliveryClaim.state !== "CLAIMED") {
+      return apiError(res, 503, "Webhook could not be claimed for processing");
+    }
 
-    const attempt = await PaymentAttempt.findOne({ paymentReference, method: "HESABPAY_HOSTED" });
-    if (!attempt) return webhookAck(res, { message: "Payment record not found" });
+    const merchantReference = String(webhookData?.user_id || "").trim();
+    const itemReference = String(webhookData?.items?.[0]?.id || "").trim();
+    if (!merchantReference && !itemReference) {
+      return rejectClaimedDelivery(422, "Missing HesabPay merchant payment reference");
+    }
 
-    attempt.rawWebhookPayload = webhookData;
-    attempt.providerPaymentId = webhookData.session_id || webhookData.transaction_id || attempt.providerPaymentId;
-    attempt.transactionSignature = webhookData.transaction_id || attempt.transactionSignature;
-    attempt.providerUrl = attempt.providerUrl || webhookData.redirect_url || null;
-    attempt.verifiedAt = new Date();
-    await attempt.save();
+    let attempt = null;
+    if (merchantReference) {
+      attempt = isValidObjectId(merchantReference)
+        ? await PaymentAttempt.findOne({
+            _id: merchantReference,
+            method: "HESABPAY_HOSTED",
+            provider: "HESABPAY",
+          })
+        : await PaymentAttempt.findOne({
+            paymentReference: merchantReference,
+            method: "HESABPAY_HOSTED",
+            provider: "HESABPAY",
+          });
+    }
+    if (!merchantReference && itemReference) {
+      attempt = await PaymentAttempt.findOne({
+        paymentReference: itemReference,
+        method: "HESABPAY_HOSTED",
+        provider: "HESABPAY",
+      });
+    }
+    if (!attempt) {
+      return rejectClaimedDelivery(404, "Payment record not found");
+    }
+    if (itemReference && itemReference !== String(attempt.paymentReference || "")) {
+      return rejectClaimedDelivery(409, "HesabPay payment reference mismatch");
+    }
+
+    const ownedOrder = await Order.findOne({
+      _id: attempt.orderId,
+      userId: attempt.userId,
+      courseId: attempt.courseId,
+    });
+    if (!ownedOrder) {
+      return rejectClaimedDelivery(409, "Payment ownership validation failed");
+    }
 
     const quoteAmount = Number(attempt.amount || 0);
     const webhookAmount = Number(webhookData.amount);
-    if (!Number.isFinite(webhookAmount) || Math.abs(webhookAmount - quoteAmount) > 0.000001) {
-      return webhookAck(res, { message: "Webhook amount mismatch" });
+    if (
+      !Number.isFinite(quoteAmount) ||
+      quoteAmount <= 0 ||
+      !Number.isFinite(webhookAmount) ||
+      Math.abs(webhookAmount - quoteAmount) > 0.000001
+    ) {
+      return rejectClaimedDelivery(422, "Webhook amount mismatch");
+    }
+
+    const suppliedCurrencies = [
+      webhookData.currency,
+      ...(Array.isArray(webhookData.items)
+        ? webhookData.items.map((item) => item?.currency)
+        : []),
+    ]
+      .filter((value) => value !== undefined && value !== null && String(value).trim())
+      .map((value) => String(value).trim().toUpperCase());
+    const expectedCurrency = String(attempt.currency || "").trim().toUpperCase();
+    if (
+      suppliedCurrencies.some(
+        (currency) => currency !== "AFN" || currency !== expectedCurrency,
+      )
+    ) {
+      return rejectClaimedDelivery(422, "Webhook currency mismatch");
     }
 
     if (webhookData.success === true && Number(webhookData.status_code) === 10) {
+      const providerPaymentId =
+        webhookData.session_id ||
+        webhookData.transaction_id ||
+        attempt.providerPaymentId ||
+        null;
+      const transactionSignature =
+        webhookData.transaction_id || attempt.transactionSignature || null;
       const result = await completePayment({
         paymentAttemptId: attempt._id,
-        providerPaymentId: attempt.providerPaymentId,
-        transactionSignature: attempt.transactionSignature,
+        providerPaymentId,
+        transactionSignature,
         rawWebhookPayload: webhookData,
         note: "HesabPay webhook verification",
         paidAt: new Date(),
@@ -1380,18 +2174,62 @@ export const hesabPayWebhook = async (req, res) => {
         senderAccount: webhookData.sender_account || null,
       });
 
-      return apiSuccess(res, {
+      await completeHesabWebhookDelivery({
+        receiptId: deliveryClaim.receipt._id,
+        claimToken: deliveryClaim.claimToken,
+        paymentAttemptId: attempt._id,
+      });
+      deliveryClaim = null;
+
+      return webhookAck(res, {
         message: result?.duplicate ? "Duplicate payment detected" : "Webhook processed successfully",
       });
     }
 
-    attempt.status = "FAILED";
-    attempt.failedAt = new Date();
-    await attempt.save();
-    return apiSuccess(res, { message: "Webhook processed (payment marked as failed)" });
+    if (!["SUCCEEDED", "DUPLICATE_PAYMENT"].includes(attempt.status)) {
+      attempt.status = "FAILED";
+      attempt.failedAt = new Date();
+      attempt.verifiedAt = new Date();
+      attempt.issuanceState = "DEFINITIVELY_FAILED";
+      attempt.issuanceCompletedAt = attempt.verifiedAt;
+      attempt.rawWebhookPayload = webhookData;
+      attempt.providerPaymentId =
+        webhookData.session_id ||
+        webhookData.transaction_id ||
+        attempt.providerPaymentId;
+      attempt.transactionSignature =
+        webhookData.transaction_id || attempt.transactionSignature;
+      await attempt.save();
+      await syncLegacyPaymentRecord({
+        order: ownedOrder,
+        attempt,
+        course: null,
+        rawWebhookPayload: webhookData,
+        note: "HesabPay failure webhook",
+        transactionId: webhookData.transaction_id || null,
+        senderAccount: webhookData.sender_account || null,
+      });
+    }
+    await completeHesabWebhookDelivery({
+      receiptId: deliveryClaim.receipt._id,
+      claimToken: deliveryClaim.claimToken,
+      paymentAttemptId: attempt._id,
+    });
+    deliveryClaim = null;
+    return webhookAck(res, { message: "Webhook processed (payment marked as failed)" });
   } catch (error) {
+    if (deliveryClaim?.state === "CLAIMED") {
+      try {
+        await failHesabWebhookDelivery({
+          receiptId: deliveryClaim.receipt?._id,
+          claimToken: deliveryClaim.claimToken,
+        });
+      } catch (receiptError) {
+        console.error("Unable to release HesabPay webhook claim:", receiptError.message || receiptError);
+      }
+    }
     console.error("hesabPayWebhook error:", error.message || error);
-    return webhookAck(res, { message: "Webhook processing error" });
+    return apiError(res, 500, "Webhook processing error");
   }
 };
 
@@ -1401,99 +2239,104 @@ export const nowPaymentsWebhook = async (req, res) => {
     const payload = req.body;
 
     if (!payload || typeof payload !== "object") {
-      return webhookAck(res, { message: "Invalid NOWPayments payload" });
+      return apiError(res, 400, "Invalid NOWPayments payload");
     }
 
     if (!verifyNowPaymentsIpnSignature({ signature, payload })) {
-      return webhookAck(res, { message: "Invalid NOWPayments signature" });
+      return apiError(res, 401, "Invalid NOWPayments signature");
     }
 
     const providerPaymentId = payload?.payment_id ? String(payload.payment_id) : "";
     const paymentReference = String(payload?.order_id || "").trim();
-    const attempt = providerPaymentId
-      ? await PaymentAttempt.findOne({ providerPaymentId, method: "NOWPAYMENTS_CRYPTO" })
-      : await PaymentAttempt.findOne({ paymentReference, method: "NOWPAYMENTS_CRYPTO" });
+    const attemptMatchers = [];
+    if (providerPaymentId) attemptMatchers.push({ providerPaymentId });
+    if (paymentReference) attemptMatchers.push({ paymentReference });
+    const attempt = attemptMatchers.length
+      ? await PaymentAttempt.findOne({
+          method: "NOWPAYMENTS_CRYPTO",
+          $or: attemptMatchers,
+        })
+      : null;
 
     if (!attempt) {
-      return webhookAck(res, { message: "Payment attempt not found" });
-    }
-
-    attempt.rawWebhookPayload = payload;
-    attempt.providerPaymentId = providerPaymentId || attempt.providerPaymentId;
-
-    const payAmount = String(payload?.pay_amount || "").trim();
-    const normalizedPayAmount = payAmount ? roundUpDecimalAmount(payAmount, 2) : "";
-    if (
-      normalizedPayAmount &&
-      normalizedPayAmount !== String(attempt.amount || "").trim()
-    ) {
-      attempt.status = "MANUAL_REVIEW";
-      attempt.note = "NOWPayments amount mismatch";
-      attempt.verifiedAt = new Date();
-      await attempt.save();
-      return webhookAck(res, { message: "Amount mismatch requires manual review" });
+      // The provider can deliver an IPN immediately after creating a payment,
+      // before the local attempt finishes saving. A retryable response lets the
+      // provider deliver it again instead of permanently losing the completion.
+      return apiError(res, 503, "Payment attempt is not ready for processing");
     }
 
     const paymentStatus = String(payload?.payment_status || "").trim().toLowerCase();
-
+    const result = await applyNowPaymentsStatus({ attempt, payload, source: "ipn" });
+    if (result?.ignored) {
+      return webhookAck(res, { message: "Stale NOWPayments status ignored" });
+    }
+    if (result?.manualReview) {
+      return webhookAck(res, { message: "Payment requires manual review" });
+    }
     if (paymentStatus === "finished") {
-      const result = await completePayment({
-        paymentAttemptId: attempt._id,
-        providerPaymentId: attempt.providerPaymentId,
-        transactionSignature:
-          String(payload?.payin_hash || payload?.txn_id || payload?.txid || "").trim() || null,
-        rawWebhookPayload: payload,
-        note: "NOWPayments IPN verification",
-        paidAt: new Date(),
-        verifiedAt: new Date(),
-      });
-
       return webhookAck(res, {
         message: result?.duplicate ? "Duplicate payment detected" : "NOWPayments payment completed",
       });
     }
-
-    if (paymentStatus === "partially_paid") {
-      attempt.status = "MANUAL_REVIEW";
-      attempt.note = "NOWPayments partial payment";
-      attempt.verifiedAt = new Date();
-      await attempt.save();
-      return webhookAck(res, { message: "Partial payment sent to manual review" });
-    }
-
-    if (paymentStatus === "failed") {
-      attempt.status = "FAILED";
-      attempt.failedAt = new Date();
-      await attempt.save();
-      return webhookAck(res, { message: "Payment marked failed" });
-    }
-
-    if (paymentStatus === "expired") {
-      attempt.status = "EXPIRED";
-      await attempt.save();
-      return webhookAck(res, { message: "Payment marked expired" });
-    }
-
-    await attempt.save();
     return webhookAck(res, { message: "NOWPayments status recorded" });
   } catch (error) {
     console.error("nowPaymentsWebhook error:", error.message || error);
-    return webhookAck(res, { message: "NOWPayments webhook processing error" });
+    return apiError(res, 500, "NOWPayments webhook processing error");
   }
 };
 
 export const getStudentPaymentStatus = async (req, res) => {
   try {
+    const orderId = String(req.params.orderId || "").trim();
     const id = req.params.paymentAttemptId || req.params.reference;
-    let attempt = isValidObjectId(id)
-      ? await PaymentAttempt.findById(id).populate("orderId", "status paidAt")
-      : await PaymentAttempt.findOne({ paymentReference: id, userId: req.user._id }).populate("orderId", "status paidAt");
+    let attempt;
+    if (orderId) {
+      attempt = await PaymentAttempt.findOne({
+        orderId,
+        userId: req.user._id,
+        status: "SUCCEEDED",
+      })
+        .sort({ createdAt: -1 })
+        .populate("orderId", "status paidAt");
+      if (!attempt) {
+        attempt = await PaymentAttempt.findOne({
+          orderId,
+          userId: req.user._id,
+        })
+          .sort({ createdAt: -1 })
+          .populate("orderId", "status paidAt");
+      }
+    } else {
+      attempt = isValidObjectId(id)
+        ? await PaymentAttempt.findById(id).populate("orderId", "status paidAt")
+        : await PaymentAttempt.findOne({ paymentReference: id, userId: req.user._id }).populate("orderId", "status paidAt");
+    }
 
     if (!attempt || String(attempt.userId) !== String(req.user._id)) {
       return apiError(res, 404, "Payment not found");
     }
 
-    if (attempt.status === "PENDING") {
+    if (
+      attempt.method === "NOWPAYMENTS_CRYPTO" &&
+      attempt.providerPaymentId &&
+      !["SUCCEEDED", "DUPLICATE_PAYMENT"].includes(attempt.status)
+    ) {
+      try {
+        const providerPayment = await getNowPaymentsPayment(attempt.providerPaymentId);
+        await applyNowPaymentsStatus({
+          attempt,
+          payload: providerPayment,
+          source: "status",
+        });
+        attempt = await PaymentAttempt.findById(attempt._id).populate("orderId", "status paidAt");
+      } catch (syncError) {
+        // Keep the local attempt recoverable. A later poll or IPN can reconcile
+        // it when the provider is reachable again.
+        console.warn("NOWPayments status reconciliation failed:", syncError.message || syncError);
+      }
+    }
+
+    if (attempt.status === "PENDING" && attempt.method !== "NOWPAYMENTS_CRYPTO") {
       const expiredAttempt = await expireAttemptIfStale(
         attempt,
         "Payment attempt expired before completion",
@@ -1503,12 +2346,16 @@ export const getStudentPaymentStatus = async (req, res) => {
       }
     }
 
+    if (attempt.status === "SUCCEEDED") {
+      attempt = await reconcileSucceededAttempt(attempt);
+    }
+
     return apiSuccess(res, {
       orderId: attempt.orderId?._id || attempt.orderId,
       paymentAttemptId: attempt._id,
       status: attempt.status,
       orderStatus: attempt.orderId?.status || "PENDING",
-      payment: attempt,
+      payment: toStudentPaymentAttemptDto(attempt),
     });
   } catch (error) {
     console.error("getStudentPaymentStatus error:", error.message || error);
@@ -2104,7 +2951,7 @@ export const getStudentPaymentHistory = async (req, res) => {
       studentId: req.user._id,
     })
       .populate("courseId", "title price currency")
-      .populate("paymentAttemptId", "status expiresAt orderId transactionSignature providerPaymentId")
+      .populate("paymentAttemptId", "status expiresAt orderId paymentReference transactionSignature")
       .sort({ createdAt: -1 });
 
     const normalizedPayments = [];
@@ -2123,7 +2970,7 @@ export const getStudentPaymentHistory = async (req, res) => {
         );
         if (!refreshedAttempt && payment?.paymentAttemptId?._id) {
           attempt = await PaymentAttempt.findById(payment.paymentAttemptId._id)
-            .select("status expiresAt orderId transactionSignature providerPaymentId");
+            .select("status expiresAt orderId paymentReference transactionSignature");
         } else if (refreshedAttempt) {
           attempt = refreshedAttempt;
         }
@@ -2135,7 +2982,7 @@ export const getStudentPaymentHistory = async (req, res) => {
         FAILED: "failed",
         EXPIRED: "expired",
         MANUAL_REVIEW: "pending",
-        DUPLICATE_PAYMENT: "paid",
+        DUPLICATE_PAYMENT: "pending",
         PENDING: "pending",
       };
 
@@ -2153,12 +3000,7 @@ export const getStudentPaymentHistory = async (req, res) => {
         payment.paymentStatus = "failed";
       }
 
-      const visibleStatus = String(payment?.status || payment?.paymentStatus || "").toLowerCase();
-      if (!["pending", "paid"].includes(visibleStatus)) {
-        continue;
-      }
-
-      normalizedPayments.push(payment);
+      normalizedPayments.push(toStudentPaymentHistoryDto(payment, attempt));
     }
     return apiSuccess(res, { payments: normalizedPayments });
   } catch (error) {
@@ -2177,7 +3019,11 @@ export const confirmStudentPaymentRedirect = async (req, res) => {
 
     if (!attempt) return apiError(res, 404, "Payment not found");
     if (attempt.status === "SUCCEEDED") {
-      return apiSuccess(res, { message: "Payment already confirmed", payment: attempt });
+      const reconciledAttempt = await reconcileSucceededAttempt(attempt);
+      return apiSuccess(res, {
+        message: "Payment already confirmed",
+        payment: toStudentPaymentAttemptDto(reconciledAttempt || attempt),
+      });
     }
 
     if (attempt.provider !== "HESABPAY") {
@@ -2199,7 +3045,12 @@ export const confirmStudentPaymentRedirect = async (req, res) => {
         paidAt: payment.paidAt || new Date(),
         verifiedAt: new Date(),
       });
-      return apiSuccess(res, { message: "Payment already confirmed", payment: attempt });
+      const reconciledAttempt = await PaymentAttempt.findById(attempt._id)
+        .populate("orderId", "status paidAt");
+      return apiSuccess(res, {
+        message: "Payment already confirmed",
+        payment: toStudentPaymentAttemptDto(reconciledAttempt || attempt),
+      });
     }
 
     return apiError(res, 409, "Payment is pending webhook confirmation");

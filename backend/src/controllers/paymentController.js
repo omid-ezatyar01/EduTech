@@ -1,4 +1,5 @@
 import Payment from "../models/Payment.js";
+import PaymentAttempt from "../models/PaymentAttempt.js";
 import Enrollment from "../models/Enrollment.js";
 import Course from "../models/Course.js";
 import User from "../models/User.js";
@@ -10,6 +11,13 @@ import { sendCourseEnrollmentCongratsEmail } from "../utils/Email.js";
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
 import { recordCouponRedemption } from "../services/coupon.service.js";
+import { completePayment } from "../services/paymentCompletion.service.js";
+
+const UNIFIED_HOSTED_OR_CRYPTO_METHODS = new Set([
+  "HESABPAY_HOSTED",
+  "NOWPAYMENTS_CRYPTO",
+  "USDT_BSC_DIRECT",
+]);
 
 const isPaidStatus = (payment) => {
   return payment.status === "paid" || payment.paymentStatus === "paid";
@@ -176,6 +184,56 @@ export const verifyPaymentByAdmin = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Payment not found");
   }
 
+  if (payment.paymentAttemptId) {
+    const attempt = await PaymentAttempt.findById(payment.paymentAttemptId);
+    if (!attempt) {
+      throw new ApiError(404, "Related payment attempt not found");
+    }
+
+    const transactionId = String(req.body?.transactionId || "").trim();
+    if (
+      UNIFIED_HOSTED_OR_CRYPTO_METHODS.has(String(attempt.method || "").toUpperCase()) &&
+      !transactionId
+    ) {
+      throw new ApiError(400, "Transaction ID is required to verify this hosted or crypto payment");
+    }
+
+    const verifiedAt = new Date();
+    const note = String(req.body?.note || "").trim() || "Verified by admin";
+    const allowPaidOrderRecovery = Boolean(
+      isPaidStatus(payment) &&
+      !payment.enrollmentId &&
+      attempt.status !== "DUPLICATE_PAYMENT"
+    );
+    const completion = await completePayment({
+      paymentAttemptId: attempt._id,
+      providerPaymentId: attempt.providerPaymentId || null,
+      transactionSignature: transactionId || attempt.transactionSignature || null,
+      note,
+      paidAt: payment.paidAt || attempt.paidAt || verifiedAt,
+      verifiedAt,
+      allowPaidOrderRecovery,
+    });
+
+    if (!completion?.payment || !completion?.enrollment) {
+      throw new ApiError(409, "Payment completion could not activate the related enrollment");
+    }
+
+    const convergedPayment = completion.payment;
+    convergedPayment.verifiedAt = verifiedAt;
+    convergedPayment.verifiedBy = req.user._id;
+    convergedPayment.note = note;
+    if (transactionId) convergedPayment.transactionId = transactionId;
+    await convergedPayment.save();
+
+    return res.json(
+      new ApiResponse({
+        message: "Payment verified and enrollment activated successfully",
+        data: convergedPayment,
+      }),
+    );
+  }
+
   if (isPaidStatus(payment)) {
     await recordPaymentCouponRedemption(payment);
     return res.json(
@@ -291,6 +349,35 @@ export const rejectPaymentByAdmin = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Payment not found");
   }
 
+  if (payment.paymentAttemptId) {
+    const attempt = await PaymentAttempt.findById(payment.paymentAttemptId);
+    if (!attempt) {
+      throw new ApiError(404, "Related payment attempt not found");
+    }
+    if (["SUCCEEDED", "DUPLICATE_PAYMENT"].includes(attempt.status)) {
+      throw new ApiError(
+        409,
+        "A completed or duplicate charge cannot be rejected; use the refund review workflow",
+      );
+    }
+
+    const rejectedAt = new Date();
+    attempt.status = "FAILED";
+    attempt.failedAt = rejectedAt;
+    attempt.verifiedAt = rejectedAt;
+    if (attempt.method === "HESABPAY_HOSTED") {
+      // This explicit decision is safe only after the administrator has
+      // checked the provider dashboard. It releases an ambiguous hosted
+      // session so the student can start a fresh checkout.
+      attempt.issuanceState = "DEFINITIVELY_FAILED";
+      attempt.issuanceCompletedAt = rejectedAt;
+    }
+    attempt.note =
+      String(req.body?.note || "").trim() ||
+      "Rejected by admin after provider review";
+    await attempt.save();
+  }
+
   payment.paymentStatus = "failed";
   payment.status = "failed";
   payment.failedAt = new Date();
@@ -316,18 +403,78 @@ export const rejectPaymentByAdmin = asyncHandler(async (req, res) => {
 export const getStudentPayments = asyncHandler(async (req, res) => {
   const payments = await Payment.find({
     studentId: req.user._id,
-    $or: [
-      { status: { $in: ["pending", "paid"] } },
-      { paymentStatus: { $in: ["pending", "paid"] } },
-    ],
   })
-    .populate("courseId", "title slug")
+    .populate("courseId", "title slug price currency")
+    .populate(
+      "paymentAttemptId",
+      "status expiresAt orderId paymentReference transactionSignature",
+    )
     .sort({ createdAt: -1 });
+
+  const safePayments = payments.map((paymentDocument) => {
+    const payment = typeof paymentDocument?.toObject === "function"
+      ? paymentDocument.toObject()
+      : paymentDocument || {};
+    const attempt = payment.paymentAttemptId && typeof payment.paymentAttemptId === "object"
+      ? payment.paymentAttemptId
+      : null;
+    const course = payment.courseId && typeof payment.courseId === "object"
+      ? payment.courseId
+      : payment.courseId;
+
+    return {
+      _id: payment._id,
+      orderId: payment.orderId?._id || payment.orderId || null,
+      courseId: course && typeof course === "object"
+        ? {
+            _id: course._id,
+            title: course.title,
+            slug: course.slug,
+            price: course.price,
+            currency: course.currency,
+          }
+        : course,
+      paymentAttemptId: attempt
+        ? {
+            _id: attempt._id,
+            orderId: attempt.orderId?._id || attempt.orderId || null,
+            status: attempt.status,
+            expiresAt: attempt.expiresAt,
+          }
+        : payment.paymentAttemptId || null,
+      attemptStatus: attempt?.status,
+      baseAmountUsdCents: payment.baseAmountUsdCents,
+      originalBaseAmountUsdCents: payment.originalBaseAmountUsdCents,
+      couponCode: payment.couponCode,
+      discountAmountUsdCents: payment.discountAmountUsdCents,
+      pricingRegion: payment.pricingRegion,
+      sourcePriceAmount: payment.sourcePriceAmount,
+      sourcePriceCurrency: payment.sourcePriceCurrency,
+      amount: payment.amount,
+      gatewayAmount: payment.gatewayAmount,
+      currency: payment.currency,
+      gatewayCurrency: payment.gatewayCurrency,
+      exchangeRate: payment.exchangeRate,
+      provider: payment.provider,
+      paymentMethod: payment.paymentMethod,
+      status: payment.status,
+      paymentStatus: payment.paymentStatus,
+      paymentReference: payment.paymentReference,
+      transactionId: payment.transactionId,
+      transactionSignature:
+        attempt?.transactionSignature || payment.transactionSignature,
+      network: payment.network,
+      expiresAt: attempt?.expiresAt || payment.expiresAt,
+      paidAt: payment.paidAt,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+    };
+  });
 
   return res.json(
     new ApiResponse({
       message: "Student payments fetched successfully",
-      data: payments,
+      data: safePayments,
     }),
   );
 });

@@ -20,6 +20,7 @@ import {
   BadgeCheck,
   BellRing,
   CheckCircle2,
+  Copy,
 } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { buildAuthHeaders, getApiBase, parseJsonResponse } from "../../services/http.js";
@@ -141,6 +142,15 @@ const PAGE_TEXT = {
   "Create teacher": "ایجاد مدرس",
   "Create a teacher account with the email address they will use to sign in.":
     "یک حساب مدرس با همان ایمیلی ایجاد کنید که برای ورود استفاده خواهد شد.",
+  "Teacher created successfully": "حساب مدرس با موفقیت ایجاد شد",
+  "Share these credentials with the teacher": "این اطلاعات ورود را با مدرس شریک کنید",
+  "This temporary password is shown only once. Ask the teacher to change it after signing in.":
+    "این رمز عبور موقت فقط یک بار نمایش داده می‌شود. از مدرس بخواهید پس از ورود آن را تغییر دهد.",
+  "Sign-in email": "ایمیل ورود",
+  "Temporary password": "رمز عبور موقت",
+  "Copy password": "کپی رمز عبور",
+  Copied: "کپی شد",
+  "I have saved the password": "رمز عبور را ذخیره کردم",
   "Teacher email": "ایمیل مدرس",
   "Contract date": "تاریخ قرارداد",
   "Contract end date": "تاریخ پایان قرارداد",
@@ -455,6 +465,8 @@ export default function AdminTeachersPage() {
   const [newTeacherValidUntil, setNewTeacherValidUntil] = useState("");
   const [createTeacherError, setCreateTeacherError] = useState("");
   const [isCreatingTeacher, setIsCreatingTeacher] = useState(false);
+  const [createdTeacherCredentials, setCreatedTeacherCredentials] = useState(null);
+  const [didCopyTemporaryPassword, setDidCopyTemporaryPassword] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editTeacherError, setEditTeacherError] = useState("");
   const [isSavingTeacher, setIsSavingTeacher] = useState(false);
@@ -1059,10 +1071,17 @@ export default function AdminTeachersPage() {
         throw new Error(data?.message || pageTr("Unable to create teacher"));
       }
 
+      const createdEmail = String(data?.teacher?.email || newTeacherEmail).trim();
+      const temporaryPassword = String(data?.temporaryPassword || "").trim();
+
       setNewTeacherEmail("");
       setNewTeacherContractDate("");
       setNewTeacherValidUntil("");
       setIsCreateModalOpen(false);
+      setDidCopyTemporaryPassword(false);
+      setCreatedTeacherCredentials(
+        temporaryPassword ? { email: createdEmail, temporaryPassword } : null,
+      );
       setPage(1);
       clearAdminPageCache("admin:teachers");
       setRefreshKey((prev) => prev + 1);
@@ -1070,6 +1089,42 @@ export default function AdminTeachersPage() {
       setCreateTeacherError(error.message || pageTr("Unable to create teacher"));
     } finally {
       setIsCreatingTeacher(false);
+    }
+  };
+
+  const copyTemporaryPassword = async () => {
+    if (!createdTeacherCredentials?.temporaryPassword) return;
+
+    try {
+      let copied = false;
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(createdTeacherCredentials.temporaryPassword);
+          copied = true;
+        } catch {
+          copied = false;
+        }
+      }
+
+      if (!copied) {
+        const textarea = document.createElement("textarea");
+        textarea.value = createdTeacherCredentials.temporaryPassword;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        try {
+          textarea.select();
+          copied = document.execCommand("copy");
+        } finally {
+          textarea.remove();
+        }
+      }
+
+      if (!copied) throw new Error("Clipboard copy failed");
+      setDidCopyTemporaryPassword(true);
+    } catch {
+      setDidCopyTemporaryPassword(false);
     }
   };
 
@@ -1459,6 +1514,86 @@ export default function AdminTeachersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {createdTeacherCredentials ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[2px]"
+          dir={isRTL ? "rtl" : "ltr"}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="created-teacher-credentials-title"
+        >
+          <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                <CheckCircle2 size={24} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-600">
+                  {pageTr("Teacher created successfully")}
+                </p>
+                <h3
+                  id="created-teacher-credentials-title"
+                  className="mt-2 text-xl font-extrabold text-slate-800"
+                >
+                  {pageTr("Share these credentials with the teacher")}
+                </h3>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                  {pageTr("This temporary password is shown only once. Ask the teacher to change it after signing in.")}
+                </p>
+              </div>
+            </div>
+
+            <dl className="mt-6 space-y-4">
+              <div>
+                <dt className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                  {pageTr("Sign-in email")}
+                </dt>
+                <dd className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm font-bold text-slate-800" dir="ltr">
+                  {createdTeacherCredentials.email}
+                </dd>
+              </div>
+              <div>
+                <dt className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                  {pageTr("Temporary password")}
+                </dt>
+                <dd className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={createdTeacherCredentials.temporaryPassword}
+                    onFocus={(event) => event.currentTarget.select()}
+                    className="h-12 min-w-0 flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 font-mono text-sm font-bold text-slate-900 outline-none focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10"
+                    dir="ltr"
+                    aria-label={pageTr("Temporary password")}
+                  />
+                  <button
+                    type="button"
+                    onClick={copyTemporaryPassword}
+                    className="inline-flex h-12 shrink-0 items-center gap-2 rounded-2xl bg-primary-600 px-4 text-sm font-bold text-white transition hover:bg-primary-700"
+                  >
+                    {didCopyTemporaryPassword ? <CheckCircle2 size={17} /> : <Copy size={17} />}
+                    {pageTr(didCopyTemporaryPassword ? "Copied" : "Copy password")}
+                  </button>
+                </dd>
+              </div>
+            </dl>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreatedTeacherCredentials(null);
+                  setDidCopyTemporaryPassword(false);
+                }}
+                className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800"
+              >
+                {pageTr("I have saved the password")}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

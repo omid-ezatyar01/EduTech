@@ -26,7 +26,9 @@ const copy = {
 };
 
 const publicArticleUrl = (slug) => {
-  const configured = String(import.meta.env.VITE_PUBLIC_SITE_URL || "").replace(/\/+$/, "");
+  const configured = String(
+    import.meta.env.VITE_PUBLIC_SITE_URL || import.meta.env.VITE_SITE_URL || "",
+  ).replace(/\/+$/, "");
   if (configured) return `${configured}/blog/${slug}`;
   if (["localhost", "127.0.0.1"].includes(window.location.hostname)) return `${window.location.protocol}//${window.location.hostname}:5173/blog/${slug}`;
   return `https://edutech.study/blog/${slug}`;

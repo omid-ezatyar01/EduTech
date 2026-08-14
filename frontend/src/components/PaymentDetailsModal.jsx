@@ -6,7 +6,9 @@ import {
   XCircle,
   Undo2,
   ExternalLink,
+  AlertTriangle,
 } from "lucide-react";
+import { Link } from "react-router";
 
 export default function PaymentDetailsModal({
   isOpen,
@@ -28,8 +30,11 @@ export default function PaymentDetailsModal({
       ? "برای تکمیل این پرداخت، به صفحه پرداخت برگردید."
       : "Return to the payment page to complete this payment.",
     hostedPendingHelp: isFa
-      ? "این پرداخت هنوز در انتظار تایید است. برای ادامه، به صفحه پرداخت برگردید."
-      : "This payment is still waiting for confirmation. Return to the payment page to continue.",
+      ? "این پرداخت هنوز در انتظار تایید است. وضعیت آن را در EduTech پیگیری کنید؛ درگاه قبلی دوباره باز نمی‌شود."
+      : "This payment is still waiting for confirmation. Track it inside EduTech; the old gateway session will not be reopened.",
+    expiredDirectHelp: isFa
+      ? "این درخواست برای پرداخت جدید منقضی شده است. فقط اگر پیش از مهلت پول را فرستاده‌اید، TXID همان تراکنش را ثبت کنید."
+      : "This request is expired for new payments. Only submit the TXID if you sent the funds before the deadline.",
     trustWalletHelp: isFa
       ? "این روش پرداخت مستقیم به آدرس Trust Wallet فروشنده روی BSC (BEP20) انجام می‌شود."
       : "This method sends payment directly to the merchant Trust Wallet on BSC (BEP20).",
@@ -37,6 +42,14 @@ export default function PaymentDetailsModal({
       ? "این پرداخت هنوز نهایی نشده است."
       : "This payment is not completed yet.",
     continuePayment: isFa ? "بازگشت به صفحه پرداخت" : "Back to payment page",
+    verifyPriorTransaction: isFa ? "ثبت TXID پرداخت قبلی" : "Verify prior transaction",
+    contactSupport: isFa ? "تماس با پشتیبانی" : "Contact support",
+    duplicateHelp: isFa
+      ? "این پرداخت تکراری است و ممکن است نیازمند بازپرداخت باشد. دوباره پرداخت نکنید و شناسه پرداخت را برای پشتیبانی ارسال کنید."
+      : "This is a duplicate payment and may require a refund. Do not pay again; send the payment reference to support.",
+    manualReviewHelp: isFa
+      ? "این پرداخت نیازمند بررسی دستی است. دوباره پرداخت نکنید و برای پیگیری با پشتیبانی تماس بگیرید."
+      : "This payment needs manual review. Do not pay again; contact support to follow up.",
     downloadInvoice: isFa ? "دانلود فاکتور" : "Download Invoice",
   };
 
@@ -49,10 +62,13 @@ export default function PaymentDetailsModal({
       return <Clock size={32} className="text-amber-500" />;
     if (status === "failed")
       return <XCircle size={32} className="text-red-500" />;
+    if (["duplicate", "review"].includes(status))
+      return <AlertTriangle size={32} className="text-amber-600" />;
     return <Undo2 size={32} className="text-blue-500" />;
   };
 
   const isPendingPayment = payment.status === "pending";
+  const needsSupport = ["duplicate", "review"].includes(payment.status);
   const canResumePendingPayment = Boolean(payment?.canResumePendingPayment);
   const infoRows = [
     { label: t.invoiceNumber, value: payment.invoice, mono: true },
@@ -120,9 +136,13 @@ export default function PaymentDetailsModal({
                     </div>
                   ) : null}
                   <p className="text-sm font-black text-slate-900">
-                    {payment.supportsTxHashVerification || payment.isPendingHesabPay
-                      ? t.pendingHelp
-                      : t.hostedPendingHelp}
+                    {payment.isExpiredDirectBsc
+                      ? t.expiredDirectHelp
+                      : payment.isPendingHesabPay
+                        ? t.hostedPendingHelp
+                        : payment.supportsTxHashVerification
+                          ? t.pendingHelp
+                          : t.hostedPendingHelp}
                   </p>
                   {payment.supportsTxHashVerification ? (
                     <>
@@ -139,9 +159,27 @@ export default function PaymentDetailsModal({
                       className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-primary-200 bg-white px-4 text-sm font-black text-primary-700 transition hover:bg-primary-50"
                     >
                       <ExternalLink size={16} />
-                      <span>{t.continuePayment}</span>
+                      <span>
+                        {payment.isExpiredDirectBsc ? t.verifyPriorTransaction : t.continuePayment}
+                      </span>
                     </button>
                   </div>
+                </div>
+              ) : null}
+
+              {needsSupport ? (
+                <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+                  <p className="text-sm font-black leading-7">
+                    {payment.status === "duplicate" ? t.duplicateHelp : t.manualReviewHelp}
+                  </p>
+                  <Link
+                    to="/student/support"
+                    onClick={onClose}
+                    className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-amber-300 bg-white px-4 text-sm font-black text-amber-800 transition hover:bg-amber-100"
+                  >
+                    <ExternalLink size={16} />
+                    <span>{t.contactSupport}</span>
+                  </Link>
                 </div>
               ) : null}
             </div>

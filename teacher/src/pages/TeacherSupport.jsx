@@ -97,7 +97,9 @@ export default function TeacherSupport() {
   const incomingTypingTimerRef = useRef(null);
   const loadingOlderRef = useRef(false);
   const selectedTicketRef = useRef(selectedId);
-  selectedTicketRef.current = selectedId;
+  useEffect(() => {
+    selectedTicketRef.current = selectedId;
+  }, [selectedId]);
   usePersistentFormDraft({
     draftId: "support:new-ticket",
     value: form,

@@ -5,6 +5,8 @@ const statusStyles = {
   pending: "bg-amber-50 text-amber-700",
   failed: "bg-red-50 text-red-700",
   refunded: "bg-blue-50 text-blue-700",
+  review: "bg-amber-50 text-amber-800",
+  duplicate: "bg-orange-50 text-orange-800",
 };
 
 export default function PaymentTable({

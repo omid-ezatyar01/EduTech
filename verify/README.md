@@ -5,14 +5,23 @@ Standalone public certificate verification application.
 ## Development
 
 ```bash
+cp .env.example .env.development
 npm install
 npm run dev
 ```
 
 The application reads:
 
-- `VITE_API_BASE_URL`
+- `VITE_API_URL` (preferred shared API base variable)
+- `VITE_API_BASE_URL` (backward-compatible fallback)
 - `VITE_VERIFY_ENDPOINT`
+
+When both API base variables are set, `VITE_API_URL` takes precedence. The API
+base may include `/api/v1`; duplicate API path segments are normalized when the
+verification URL is built.
+
+Production builds do not load `.env.development`. Inject the public `VITE_*`
+values in the deployment environment or use an untracked `.env.production` file.
 
 ## Verification
 

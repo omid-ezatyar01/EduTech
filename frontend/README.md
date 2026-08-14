@@ -2,7 +2,11 @@
 
 ## Environment
 
-Create a local env file from [`frontend/.env.example`](./.env.example).
+Create a local development file from [`frontend/.env.example`](./.env.example):
+
+```bash
+cp .env.example .env.development
+```
 
 Required values:
 
@@ -24,6 +28,10 @@ npm run dev
 ```bash
 npm run build
 ```
+
+Production builds do not load `.env.development`. Inject `VITE_API_URL` and
+`VITE_SITE_URL` in CI/hosting, or place production values in an untracked
+`.env.production` file before building.
 
 ## Deployment Notes
 

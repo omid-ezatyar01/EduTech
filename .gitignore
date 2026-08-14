@@ -4,13 +4,11 @@ frontend/node_modules/
 teacher/node_modules/
 admin/node_modules/
 
+# Local environment files (keep sanitized templates in Git).
 .env
-.env.development
-backend/.env
-frontend/.env
-teacher/.env
-admin/.env
-verify/.env
+.env.*
+!.env.example
+!**/.env.example
 
 dist/
 build/
@@ -28,3 +26,4 @@ backend/cache/*
 
 # User-generated runtime files belong in persistent storage, not Git.
 backend/uploads/
+backend/public/uploads/

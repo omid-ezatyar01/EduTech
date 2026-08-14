@@ -3,7 +3,7 @@ import axios from "axios";
 const DEFAULT_TIMEOUT = 10_000;
 
 const getBaseUrl = () => {
-  return (process.env.HESABPAY_BASE_URL || "https://api.hesab.com").replace(
+  return (process.env.HESABPAY_BASE_URL || "https://api-sandbox.hesab.com").replace(
     /\/+$/,
     "",
   );
@@ -22,26 +22,36 @@ const hesabpayClient = axios.create({
 });
 
 const sanitizeAxiosError = (error, fallbackMessage) => {
+  if (error?.provider === "HESABPAY") {
+    return error;
+  }
   if (error.response) {
+    const responseStatus = Number(error.response.status);
     return {
+      provider: "HESABPAY",
       message: error.response.data?.message || fallbackMessage,
       status: error.response.status,
       data: error.response.data,
+      definitiveFailure: responseStatus >= 400 && responseStatus < 500,
     };
   }
 
   if (error.request) {
     return {
+      provider: "HESABPAY",
       message: "No response received from HesabPay",
       status: 503,
       data: null,
+      definitiveFailure: false,
     };
   }
 
   return {
+    provider: "HESABPAY",
     message: error.message || fallbackMessage,
     status: 500,
     data: null,
+    definitiveFailure: false,
   };
 };
 
@@ -52,19 +62,6 @@ const pickFirstString = (...values) => {
     }
   }
   return null;
-};
-
-const looksLikeUrl = (value) => {
-  return (
-    typeof value === "string" &&
-    /^https?:\/\/[^\s]+$/i.test(value.trim())
-  );
-};
-
-const findUrlInText = (value) => {
-  if (typeof value !== "string" || !value.trim()) return null;
-  const match = value.match(/https?:\/\/[^\s"'<>]+/i);
-  return match ? match[0].trim() : null;
 };
 
 const tryParseJsonString = (value) => {
@@ -79,62 +76,58 @@ const tryParseJsonString = (value) => {
   }
 };
 
-const findStringByKeyMatch = (obj, keyRegex) => {
-  if (!obj || typeof obj !== "object") return null;
+const HESAB_CHECKOUT_DOMAINS = ["hesab.com", "hesabpay.com"];
 
-  const stack = [obj];
-  const visited = new Set();
-
-  while (stack.length) {
-    const current = stack.pop();
-    if (!current || typeof current !== "object" || visited.has(current)) {
-      continue;
-    }
-    visited.add(current);
-
-    for (const [key, value] of Object.entries(current)) {
-      if (typeof value === "string" && keyRegex.test(key) && value.trim()) {
-        return value.trim();
-      }
-      if (value && typeof value === "object") {
-        stack.push(value);
-      }
-    }
+export const isValidHesabCheckoutUrl = (value) => {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const parsed = new URL(value.trim());
+    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+    const isHesabHostname = HESAB_CHECKOUT_DOMAINS.some(
+      (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
+    );
+    return (
+      parsed.protocol === "https:" &&
+      !parsed.username &&
+      !parsed.password &&
+      isHesabHostname
+    );
+  } catch {
+    return false;
   }
+};
 
+const normalizeProviderIdentifier = (value) => {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const normalized = String(value).trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(normalized)
+    ? normalized
+    : null;
+};
+
+const pickFirstProviderIdentifier = (...values) => {
+  for (const value of values) {
+    const normalized = normalizeProviderIdentifier(value);
+    if (normalized) return normalized;
+  }
   return null;
 };
 
-const findFirstUrlInObject = (obj) => {
-  if (!obj || typeof obj !== "object") return null;
-
-  const stack = [obj];
-  const visited = new Set();
-
-  while (stack.length) {
-    const current = stack.pop();
-    if (!current || typeof current !== "object" || visited.has(current)) {
-      continue;
-    }
-    visited.add(current);
-
-    for (const value of Object.values(current)) {
-      if (looksLikeUrl(value)) return value.trim();
-      if (typeof value === "string") {
-        const maybeUrl = findUrlInText(value);
-        if (maybeUrl) return maybeUrl;
-      }
-      if (value && typeof value === "object") {
-        stack.push(value);
-      }
-    }
-  }
-
-  return null;
-};
+const makeProviderResponseError = (
+  message,
+  data = null,
+  definitiveFailure = false,
+) => ({
+  provider: "HESABPAY",
+  status: 502,
+  message,
+  data,
+  definitiveFailure,
+});
 
 export const createPaymentSession = async ({
   email,
+  userId,
   items,
   currency = "USD",
   amount,
@@ -145,8 +138,10 @@ export const createPaymentSession = async ({
 
   if (!apiKey) {
     throw {
+      provider: "HESABPAY",
       status: 500,
       message: "Missing HESABPAY_API_KEY configuration",
+      definitiveFailure: true,
     };
   }
 
@@ -161,6 +156,7 @@ export const createPaymentSession = async ({
       `${getBaseUrl()}/api/v1/payment/create-session`,
       {
         email,
+        ...(userId ? { user_id: String(userId) } : {}),
         currency: normalizedCurrency,
         ...(Number.isFinite(Number(amount)) && Number(amount) > 0
           ? { amount: Number(amount) }
@@ -188,7 +184,7 @@ export const createPaymentSession = async ({
           ? raw.payment
           : {};
 
-    const paymentUrlFromKnownKeys = pickFirstString(
+    const paymentUrl = pickFirstString(
       payload.payment_url,
       raw.payment_url,
       payload.checkout_url,
@@ -203,21 +199,7 @@ export const createPaymentSession = async ({
       nestedPayment.link,
     );
 
-    const paymentUrlByScan = findStringByKeyMatch(
-      { payload, raw, nestedPayment },
-      /(payment.*url|checkout.*url|redirect.*url|url|link)/i,
-    );
-
-    const paymentUrl = pickFirstString(
-      paymentUrlFromKnownKeys,
-      paymentUrlByScan,
-      findFirstUrlInObject({ payload, raw, nestedPayment }),
-      findUrlInText(JSON.stringify(raw)),
-      findUrlInText(typeof rawIncoming === "string" ? rawIncoming : ""),
-      looksLikeUrl(rawIncoming) ? rawIncoming.trim() : null,
-    );
-
-    const sessionIdFromKnownKeys = pickFirstString(
+    const sessionId = pickFirstProviderIdentifier(
       payload.session_id,
       raw.session_id,
       payload.sessionId,
@@ -225,29 +207,10 @@ export const createPaymentSession = async ({
       nestedPayment.session_id,
       nestedPayment.sessionId,
     );
-    const sessionIdByScan = findStringByKeyMatch(
-      { payload, raw, nestedPayment },
-      /(session.*id|session|checkout.*id|payment.*id|id)/i,
-    );
-    const sessionIdFromUrl =
-      typeof paymentUrl === "string"
-        ? paymentUrl.match(/\/pay\/([^/?#]+)/i)?.[1] || null
-        : null;
-    const sessionIdFromText = pickFirstString(
-      findStringByKeyMatch(
-        { payload, raw, nestedPayment },
-        /(session.*id|session|checkout.*id|payment.*id|id|reference)/i,
-      ),
-      typeof rawIncoming === "string"
-        ? rawIncoming.match(/\b(sess_[A-Za-z0-9_-]+)\b/i)?.[1] || null
-        : null,
-      JSON.stringify(raw).match(/\b(sess_[A-Za-z0-9_-]+)\b/i)?.[1] || null,
-    );
-    const sessionId = pickFirstString(
-      sessionIdFromKnownKeys,
-      sessionIdByScan,
-      sessionIdFromText,
-      sessionIdFromUrl,
+    const paymentId = pickFirstProviderIdentifier(
+      payload.payment_id,
+      raw.payment_id,
+      nestedPayment.payment_id,
     );
 
     const statusCode =
@@ -256,22 +219,38 @@ export const createPaymentSession = async ({
       payload.code ??
       raw.code ??
       null;
-    const normalizedSuccess =
-      typeof payload.success === "boolean"
-        ? payload.success
-        : typeof raw.success === "boolean"
-          ? raw.success
-          : statusCode !== null && statusCode !== undefined
-            ? Number(statusCode) === 10
-            : Boolean(paymentUrl);
+    const success = payload.success === true || raw.success === true;
+
+    if (!success || Number(statusCode) !== 10) {
+      const explicitRejection =
+        payload.success === false ||
+        raw.success === false ||
+        (
+          statusCode !== null &&
+          statusCode !== undefined &&
+          Number(statusCode) !== 10
+        );
+      throw makeProviderResponseError(
+        payload.message || raw.message || "HesabPay rejected the payment session request",
+        raw,
+        explicitRejection,
+      );
+    }
+    if (!isValidHesabCheckoutUrl(paymentUrl)) {
+      throw makeProviderResponseError(
+        "HesabPay did not return a valid HTTPS checkout URL",
+        raw,
+      );
+    }
 
     return {
       ...payload,
       rawResponse: raw,
       session_id: sessionId,
-      payment_url: paymentUrl,
+      payment_id: paymentId,
+      payment_url: paymentUrl.trim(),
       expires_at: payload.expires_at || raw.expires_at || nestedPayment.expires_at || null,
-      success: normalizedSuccess,
+      success: true,
       status_code: statusCode,
       message: payload.message || raw.message || "",
     };

@@ -2,7 +2,7 @@ import axios from "axios";
 
 const env = import.meta.env || {};
 const API_BASE_URL = String(
-  env.VITE_API_BASE_URL || "https://api.edutech.study",
+  env.VITE_API_URL || env.VITE_API_BASE_URL || "https://api.edutech.study",
 ).replace(/\/+$/, "");
 const VERIFY_ENDPOINT = String(
   env.VITE_VERIFY_ENDPOINT || "/api/v1/certificates/verify",

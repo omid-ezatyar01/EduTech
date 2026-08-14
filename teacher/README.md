@@ -4,9 +4,13 @@ This is the instructor portal for EduTech. It is a Vite + React single-page app 
 
 ## Environment
 
-Copy `.env.example` to `.env` and set:
+Copy `.env.example` to `.env.development` and set:
 
 ```bash
+cp .env.example .env.development
+```
+
+```env
 VITE_API_URL=https://api.example.com/api/v1
 ```
 
@@ -27,6 +31,9 @@ npm run dev
 ```bash
 npm run build
 ```
+
+Production builds do not load `.env.development`. Inject the public `VITE_*`
+values in the deployment environment or use an untracked `.env.production` file.
 
 ## Deployment Notes
 
