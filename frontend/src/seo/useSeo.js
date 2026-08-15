@@ -131,6 +131,26 @@ function getSeoConfig(pathname, language) {
       ],
     },
     {
+      match: /^\/bootcamps\/?$/,
+      title: isFa
+        ? "بوت‌کمپ‌های رایگان | آکادمی ایجوتک"
+        : "Free Bootcamps | EduTech Academy",
+      description: isFa
+        ? "در بوت‌کمپ‌های رایگان ایجوتک ثبت‌نام کنید و پس از تکمیل ظرفیت با مدرس‌های حرفه‌ای در جلسات زنده شرکت کنید."
+        : "Register for free EduTech bootcamps and join live sessions with expert teachers once the required group is ready.",
+      keywords: ["free bootcamp", "live bootcamp", "بوت کمپ رایگان", "ثبت نام بوت کمپ"],
+    },
+    {
+      match: /^\/bootcamps\/[^/]+\/?$/,
+      title: isFa
+        ? "ثبت‌نام بوت‌کمپ رایگان | آکادمی ایجوتک"
+        : "Free Bootcamp Registration | EduTech Academy",
+      description: isFa
+        ? "جزئیات بوت‌کمپ، تعداد ثبت‌نام‌ها و فرم ثبت‌نام رایگان را مشاهده کنید."
+        : "View bootcamp details, registration progress, and reserve your free place.",
+      keywords: ["bootcamp registration", "free course", "ثبت نام رایگان", "بوت کمپ"],
+    },
+    {
       match: /^\/live-courses\/category\/[^/]+\/?$/,
       title: isFa
         ? "دسته‌بندی دوره‌ها | آکادمی ایجوتک"

@@ -22,11 +22,19 @@ test("hero media validation accepts images and rejects videos", () => {
   const image = createHeroMediaSchema.validate({
     mediaType: "image",
     mediaUrl: "/uploads/hero-media/hero-test-1.webp",
+    linkUrl: "/packages/web-development",
     sortOrder: 2,
     displayDurationSeconds: 7,
   });
   assert.equal(image.error, undefined);
   assert.equal(image.value.status, "active");
+
+  assert.equal(
+    updateHeroMediaSchema.validate({ linkUrl: "https://edutech.study/packages" }).error,
+    undefined,
+  );
+  assert.ok(updateHeroMediaSchema.validate({ linkUrl: "javascript:alert(1)" }).error);
+  assert.ok(updateHeroMediaSchema.validate({ linkUrl: "//unsafe.example" }).error);
 
   const video = createHeroMediaSchema.validate({
     mediaType: "video",

@@ -23,6 +23,7 @@ const activeEnrollmentFilter = (now = new Date()) => ({
 });
 
 const buildTeacherCourseFilter = (teacherId) => ({
+  isBootcampInternal: { $ne: true },
   status: "published",
   isPublished: true,
   classEndedAt: null,
@@ -311,6 +312,7 @@ export const getPublicTeachers = asyncHandler(async (req, res) => {
   const teacherIds = teachers.map((teacher) => teacher._id);
   const publishedCourses = teacherIds.length
     ? await Course.find({
+        isBootcampInternal: { $ne: true },
         status: "published",
         isPublished: true,
         $or: [

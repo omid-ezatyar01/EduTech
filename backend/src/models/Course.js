@@ -215,6 +215,11 @@ const courseSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isBootcampInternal: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     pricingType: {
       type: String,
       enum: ["single", "regional"],

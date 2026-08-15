@@ -32,6 +32,7 @@ const menuItems = [
   { key: "certificates", icon: Award, path: "/certificates" },
   { key: "courses", icon: BookOpen, path: "/courses" },
   { key: "packages", icon: Boxes, path: "/packages" },
+  { key: "bootcamps", icon: UsersRound, path: "/bootcamps" },
   { key: "categories", icon: Layers, path: "/categories" },
   { key: "videos", icon: Clapperboard, path: "/videos" },
   { key: "articles", icon: Newspaper, path: "/articles" },

@@ -9,7 +9,7 @@ import {
   AuthVisual,
 } from "../components/AuthComponents.jsx";
 
-import { PORTAL_CONFIG, saveAuth, clearAuth } from "../../services/portal.js";
+import { PORTAL_CONFIG, consumePostAuthRedirect, saveAuth, clearAuth } from "../../services/portal.js";
 import { consumeAuthNotice } from "../../services/portal.js";
 import { getApiBase } from "../../services/http.js";
 import {
@@ -126,7 +126,7 @@ export default function LoginPage({ language = "fa" }) {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    navigate(PORTAL_CONFIG.dashboardPath, { replace: true });
+    navigate(consumePostAuthRedirect(), { replace: true });
   }, [isAuthenticated, navigate]);
 
   useEffect(() => {
@@ -172,7 +172,7 @@ export default function LoginPage({ language = "fa" }) {
           }
           saveAuth(result);
           clearQueryString();
-          navigate(PORTAL_CONFIG.dashboardPath, { replace: true });
+          navigate(consumePostAuthRedirect(), { replace: true });
         } catch (err) {
           setError(
             err.message === "WRONG_ROLE"
@@ -266,7 +266,7 @@ export default function LoginPage({ language = "fa" }) {
       }
 
       saveAuth(data);
-      navigate(PORTAL_CONFIG.dashboardPath);
+      navigate(consumePostAuthRedirect());
     } catch (err) {
       if (err.message === "WRONG_ROLE") {
         setError(

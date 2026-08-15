@@ -4,7 +4,7 @@ import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { removeHeroMediaIfLocal, saveHeroMediaFromUpload } from "../utils/heroMediaFile.js";
 
-const safeFields = "mediaType mediaUrl title altText status sortOrder displayDurationSeconds createdAt updatedAt";
+const safeFields = "mediaType mediaUrl linkUrl title altText status sortOrder displayDurationSeconds createdAt updatedAt";
 
 export const getPublicHeroMedia = asyncHandler(async (_req, res) => {
   const items = await HeroMedia.find({ status: "active", mediaType: "image" })

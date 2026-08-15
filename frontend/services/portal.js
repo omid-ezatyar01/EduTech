@@ -9,6 +9,7 @@ export const PORTAL_CONFIG = {
   loginPath: "/login",
 };
 const AUTH_NOTICE_KEY = "edutech_auth_notice";
+const POST_AUTH_REDIRECT_KEY = "edutech_post_auth_redirect";
 const TERMINAL_AUTH_CODES = new Set([
   "AUTH_TOKEN_MISSING",
   "AUTH_TOKEN_EXPIRED",
@@ -30,6 +31,18 @@ export const getStoredJson = (key, fallback = null) => {
 };
 
 export const getAuthUser = () => getStoredJson("edutech_user", null);
+
+export const setPostAuthRedirect = (path = "") => {
+  const value = String(path || "").trim();
+  if (!value.startsWith("/") || value.startsWith("//")) return;
+  localStorage.setItem(POST_AUTH_REDIRECT_KEY, value);
+};
+
+export const consumePostAuthRedirect = (fallback = PORTAL_CONFIG.dashboardPath) => {
+  const value = localStorage.getItem(POST_AUTH_REDIRECT_KEY) || "";
+  localStorage.removeItem(POST_AUTH_REDIRECT_KEY);
+  return value.startsWith("/") && !value.startsWith("//") ? value : fallback;
+};
 
 export const getToken = () => localStorage.getItem("edutech_token");
 

@@ -11,6 +11,7 @@ import {
   ArrowRight,
   RefreshCw,
   TrendingUp,
+  UsersRound,
 } from "lucide-react";
 import { Link } from "react-router";
 import { useNavigate } from "react-router";
@@ -25,6 +26,7 @@ import {
   fetchStudentLiveSessions,
 } from "../../services/courseService.js";
 import { fetchTeacherNotifications } from "../../services/teacherSocialService.js";
+import { fetchStudentBootcampRegistrations } from "../../services/bootcampService.js";
 import { clearAuth, getAuthUser, setAuthNotice } from "../../services/portal.js";
 import { isUnauthorizedError } from "../../services/http.js";
 import { resolveStudentCourseProgressPercent } from "../utils/courseProgress.js";
@@ -419,6 +421,7 @@ export default function StudentDashboardPage({ language = "fa" }) {
   const [upcomingSessionRows, setUpcomingSessionRows] = useState([]);
   const [todayCourse, setTodayCourse] = useState(null);
   const [upcomingWeekSessionCount, setUpcomingWeekSessionCount] = useState(0);
+  const [bootcampRegistrations, setBootcampRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isRedirecting, setIsRedirecting] = useState(false);
@@ -432,10 +435,11 @@ export default function StudentDashboardPage({ language = "fa" }) {
       try {
         setLoading(true);
         setError("");
-        const [enrollmentResult, liveSessionResult, notificationResult] = await Promise.allSettled([
+        const [enrollmentResult, liveSessionResult, notificationResult, bootcampResult] = await Promise.allSettled([
           fetchStudentEnrollments(),
           fetchStudentLiveSessions({ page: 1, limit: 100 }),
           fetchTeacherNotifications(),
+          fetchStudentBootcampRegistrations(),
         ]);
 
         if (!mounted) return;
@@ -536,6 +540,12 @@ export default function StudentDashboardPage({ language = "fa" }) {
         } else {
           setNotificationRows([]);
           setUnreadNotificationCount(0);
+        }
+
+        if (bootcampResult.status === "fulfilled") {
+          setBootcampRegistrations(Array.isArray(bootcampResult.value) ? bootcampResult.value : []);
+        } else {
+          setBootcampRegistrations([]);
         }
       } catch {
         if (!mounted) return;
@@ -753,6 +763,59 @@ export default function StudentDashboardPage({ language = "fa" }) {
             </div>
           </section>
         </div>
+
+        {bootcampRegistrations.length ? (
+          <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-50 text-teal-600">
+                  <UsersRound size={20} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-950">
+                    {language === "fa" ? "بوت‌کمپ‌های من" : "My Bootcamps"}
+                  </h2>
+                  <p className="mt-1 text-xs font-bold text-slate-500">
+                    {language === "fa" ? "جلسات بوت‌کمپ در برنامه و صنف آنلاین شما نمایش داده می‌شود." : "Bootcamp sessions appear in your schedule and live classes."}
+                  </p>
+                </div>
+              </div>
+              <Link to="/student/live" className="text-xs font-black text-primary-600">
+                {language === "fa" ? "جلسات زنده" : "Live sessions"}
+              </Link>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {bootcampRegistrations.map((registration) => {
+                const bootcamp = registration.bootcamp || {};
+                const title = bootcamp.title?.[language] || bootcamp.title?.[language === "fa" ? "en" : "fa"] || "Bootcamp";
+                const progress = Math.min(100, (Number(bootcamp.registeredCount || 0) / Math.max(1, Number(bootcamp.minimumStudents || 1))) * 100);
+                return (
+                  <Link key={registration._id} to={`/bootcamps/${bootcamp.slug}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-teal-300 hover:bg-teal-50/40">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="font-black text-slate-950">{title}</h3>
+                      <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-700">
+                        {language === "fa" ? "ثبت‌نام‌شده" : "Registered"}
+                      </span>
+                    </div>
+                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
+                      <div className="h-full rounded-full bg-teal-500" style={{ width: `${progress}%` }} />
+                    </div>
+                    <div className="mt-2 flex justify-between gap-3 text-xs font-bold text-slate-500">
+                      <span>{bootcamp.registeredCount || 0} / {bootcamp.minimumStudents || 1}</span>
+                      <span>{bootcamp.minimumReached ? (language === "fa" ? "حداقل تکمیل شد" : "Minimum reached") : (language === "fa" ? "در انتظار تکمیل حداقل" : "Waiting for minimum")}</span>
+                    </div>
+                    {bootcamp.plannedStartAt ? (
+                      <p className="mt-3 flex items-center gap-2 text-xs font-bold text-slate-600">
+                        <CalendarDays size={14} className="text-primary-600" />
+                        {new Date(bootcamp.plannedStartAt).toLocaleString(language === "fa" ? "fa-AF" : "en-US")}
+                      </p>
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-5 flex items-center justify-between">

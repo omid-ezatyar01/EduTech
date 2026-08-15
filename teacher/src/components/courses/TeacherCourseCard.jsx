@@ -81,11 +81,13 @@ export default function TeacherCourseCard({
         ? "Start class first"
         : "Request admin end review";
   const canRequestCancel =
+    !course.isBootcampInternal &&
     course.status !== "cancelled" &&
     !course.classCancelledAt &&
     !course.classEndedAt &&
     course.cancellationRequest?.status !== "pending";
   const canEditCourse =
+    !course.isBootcampInternal &&
     !course.classEndedAt &&
     course.lifecycleStatus !== "pending_review";
   const cancelTitle = course.cancellationRequest?.status === "pending"

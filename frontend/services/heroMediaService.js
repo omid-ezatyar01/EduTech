@@ -10,11 +10,22 @@ export const resolveHeroMediaUrl = (value = "") => {
   return path;
 };
 
+export const resolveHeroMediaLink = (value = "") => {
+  const link = String(value || "").trim();
+  if (!link) return "";
+  if (link.startsWith("/") && !link.startsWith("//")) return link;
+  try {
+    return ["http:", "https:"].includes(new URL(link).protocol) ? link : "";
+  } catch {
+    return "";
+  }
+};
+
 export const fetchPublicHeroMedia = async () => {
   const response = await fetchJsonWithCache(
     `${getApiBase()}/hero-media`,
     { cache: "no-store" },
-    { ttlMs: 60_000 },
+    { ttlMs: 0 },
   );
   return Array.isArray(response?.data) ? response.data : [];
 };

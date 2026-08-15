@@ -127,6 +127,7 @@ export const getPublishedCourses = asyncHandler(async (req, res) => {
   }
 
   const baseFilter = {
+    isBootcampInternal: { $ne: true },
     status: "published",
     isPublished: true,
     classEndedAt: null,
@@ -329,6 +330,7 @@ export const getPublishedCourseBySlug = asyncHandler(async (req, res) => {
     ? { $or: [{ slug: identifier }, { _id: identifier }] }
     : { slug: identifier };
   const lookupFilter = {
+    isBootcampInternal: { $ne: true },
     $and: [
       identifierFilter,
       {

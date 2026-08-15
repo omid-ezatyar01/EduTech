@@ -511,6 +511,9 @@ export const updateTeacherCourse = asyncHandler(async (req, res) => {
   if (!existingCourse) {
     throw new ApiError(404, "Course not found");
   }
+  if (existingCourse.isBootcampInternal) {
+    throw new ApiError(409, "Bootcamp details are managed by the administrator");
+  }
   const nextIsFreeForCertificate = Object.prototype.hasOwnProperty.call(payload, "isFree")
     ? Boolean(payload.isFree)
     : Boolean(existingCourse.isFree);
@@ -932,10 +935,13 @@ export const deleteTeacherCourse = asyncHandler(async (req, res) => {
   const existingCourse = await Course.findOne({
     _id: req.params.id,
     ...ownCourseFilter(req.user._id),
-  }).select("_id classEndedAt");
+  }).select("_id classEndedAt isBootcampInternal");
 
   if (!existingCourse) {
     throw new ApiError(404, "Course not found");
+  }
+  if (existingCourse.isBootcampInternal) {
+    throw new ApiError(409, "Bootcamps can only be deleted from bootcamp management");
   }
 
   if (existingCourse.classEndedAt) {
@@ -1043,6 +1049,10 @@ export const requestTeacherCourseCancellation = asyncHandler(async (req, res) =>
 
   if (!course) {
     throw new ApiError(404, "Course not found");
+  }
+
+  if (course.isBootcampInternal) {
+    throw new ApiError(409, "Bootcamp cancellation is managed by the administrator");
   }
 
   if (course.status === "cancelled" || course.classCancelledAt) {

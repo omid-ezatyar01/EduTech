@@ -6,8 +6,8 @@ import { translations } from "./data/translations.js";
 import { isConstrainedConnection } from "../services/http.js";
 import { getCurrentUser } from "../services/authService.js";
 import {
-  PORTAL_CONFIG,
   clearAuth,
+  consumePostAuthRedirect,
   getAuthUser,
   isCorrectRole,
   setAuthNotice,
@@ -28,6 +28,8 @@ const loadHomePage = () => import("./pages/HomePage.jsx");
 const loadLiveCoursesPage = () => import("./pages/LiveCoursesPage.jsx");
 const loadLearningPackagesPage = () => import("./pages/LearningPackagesPage.jsx");
 const loadLearningPackageDetailsPage = () => import("./pages/LearningPackageDetailsPage.jsx");
+const loadBootcampsPage = () => import("./pages/BootcampsPage.jsx");
+const loadBootcampDetailsPage = () => import("./pages/BootcampDetailsPage.jsx");
 const loadMobileCourseCategoryPage = () => import("./pages/MobileCourseCategoryPage.jsx");
 const loadCourseDetailsPage = () => import("./pages/CourseDetailsPage.jsx");
 const loadTeachersPage = () => import("./pages/TeachersPage.jsx");
@@ -63,6 +65,8 @@ const HomePage = lazy(loadHomePage);
 const LiveCoursesPage = lazy(loadLiveCoursesPage);
 const LearningPackagesPage = lazy(loadLearningPackagesPage);
 const LearningPackageDetailsPage = lazy(loadLearningPackageDetailsPage);
+const BootcampsPage = lazy(loadBootcampsPage);
+const BootcampDetailsPage = lazy(loadBootcampDetailsPage);
 const MobileCourseCategoryPage = lazy(loadMobileCourseCategoryPage);
 const CourseDetailsPage = lazy(loadCourseDetailsPage);
 const TeachersPage = lazy(loadTeachersPage);
@@ -125,6 +129,8 @@ const preloadRoutes = [
   { key: "live-courses", test: (path) => path === "/live-courses", load: loadLiveCoursesPage },
   { key: "packages", test: (path) => path === "/packages", load: loadLearningPackagesPage },
   { key: "package-details", test: (path) => path.startsWith("/packages/"), load: loadLearningPackageDetailsPage },
+  { key: "bootcamps", test: (path) => path === "/bootcamps", load: loadBootcampsPage },
+  { key: "bootcamp-details", test: (path) => path.startsWith("/bootcamps/"), load: loadBootcampDetailsPage },
   {
     key: "live-courses-category",
     test: (path) => path.startsWith("/live-courses/category/"),
@@ -264,7 +270,7 @@ function ProtectedRoute({ isAuthenticated, language, children }) {
 
 function AuthRoute({ isAuthenticated, children }) {
   if (isAuthenticated) {
-    return <Navigate to={PORTAL_CONFIG.dashboardPath} replace />;
+    return <Navigate to={consumePostAuthRedirect()} replace />;
   }
 
   return children;
@@ -409,6 +415,7 @@ export default function App() {
   else if (path.startsWith("/live-courses") || path.startsWith("/course/"))
     activeHref = "/live-courses";
   else if (path.startsWith("/packages")) activeHref = "/packages";
+  else if (path.startsWith("/bootcamps")) activeHref = "/bootcamps";
   else if (path === "/about") activeHref = "/about";
   else if (path === "/contact") activeHref = "/contact";
   else if (path.startsWith("/blog")) activeHref = "/blog";
@@ -450,6 +457,8 @@ export default function App() {
             <Route path="/live-courses" element={<LiveCoursesPage t={t} />} />
             <Route path="/packages" element={<LearningPackagesPage language={language} />} />
             <Route path="/packages/:slug" element={<LearningPackageDetailsPage language={language} />} />
+            <Route path="/bootcamps" element={<BootcampsPage language={language} />} />
+            <Route path="/bootcamps/:slug" element={<BootcampDetailsPage language={language} />} />
             <Route
               path="/live-courses/category/:categoryId"
               element={<MobileCourseCategoryPage t={t} />}

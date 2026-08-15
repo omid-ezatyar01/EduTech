@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import {
   fetchPublicHeroMedia,
+  resolveHeroMediaLink,
   resolveHeroMediaUrl,
 } from "../../services/heroMediaService.js";
 
@@ -42,6 +44,7 @@ export default function HeroMediaCarousel({ language = "fa", fallbackAlt = "" })
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const touchStartX = useRef(null);
+  const didSwipe = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -84,7 +87,8 @@ export default function HeroMediaCarousel({ language = "fa", fallbackAlt = "" })
     const distance = clientX - touchStartX.current;
     touchStartX.current = null;
     setIsPaused(false);
-    if (Math.abs(distance) < SWIPE_THRESHOLD_PX) return;
+    didSwipe.current = Math.abs(distance) >= SWIPE_THRESHOLD_PX;
+    if (!didSwipe.current) return;
     move(distance < 0 ? 1 : -1);
   };
 
@@ -117,6 +121,7 @@ export default function HeroMediaCarousel({ language = "fa", fallbackAlt = "" })
       onBlurCapture={() => setIsPaused(false)}
       onTouchStart={(event) => {
         touchStartX.current = event.touches[0]?.clientX ?? null;
+        didSwipe.current = false;
         setIsPaused(true);
       }}
       onTouchEnd={(event) => finishSwipe(event.changedTouches[0]?.clientX ?? 0)}
@@ -128,16 +133,9 @@ export default function HeroMediaCarousel({ language = "fa", fallbackAlt = "" })
       {items.map((item, index) => {
         const isActive = index === activeIndex;
         const source = resolveHeroMediaUrl(item.mediaUrl);
-        return (
-          <div
-            key={item._id || source}
-            className={`absolute inset-0 transition-all duration-700 ease-out motion-reduce:transition-none ${
-              isActive
-                ? "z-10 scale-100 opacity-100"
-                : "pointer-events-none z-0 scale-[1.018] opacity-0"
-            }`}
-            aria-hidden={!isActive}
-          >
+        const link = resolveHeroMediaLink(item.linkUrl);
+        const imageContent = (
+          <>
             <img
               src={source}
               alt=""
@@ -153,6 +151,36 @@ export default function HeroMediaCarousel({ language = "fa", fallbackAlt = "" })
               loading={index === 0 ? "eager" : "lazy"}
               fetchPriority={index === 0 ? "high" : "auto"}
             />
+          </>
+        );
+        return (
+          <div
+            key={item._id || source}
+            className={`absolute inset-0 transition-all duration-700 ease-out motion-reduce:transition-none ${
+              isActive
+                ? "z-10 scale-100 opacity-100"
+                : "pointer-events-none z-0 scale-[1.018] opacity-0"
+            }`}
+            aria-hidden={!isActive}
+          >
+            {link ? (
+              <a
+                href={link}
+                className="relative block h-full w-full cursor-pointer"
+                aria-label={fallbackAlt || (language === "fa" ? "باز کردن تبلیغ" : "Open advertisement")}
+                onClick={(event) => {
+                  if (!didSwipe.current) return;
+                  event.preventDefault();
+                  didSwipe.current = false;
+                }}
+              >
+                {imageContent}
+                <span className="absolute bottom-3 end-3 z-20 inline-flex items-center gap-2 rounded-xl border border-white/35 bg-slate-950/80 px-3.5 py-2 text-xs font-black text-white shadow-lg backdrop-blur-md transition hover:bg-primary-600 sm:bottom-4 sm:end-4 sm:px-4 sm:py-2.5 sm:text-sm">
+                  <ExternalLink size={16} aria-hidden="true" />
+                  {language === "fa" ? "مشاهده بیشتر" : "Learn more"}
+                </span>
+              </a>
+            ) : imageContent}
           </div>
         );
       })}

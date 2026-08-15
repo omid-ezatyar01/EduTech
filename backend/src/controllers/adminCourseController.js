@@ -30,7 +30,7 @@ const buildSort = ({ sortBy = "newest", sortOrder = "desc" }) => {
 };
 
 const buildFilter = async (query = {}) => {
-  const filter = {};
+  const filter = { isBootcampInternal: { $ne: true } };
   if (query.search) {
     filter.$text = { $search: query.search };
   }

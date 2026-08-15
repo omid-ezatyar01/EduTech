@@ -12,6 +12,24 @@ const heroMediaSchema = new mongoose.Schema(
   {
     mediaType: { type: String, enum: ["image"], required: true, index: true },
     mediaUrl: { type: String, required: true, trim: true, maxlength: 1000 },
+    linkUrl: {
+      type: String,
+      trim: true,
+      maxlength: 2048,
+      default: "",
+      validate: {
+        validator(value) {
+          if (!value) return true;
+          if (value.startsWith("/") && !value.startsWith("//")) return true;
+          try {
+            return ["http:", "https:"].includes(new URL(value).protocol);
+          } catch {
+            return false;
+          }
+        },
+        message: "Advertisement link must be an internal path or an http(s) URL",
+      },
+    },
     title: { type: localizedTextSchema, default: () => ({}) },
     altText: { type: localizedTextSchema, default: () => ({}) },
     status: { type: String, enum: ["active", "inactive"], default: "active", index: true },
