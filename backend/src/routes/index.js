@@ -25,6 +25,7 @@ import supportRoutes from "./support.routes.js";
 import supportStaffRoutes from "../modules/supportStaff/supportStaff.routes.js";
 import galleryRoutes from "./gallery.routes.js";
 import heroMediaRoutes from "./heroMedia.routes.js";
+import learningPackageRoutes from "./learningPackage.routes.js";
 
 const router = express.Router();
 
@@ -52,6 +53,7 @@ router.use("/", teacherFollowRoutes);
 router.use("/", articleRoutes);
 router.use("/", galleryRoutes);
 router.use("/", heroMediaRoutes);
+router.use("/", learningPackageRoutes);
 router.use("/", supportRoutes);
 router.use("/", supportStaffRoutes);
 

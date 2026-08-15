@@ -26,6 +26,8 @@ import {
 // Pages
 const loadHomePage = () => import("./pages/HomePage.jsx");
 const loadLiveCoursesPage = () => import("./pages/LiveCoursesPage.jsx");
+const loadLearningPackagesPage = () => import("./pages/LearningPackagesPage.jsx");
+const loadLearningPackageDetailsPage = () => import("./pages/LearningPackageDetailsPage.jsx");
 const loadMobileCourseCategoryPage = () => import("./pages/MobileCourseCategoryPage.jsx");
 const loadCourseDetailsPage = () => import("./pages/CourseDetailsPage.jsx");
 const loadTeachersPage = () => import("./pages/TeachersPage.jsx");
@@ -59,6 +61,8 @@ const loadSupportStaffGuard = () =>
 
 const HomePage = lazy(loadHomePage);
 const LiveCoursesPage = lazy(loadLiveCoursesPage);
+const LearningPackagesPage = lazy(loadLearningPackagesPage);
+const LearningPackageDetailsPage = lazy(loadLearningPackageDetailsPage);
 const MobileCourseCategoryPage = lazy(loadMobileCourseCategoryPage);
 const CourseDetailsPage = lazy(loadCourseDetailsPage);
 const TeachersPage = lazy(loadTeachersPage);
@@ -119,6 +123,8 @@ const StudentCourseWorkspace = lazy(loadStudentCourseWorkspace);
 const preloadRoutes = [
   { key: "home", test: (path) => path === "/", load: loadHomePage },
   { key: "live-courses", test: (path) => path === "/live-courses", load: loadLiveCoursesPage },
+  { key: "packages", test: (path) => path === "/packages", load: loadLearningPackagesPage },
+  { key: "package-details", test: (path) => path.startsWith("/packages/"), load: loadLearningPackageDetailsPage },
   {
     key: "live-courses-category",
     test: (path) => path.startsWith("/live-courses/category/"),
@@ -402,6 +408,7 @@ export default function App() {
     activeHref = "/teachers";
   else if (path.startsWith("/live-courses") || path.startsWith("/course/"))
     activeHref = "/live-courses";
+  else if (path.startsWith("/packages")) activeHref = "/packages";
   else if (path === "/about") activeHref = "/about";
   else if (path === "/contact") activeHref = "/contact";
   else if (path.startsWith("/blog")) activeHref = "/blog";
@@ -441,6 +448,8 @@ export default function App() {
             {/* Public Routes */}
             <Route path="/" element={<HomePage language={language} t={t} />} />
             <Route path="/live-courses" element={<LiveCoursesPage t={t} />} />
+            <Route path="/packages" element={<LearningPackagesPage language={language} />} />
+            <Route path="/packages/:slug" element={<LearningPackageDetailsPage language={language} />} />
             <Route
               path="/live-courses/category/:categoryId"
               element={<MobileCourseCategoryPage t={t} />}

@@ -399,6 +399,7 @@ export default function AdminCategoriesPage() {
       }
 
       clearAdminPageCache("admin:categories");
+      clearAdminPageCache("admin:courses-categories");
       resetForm();
       await loadCategories();
     } catch (err) {
@@ -465,6 +466,7 @@ export default function AdminCategoriesPage() {
       });
       setToast(pageTr("Category deleted"));
       clearAdminPageCache("admin:categories");
+      clearAdminPageCache("admin:courses-categories");
       refreshCategories().catch(() => {});
     } catch (err) {
       if (isNetworkError(err)) {
@@ -480,6 +482,7 @@ export default function AdminCategoriesPage() {
             writeAdminPageCache(ADMIN_CATEGORIES_CACHE_KEY, rows);
             setToast(pageTr("Category deleted"));
             clearAdminPageCache("admin:categories");
+            clearAdminPageCache("admin:courses-categories");
             return;
           }
         } catch {
@@ -572,9 +575,10 @@ export default function AdminCategoriesPage() {
           <button
             type="button"
             onClick={refreshCategories}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:bg-white"
+            disabled={loading}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:bg-white disabled:cursor-wait disabled:opacity-60"
           >
-            <RefreshCw size={16} />
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             {pageTr("Refresh")}
           </button>
         </div>

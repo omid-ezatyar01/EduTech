@@ -161,7 +161,6 @@ export default function AdminDashboardPage() {
         setRecentPayments(Array.isArray(cached.recentPayments) ? cached.recentPayments : []);
         setIsLoading(false);
         setErrorMessage("");
-        return;
       } else {
         setIsLoading(true);
         setErrorMessage("");

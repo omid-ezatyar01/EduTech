@@ -6,6 +6,36 @@ import {
 
 const AUTO_ROTATE_DELAY_MS = 4000;
 const SWIPE_THRESHOLD_PX = 42;
+const IMAGE_PRELOAD_TIMEOUT_MS = 20000;
+
+const preloadImage = (source) =>
+  new Promise((resolve) => {
+    const image = new window.Image();
+    let settled = false;
+
+    const finish = (loaded) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      image.onload = null;
+      image.onerror = null;
+      resolve(loaded);
+    };
+
+    const timeout = window.setTimeout(
+      () => finish(false),
+      IMAGE_PRELOAD_TIMEOUT_MS,
+    );
+    image.onload = () => {
+      if (typeof image.decode !== "function") {
+        finish(true);
+        return;
+      }
+      image.decode().catch(() => {}).finally(() => finish(true));
+    };
+    image.onerror = () => finish(false);
+    image.src = source;
+  });
 
 export default function HeroMediaCarousel({ language = "fa", fallbackAlt = "" }) {
   const [items, setItems] = useState([]);
@@ -16,8 +46,14 @@ export default function HeroMediaCarousel({ language = "fa", fallbackAlt = "" })
   useEffect(() => {
     let active = true;
     fetchPublicHeroMedia()
-      .then((rows) => {
-        if (active) setItems(rows);
+      .then(async (rows) => {
+        const prepared = await Promise.all(
+          rows.map(async (row) => {
+            const source = resolveHeroMediaUrl(row.mediaUrl);
+            return (await preloadImage(source)) ? row : null;
+          }),
+        );
+        if (active) setItems(prepared.filter(Boolean));
       })
       .catch(() => {
         if (active) setItems([]);

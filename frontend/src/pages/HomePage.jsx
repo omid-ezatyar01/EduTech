@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   BadgeCheck,
   BookOpen,
+  Boxes,
   Clock3,
   Eye,
   GraduationCap,
@@ -47,6 +48,7 @@ const copy = {
     exploreText: "کورس، مدرس یا محتوای مناسب خود را بدون اتلاف وقت پیدا کنید.",
     quickLinks: [
       { key: "courses", title: "کورس‌ها", text: "کورس مناسب خود را پیدا کنید", href: "/live-courses" },
+      { key: "packages", title: "بسته‌ها", text: "یک مسیر کامل و مرحله‌به‌مرحله انتخاب کنید", href: "/packages" },
       { key: "teachers", title: "مدرسان", text: "با مدرس‌های متخصص آشنا شوید", href: "/teachers" },
       { key: "videos", title: "ویدیوها", text: "نکته‌های آموزشی را تماشا کنید", href: "/videos" },
       { key: "blog", title: "مقاله‌ها", text: "راهنماهای کاربردی را بخوانید", href: "/blog" },
@@ -92,6 +94,7 @@ const copy = {
     exploreText: "Find the right course, teacher, or learning resource without wasting time.",
     quickLinks: [
       { key: "courses", title: "Courses", text: "Find the right course for you", href: "/live-courses" },
+      { key: "packages", title: "Packages", text: "Choose a complete step-by-step learning path", href: "/packages" },
       { key: "teachers", title: "Teachers", text: "Meet expert instructors", href: "/teachers" },
       { key: "videos", title: "Videos", text: "Watch practical learning tips", href: "/videos" },
       { key: "blog", title: "Articles", text: "Read useful learning guides", href: "/blog" },
@@ -134,6 +137,7 @@ const copy = {
 
 const quickIcons = {
   courses: BookOpen,
+  packages: Boxes,
   teachers: Users,
   videos: Video,
   blog: Newspaper,
@@ -142,6 +146,7 @@ const quickIcons = {
 
 const quickColors = {
   courses: "bg-blue-50 text-blue-700 group-hover:bg-blue-600",
+  packages: "bg-cyan-50 text-cyan-700 group-hover:bg-cyan-600",
   teachers: "bg-violet-50 text-violet-700 group-hover:bg-violet-600",
   videos: "bg-rose-50 text-rose-700 group-hover:bg-rose-600",
   blog: "bg-amber-50 text-amber-700 group-hover:bg-amber-500",
@@ -443,7 +448,7 @@ export default function HomePage({ language, t }) {
       <section className="bg-white py-10 md:py-14" dir={dir}>
         <div className="mx-auto max-w-[1340px] px-4 sm:px-6 lg:px-8">
           <ContentHeading badge={page.explore} title={page.exploreTitle} text={page.exploreText} />
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             {page.quickLinks.map((item) => { const Icon = quickIcons[item.key]; return <Link key={item.key} to={item.href} className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:p-5"><span className={`grid h-11 w-11 place-items-center rounded-xl transition group-hover:text-white ${quickColors[item.key]}`}><Icon size={21} /></span><h3 className="mt-4 font-black text-slate-950">{item.title}</h3><p className="mt-2 hidden text-xs font-semibold leading-6 text-slate-500 sm:block">{item.text}</p></Link>; })}
           </div>
         </div>

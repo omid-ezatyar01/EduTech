@@ -245,9 +245,6 @@ export default function AdminStudentsPage() {
       });
       if (cached) {
         setStatsData(cached);
-        if (refreshKey === 0) {
-          return;
-        }
       }
 
       const requestKey = `students-stats:${refreshKey}`;
@@ -309,9 +306,6 @@ export default function AdminStudentsPage() {
         setPagination(cached.pagination || { page: 1, limit: PAGE_SIZE, totalUsers: 0, totalPages: 1 });
         setIsLoading(false);
         setErrorMessage("");
-        if (refreshKey === 0) {
-          return;
-        }
       } else {
         setIsLoading(true);
         setErrorMessage("");
@@ -464,6 +458,7 @@ export default function AdminStudentsPage() {
       });
       await parseJsonResponse(response);
       clearAdminPageCache("admin:students");
+      clearAdminPageCache("admin:dashboard");
       setSelectedStudent((prev) => (prev?._id === student.id ? { ...prev, status: nextStatus } : prev));
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
@@ -488,6 +483,7 @@ export default function AdminStudentsPage() {
       });
       await parseJsonResponse(response);
       clearAdminPageCache("admin:students");
+      clearAdminPageCache("admin:dashboard");
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
       window.alert(error.message || pageTr("Unable to delete student"));
@@ -554,6 +550,7 @@ export default function AdminStudentsPage() {
       setIsCreateModalOpen(false);
       resetStudentForm();
       clearAdminPageCache("admin:students");
+      clearAdminPageCache("admin:dashboard");
       setRefreshKey((prev) => prev + 1);
       setPage(1);
     } catch (error) {
@@ -597,6 +594,7 @@ export default function AdminStudentsPage() {
       setIsEditModalOpen(false);
       setEditingStudent(null);
       clearAdminPageCache("admin:students");
+      clearAdminPageCache("admin:dashboard");
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
       setModalError(error.message || pageTr("Unable to update student"));

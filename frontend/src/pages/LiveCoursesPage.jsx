@@ -459,15 +459,14 @@ export default function LiveCoursesPage({ t }) {
         applyCategories(cachedCategories);
         setCategoriesError("");
         setCategoriesLoading(false);
-        return;
       }
 
       try {
-        const rows = await fetchPublicCategories();
+        const rows = await fetchPublicCategories({ forceRefresh: Boolean(cachedCategories) });
         applyCategories(rows);
         setCategoriesError("");
       } catch (err) {
-        applyCategories([]);
+        if (!cachedCategories?.length) applyCategories([]);
         setCategoriesError(
           getLocalizedRequestErrorMessage(
             err,

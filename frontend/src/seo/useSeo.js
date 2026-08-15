@@ -100,6 +100,37 @@ function getSeoConfig(pathname, language) {
       keywords: ["course catalog", "live course", "دوره زنده", "کلاس زنده"],
     },
     {
+      match: /^\/packages\/?$/,
+      title: isFa
+        ? "بسته‌های آموزشی | آکادمی ایجوتک"
+        : "Learning Packages | EduTech Academy",
+      description: isFa
+        ? "بسته‌های آموزشی مرحله‌به‌مرحله ایجوتک را ببینید و کورس‌های مناسب هدف خود را به ترتیب انتخاب کنید."
+        : "Explore EduTech learning packages and follow courses organized into a clear step-by-step path.",
+      keywords: [
+        "learning packages",
+        "course bundles",
+        "learning path",
+        "بسته آموزشی",
+        "مسیر یادگیری",
+      ],
+    },
+    {
+      match: /^\/packages\/[^/]+\/?$/,
+      title: isFa
+        ? "مسیر بسته آموزشی | آکادمی ایجوتک"
+        : "Learning Package Path | EduTech Academy",
+      description: isFa
+        ? "مرحله‌ها و کورس‌های این بسته آموزشی را ببینید و مسیر یادگیری خود را با ایجوتک آغاز کنید."
+        : "View every step and course in this EduTech learning package and begin your learning path.",
+      keywords: [
+        "learning package",
+        "course sequence",
+        "بسته کورس",
+        "مراحل یادگیری",
+      ],
+    },
+    {
       match: /^\/live-courses\/category\/[^/]+\/?$/,
       title: isFa
         ? "دسته‌بندی دوره‌ها | آکادمی ایجوتک"

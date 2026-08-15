@@ -19,6 +19,7 @@ const loadAdminStudentsPage = () => import("./pages/AdminStudentsPage");
 const loadAdminTeachersPage = () => import("./pages/AdminTeachersPage");
 const loadAdminCertificatesPage = () => import("./pages/AdminCertificatesPage");
 const loadAdminCoursesPage = () => import("./pages/AdminCoursesPage");
+const loadAdminLearningPackagesPage = () => import("./pages/AdminLearningPackagesPage");
 const loadAdminCategoriesPage = () => import("./pages/AdminCategoriesPage");
 const loadAdminVideosPage = () => import("./pages/AdminVideosPage");
 const loadAdminArticlesPage = () => import("./pages/AdminArticlesPage");
@@ -42,6 +43,7 @@ const AdminStudentsPage = lazy(loadAdminStudentsPage);
 const AdminTeachersPage = lazy(loadAdminTeachersPage);
 const AdminCertificatesPage = lazy(loadAdminCertificatesPage);
 const AdminCoursesPage = lazy(loadAdminCoursesPage);
+const AdminLearningPackagesPage = lazy(loadAdminLearningPackagesPage);
 const AdminCategoriesPage = lazy(loadAdminCategoriesPage);
 const AdminVideosPage = lazy(loadAdminVideosPage);
 const AdminArticlesPage = lazy(loadAdminArticlesPage);
@@ -66,6 +68,7 @@ const preloadRoutes = [
   { key: "teachers", test: (path) => path === "/teachers", load: loadAdminTeachersPage },
   { key: "certificates", test: (path) => path === "/certificates", load: loadAdminCertificatesPage },
   { key: "courses", test: (path) => path === "/courses", load: loadAdminCoursesPage },
+  { key: "packages", test: (path) => path === "/packages", load: loadAdminLearningPackagesPage },
   { key: "categories", test: (path) => path === "/categories", load: loadAdminCategoriesPage },
   { key: "videos", test: (path) => path === "/videos", load: loadAdminVideosPage },
   { key: "articles", test: (path) => path === "/articles", load: loadAdminArticlesPage },
@@ -106,6 +109,7 @@ const KNOWN_ADMIN_ROUTE_SUFFIXES = [
   "/teachers",
   "/certificates",
   "/courses",
+  "/packages",
   "/categories",
   "/videos",
   "/articles",
@@ -318,6 +322,7 @@ function AppContent() {
             <Route path="/teachers" element={<AdminTeachersPage />} />
             <Route path="/certificates" element={<AdminCertificatesPage />} />
             <Route path="/courses" element={<AdminCoursesPage />} />
+            <Route path="/packages" element={<AdminLearningPackagesPage />} />
             <Route path="/categories" element={<AdminCategoriesPage />} />
             <Route path="/videos" element={<AdminVideosPage />} />
             <Route path="/articles" element={<AdminArticlesPage />} />

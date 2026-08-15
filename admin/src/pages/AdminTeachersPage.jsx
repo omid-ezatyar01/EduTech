@@ -516,9 +516,6 @@ export default function AdminTeachersPage() {
       });
       if (cached) {
         setDashboardStats(cached);
-        if (refreshKey === 0) {
-          return;
-        }
       }
 
       const requestKey = `teachers-stats:${refreshKey}`;
@@ -577,14 +574,12 @@ export default function AdminTeachersPage() {
       const cached = readAdminPageCache(cacheKey, {
         maxAgeMs: ADMIN_TEACHERS_CACHE_TTL_MS,
       });
+      const hasCachedRows = Boolean(cached);
       if (cached) {
         setTeachers(Array.isArray(cached.teachers) ? cached.teachers : []);
         setPagination(cached.pagination || { page: 1, limit: PAGE_SIZE, totalUsers: 0, totalPages: 1 });
         setIsLoading(false);
         setErrorMessage("");
-        if (refreshKey === 0) {
-          return;
-        }
       } else {
         setIsLoading(true);
         setErrorMessage("");
@@ -671,8 +666,10 @@ export default function AdminTeachersPage() {
         },
         onError: (error) => {
           console.error("Error fetching teachers:", error);
-          setTeachers([]);
-          setPagination({ page: 1, limit: PAGE_SIZE, totalUsers: 0, totalPages: 1 });
+          if (!hasCachedRows) {
+            setTeachers([]);
+            setPagination({ page: 1, limit: PAGE_SIZE, totalUsers: 0, totalPages: 1 });
+          }
           setErrorMessage(error.message || pageTr("Failed to fetch teachers list."));
         },
         onFinally: () => {
@@ -798,6 +795,8 @@ export default function AdminTeachersPage() {
       }
 
       clearAdminPageCache("admin:teachers");
+      clearAdminPageCache("admin:courses-teachers");
+      clearAdminPageCache("admin:dashboard");
       clearAdminPageCache(getAdminTeacherDetailsCacheKey(teacher.id));
       setSelectedTeacher((prev) =>
         prev?._id === teacher.id ? { ...prev, status: nextStatus } : prev,
@@ -834,6 +833,8 @@ export default function AdminTeachersPage() {
       }
 
       clearAdminPageCache("admin:teachers");
+      clearAdminPageCache("admin:courses-teachers");
+      clearAdminPageCache("admin:dashboard");
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
       alert(error.message || pageTr("Unable to delete teacher"));
@@ -894,6 +895,8 @@ export default function AdminTeachersPage() {
       }
 
       clearAdminPageCache("admin:teachers");
+      clearAdminPageCache("admin:courses-teachers");
+      clearAdminPageCache("admin:dashboard");
       setRefreshKey((prev) => prev + 1);
       if (data?.teacher) {
         setSelectedTeacher((prev) => ({
@@ -1002,6 +1005,8 @@ export default function AdminTeachersPage() {
       const updatedTeacher = data?.teacher || null;
       setIsEditModalOpen(false);
       clearAdminPageCache("admin:teachers");
+      clearAdminPageCache("admin:courses-teachers");
+      clearAdminPageCache("admin:dashboard");
       clearAdminPageCache(getAdminTeacherDetailsCacheKey(editingTeacher.id));
       if (updatedTeacher?._id) {
         setSelectedTeacher((prev) =>
@@ -1084,6 +1089,8 @@ export default function AdminTeachersPage() {
       );
       setPage(1);
       clearAdminPageCache("admin:teachers");
+      clearAdminPageCache("admin:courses-teachers");
+      clearAdminPageCache("admin:dashboard");
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
       setCreateTeacherError(error.message || pageTr("Unable to create teacher"));

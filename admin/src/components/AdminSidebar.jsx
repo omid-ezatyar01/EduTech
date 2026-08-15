@@ -20,6 +20,7 @@ import {
   UsersRound,
   Images,
   PanelsTopLeft,
+  Boxes,
 } from "lucide-react";
 import { NavLink } from "react-router";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -30,6 +31,7 @@ const menuItems = [
   { key: "teachers", icon: UserCheck, path: "/teachers" },
   { key: "certificates", icon: Award, path: "/certificates" },
   { key: "courses", icon: BookOpen, path: "/courses" },
+  { key: "packages", icon: Boxes, path: "/packages" },
   { key: "categories", icon: Layers, path: "/categories" },
   { key: "videos", icon: Clapperboard, path: "/videos" },
   { key: "articles", icon: Newspaper, path: "/articles" },

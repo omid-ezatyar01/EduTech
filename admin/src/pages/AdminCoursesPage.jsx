@@ -51,6 +51,7 @@ import {
 import useDebouncedValue from "../hooks/useDebouncedValue.js";
 import useLatestRequest from "../hooks/useLatestRequest.js";
 import {
+  clearAdminPageCache,
   getAdminPageCacheKey,
   readAdminPageCache,
   writeAdminPageCache,
@@ -184,6 +185,9 @@ const PAGE_TEXT = {
   "Search teacher by email": "جستجوی مدرس با ایمیل",
   "No matching teachers": "مدرس مطابق پیدا نشد",
   "No subcategory": "بدون زیرکتگوری",
+  "No categories available": "هیچ کتگوری‌ای موجود نیست",
+  "Failed to load categories": "بارگذاری کتگوری‌ها ناموفق بود",
+  "Failed to load teachers": "بارگذاری مدرسان ناموفق بود",
   Save: "ذخیره",
   Cancel: "لغو",
   "Save Changes": "ذخیره تغییرات",
@@ -815,9 +819,12 @@ export default function AdminCoursesPage() {
         setCategories(cached);
         setCreateForm((prev) => ({
           ...prev,
-          category: prev.category || parentRows?.[0]?._id || "",
+          category: parentRows.some(
+            (item) => String(item?._id || "") === String(prev.category || ""),
+          )
+            ? prev.category
+            : parentRows?.[0]?._id || "",
         }));
-        return;
       }
       try {
         const rows = await fetchAdminCategories();
@@ -826,15 +833,20 @@ export default function AdminCoursesPage() {
         writeAdminPageCache(ADMIN_COURSES_CATEGORIES_KEY, rows);
         setCreateForm((prev) => ({
           ...prev,
-          category: prev.category || parentRows?.[0]?._id || "",
+          category: parentRows.some(
+            (item) => String(item?._id || "") === String(prev.category || ""),
+          )
+            ? prev.category
+            : parentRows?.[0]?._id || "",
         }));
-      } catch {
-        setCategories([]);
+      } catch (requestError) {
+        if (!cached) setCategories([]);
+        setToast(requestError?.message || pageTr("Failed to load categories"));
       }
     };
 
     loadCategories();
-  }, []);
+  }, [pageTr]);
 
   useEffect(() => {
     const loadTeachers = async () => {
@@ -845,9 +857,12 @@ export default function AdminCoursesPage() {
         setTeachers(cached);
         setCreateForm((prev) => ({
           ...prev,
-          teacher: prev.teacher || cached?.[0]?._id || "",
+          teacher: cached.some(
+            (item) => String(item?._id || "") === String(prev.teacher || ""),
+          )
+            ? prev.teacher
+            : cached?.[0]?._id || "",
         }));
-        return;
       }
       try {
         const rows = await fetchAdminTeachers();
@@ -855,15 +870,20 @@ export default function AdminCoursesPage() {
         writeAdminPageCache(ADMIN_COURSES_TEACHERS_KEY, rows);
         setCreateForm((prev) => ({
           ...prev,
-          teacher: prev.teacher || rows?.[0]?._id || "",
+          teacher: rows.some(
+            (item) => String(item?._id || "") === String(prev.teacher || ""),
+          )
+            ? prev.teacher
+            : rows?.[0]?._id || "",
         }));
-      } catch {
-        setTeachers([]);
+      } catch (requestError) {
+        if (!cached) setTeachers([]);
+        setToast(requestError?.message || pageTr("Failed to load teachers"));
       }
     };
 
     loadTeachers();
-  }, []);
+  }, [pageTr]);
 
   useEffect(() => {
     const loadPricingSettings = async () => {
@@ -1492,6 +1512,8 @@ export default function AdminCoursesPage() {
 
       const rows = await fetchAdminCategories();
       setCategories(rows);
+      writeAdminPageCache(ADMIN_COURSES_CATEGORIES_KEY, rows);
+      clearAdminPageCache("admin:categories");
       setCreateForm((prev) => ({
         ...prev,
         category: category?._id || rows?.[0]?._id || "",
@@ -2719,7 +2741,7 @@ export default function AdminCoursesPage() {
                   onChange={(e) => setCreateForm((prev) => ({ ...prev, category: e.target.value, subcategory: "" }))}
                   className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none"
                 >
-                  {categories.length === 0 ? (
+                  {parentCategories.length === 0 ? (
                     <option value="">No categories available</option>
                   ) : null}
                   {parentCategories.map((item) => (
@@ -2740,7 +2762,7 @@ export default function AdminCoursesPage() {
                     </option>
                   ))}
                 </select>
-                {categories.length === 0 ? (
+                {parentCategories.length === 0 ? (
                   <button
                     type="button"
                     onClick={handleQuickCreateCategory}
@@ -3190,6 +3212,9 @@ export default function AdminCoursesPage() {
                               }
                               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none"
                             >
+                              {parentCategories.length === 0 ? (
+                                <option value="">{pageTr("No categories available")}</option>
+                              ) : null}
                               {parentCategories.map((item) => (
                                 <option key={item._id} value={item._id}>
                                   {item.name}

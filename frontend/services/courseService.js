@@ -107,12 +107,13 @@ const filterCategoriesWithCourses = (categories = [], courses = []) => {
   return rows.filter((item) => visibleIds.has(normalizeCategoryId(item?._id)));
 };
 
-const fetchPublishedCoursesForCategoryFiltering = async () => {
+const fetchPublishedCoursesForCategoryFiltering = async ({ forceRefresh = false } = {}) => {
   const limit = 100;
+  const ttlMs = forceRefresh ? 0 : getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS });
   const firstPage = await fetchJsonWithCache(
     `${getApiBase()}/courses?page=1&limit=${limit}`,
     {},
-    { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }) },
+    { ttlMs },
   );
 
   const firstRows = Array.isArray(firstPage?.data) ? firstPage.data : [];
@@ -127,7 +128,7 @@ const fetchPublishedCoursesForCategoryFiltering = async () => {
       fetchJsonWithCache(
         `${getApiBase()}/courses?page=${index + 2}&limit=${limit}`,
         {},
-        { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }) },
+        { ttlMs },
       ),
     ),
   );
@@ -398,9 +399,9 @@ export const fetchPublishedCourseBySlug = async (slug, { force = false } = {}) =
   }));
 };
 
-export const fetchPublicCategories = async () => {
+export const fetchPublicCategories = async ({ forceRefresh = false } = {}) => {
   const cacheKey = buildPublicCacheKey("public-categories");
-  const cached = readPublicCache(publicCategoryCache, cacheKey);
+  const cached = forceRefresh ? null : readPublicCache(publicCategoryCache, cacheKey);
   if (cached) return cached;
 
   if (USE_FRONTEND_COURSE_MOCKS) {
@@ -419,9 +420,9 @@ export const fetchPublicCategories = async () => {
     fetchJsonWithCache(
       `${getApiBase()}/categories`,
       {},
-      { ttlMs: getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }) },
+      { ttlMs: forceRefresh ? 0 : getApiCacheTtl({ publicTtl: PUBLIC_CATEGORY_CACHE_TTL_MS }) },
     ),
-    fetchPublishedCoursesForCategoryFiltering(),
+    fetchPublishedCoursesForCategoryFiltering({ forceRefresh }),
   ]);
 
   const filteredCategories = filterCategoriesWithCourses(
@@ -447,11 +448,12 @@ export const getCachedPublicCategories = () =>
   readPublicCache(publicCategoryCache, buildPublicCacheKey("public-categories"));
 
 export const invalidatePublicCourseCaches = () => {
+  publicCategoryCache.clear();
   publicCourseDetailCache.clear();
   publicCourseListCache.clear();
   publicCourseSearchCatalogCache.clear();
   publicCourseSearchCatalogRequests.clear();
-  invalidateApiCache((key) => key.includes("/courses"));
+  invalidateApiCache((key) => key.includes("/courses") || key.includes("/categories"));
 };
 
 export const enrollCourse = async (courseId, pricingRegion = "international") => {

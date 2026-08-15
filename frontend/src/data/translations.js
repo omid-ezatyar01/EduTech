@@ -10,6 +10,7 @@ export const translations = {
       nav: [
         { label: "خانه", href: "/" },
         { label: "کورس‌های آنلاین", href: "/live-courses" },
+        { label: "بسته‌های آموزشی", href: "/packages" },
         { label: "مدرسان", href: "/teachers" },
         { label: "وبلاگ", href: "/blog" },
         { label: "نقشه‌های راه", href: "/roadmaps" },
@@ -510,6 +511,7 @@ export const translations = {
       nav: [
         { label: "Home", href: "/" },
         { label: "Live Courses", href: "/live-courses" },
+        { label: "Packages", href: "/packages" },
         { label: "Teachers", href: "/teachers" },
         { label: "Blog", href: "/blog" },
         { label: "Roadmaps", href: "/roadmaps" },

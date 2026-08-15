@@ -110,14 +110,13 @@ export default function MobileCourseCategoryPage({ t }) {
       const cachedCategories = getCachedPublicCategories();
       if (cachedCategories?.length) {
         setCategories(cachedCategories);
-        return;
       }
 
       try {
-        const rows = await fetchPublicCategories();
+        const rows = await fetchPublicCategories({ forceRefresh: Boolean(cachedCategories) });
         setCategories(Array.isArray(rows) ? rows : []);
       } catch {
-        setCategories([]);
+        if (!cachedCategories?.length) setCategories([]);
       }
     };
 

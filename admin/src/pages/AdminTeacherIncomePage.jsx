@@ -783,7 +783,6 @@ export default function AdminTeacherIncomePage() {
         setMeta(normalizeMeta(cached.meta));
         setLoading(false);
         setError("");
-        return;
       } else {
         setLoading(true);
         setError("");
@@ -834,9 +833,11 @@ export default function AdminTeacherIncomePage() {
             });
           },
           onError: (err) => {
-            setRows([]);
-            setSummary(normalizeSummary());
-            setMeta(normalizeMeta());
+            if (!cached) {
+              setRows([]);
+              setSummary(normalizeSummary());
+              setMeta(normalizeMeta());
+            }
             setError(err.message || "Failed to load teacher income");
           },
           onFinally: () => {

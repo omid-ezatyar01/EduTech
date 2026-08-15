@@ -623,14 +623,13 @@ export default function TeacherCourses() {
       });
       if (cached) {
         setCategories(cached);
-        return;
       }
       try {
         const rows = await fetchCategories();
         setCategories(rows);
         writeTeacherPageCache(COURSE_CATEGORIES_CACHE_KEY, rows);
       } catch {
-        setCategories([]);
+        if (!cached) setCategories([]);
       }
     };
 
@@ -646,7 +645,6 @@ export default function TeacherCourses() {
         });
         if (cached) {
           applyPricingSettings(cached);
-          return;
         }
         try {
           const settings = await fetchTeacherCoursePricingSettings();
