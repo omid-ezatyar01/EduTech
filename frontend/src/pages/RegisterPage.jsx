@@ -22,6 +22,7 @@ import {
 import { PORTAL_CONFIG, saveAuth, clearAuth } from "../../services/portal.js";
 import { legalContent } from "../data/legalContent.js";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
+import { GOOGLE_ONLY_STUDENT_AUTH } from "../config/authMode.js";
 
 const BLOCKED_OTP_STATUSES = ["suppressed", "bounced", "failed", "complained"];
 
@@ -347,7 +348,7 @@ export default function RegisterPage({ language = "fa" }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 font-sans" dir={dir}>
-      <AuthHeader dir={dir} />
+      <AuthHeader dir={dir} language={language} />
 
       <main className="flex flex-1 items-start px-3 py-2 sm:px-6 sm:py-5 lg:items-center lg:px-8 lg:py-8 xl:py-10">
         <div className="mx-auto w-full max-w-[1140px]">
@@ -374,7 +375,7 @@ export default function RegisterPage({ language = "fa" }) {
                     </div>
                   )}
 
-                  <form
+                  {!GOOGLE_ONLY_STUDENT_AUTH ? <form
                     className="mt-4 space-y-5 sm:mt-8 sm:space-y-6"
                     autoComplete="off"
                     onSubmit={async (e) => {
@@ -638,15 +639,15 @@ export default function RegisterPage({ language = "fa" }) {
                           : "Registering and sending verification code"
                         : data.form.submit}
                     </button>
-                  </form>
+                  </form> : null}
 
-                  <div className="my-5 flex items-center gap-4 before:h-px before:flex-1 before:bg-slate-100 after:h-px after:flex-1 after:bg-slate-100">
+                  {!GOOGLE_ONLY_STUDENT_AUTH ? <div className="my-5 flex items-center gap-4 before:h-px before:flex-1 before:bg-slate-100 after:h-px after:flex-1 after:bg-slate-100">
                     <span className="text-sm font-bold text-slate-400">
                       {data.form.or}
                     </span>
-                  </div>
+                  </div> : null}
 
-                  <div className="space-y-3">
+                  <div className={GOOGLE_ONLY_STUDENT_AUTH ? "mt-8 space-y-3" : "space-y-3"}>
                     <SocialButton
                       icon={Mail}
                       onClick={handleGoogleRegister}

@@ -23,6 +23,7 @@ const loadAdminCategoriesPage = () => import("./pages/AdminCategoriesPage");
 const loadAdminVideosPage = () => import("./pages/AdminVideosPage");
 const loadAdminArticlesPage = () => import("./pages/AdminArticlesPage");
 const loadAdminGalleryPage = () => import("./pages/AdminGalleryPage");
+const loadAdminHeroMediaPage = () => import("./pages/AdminHeroMediaPage");
 const loadAdminPaymentsPage = () => import("./pages/AdminPaymentsPage");
 const loadAdminTeacherIncomePage = () => import("./pages/AdminTeacherIncomePage");
 const loadAdminTeacherBankReviewsPage = () => import("./pages/AdminTeacherBankReviewsPage");
@@ -45,6 +46,7 @@ const AdminCategoriesPage = lazy(loadAdminCategoriesPage);
 const AdminVideosPage = lazy(loadAdminVideosPage);
 const AdminArticlesPage = lazy(loadAdminArticlesPage);
 const AdminGalleryPage = lazy(loadAdminGalleryPage);
+const AdminHeroMediaPage = lazy(loadAdminHeroMediaPage);
 const AdminPaymentsPage = lazy(loadAdminPaymentsPage);
 const AdminTeacherIncomePage = lazy(loadAdminTeacherIncomePage);
 const AdminTeacherBankReviewsPage = lazy(loadAdminTeacherBankReviewsPage);
@@ -68,6 +70,7 @@ const preloadRoutes = [
   { key: "videos", test: (path) => path === "/videos", load: loadAdminVideosPage },
   { key: "articles", test: (path) => path === "/articles", load: loadAdminArticlesPage },
   { key: "gallery", test: (path) => path === "/gallery", load: loadAdminGalleryPage },
+  { key: "hero-media", test: (path) => path === "/hero-media", load: loadAdminHeroMediaPage },
   { key: "payments", test: (path) => path === "/payments", load: loadAdminPaymentsPage },
   { key: "teacher-income", test: (path) => path === "/teacher-income", load: loadAdminTeacherIncomePage },
   { key: "teacher-bank-reviews", test: (path) => path === "/teacher-bank-reviews", load: loadAdminTeacherBankReviewsPage },
@@ -107,6 +110,7 @@ const KNOWN_ADMIN_ROUTE_SUFFIXES = [
   "/videos",
   "/articles",
   "/gallery",
+  "/hero-media",
   "/payments",
   "/teacher-income",
   "/teacher-bank-reviews",
@@ -318,6 +322,7 @@ function AppContent() {
             <Route path="/videos" element={<AdminVideosPage />} />
             <Route path="/articles" element={<AdminArticlesPage />} />
             <Route path="/gallery" element={<AdminGalleryPage />} />
+            <Route path="/hero-media" element={<AdminHeroMediaPage />} />
             <Route path="/payments" element={<AdminPaymentsPage />} />
             <Route path="/teacher-income" element={<AdminTeacherIncomePage />} />
             <Route path="/teacher-bank-reviews" element={<AdminTeacherBankReviewsPage />} />

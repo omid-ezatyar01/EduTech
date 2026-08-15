@@ -1548,9 +1548,12 @@ export const resendRegisterOtp = async (req, res) => {
   }
 };
 
+export const resolvePasswordResetRole = (value) =>
+  ["student", "teacher", "admin"].includes(value) ? value : "teacher";
+
 export const requestTeacherPasswordReset = async (req, res) => {
-  const resetRole = req.passwordResetRole === "admin" ? "admin" : "teacher";
-  const roleLabel = resetRole === "admin" ? "admin" : "teacher";
+  const resetRole = resolvePasswordResetRole(req.passwordResetRole);
+  const roleLabel = resetRole;
   const successResponse = {
     message: `A password reset code has been sent to the ${roleLabel} email.`,
     expiresInSeconds: 600,
@@ -1599,7 +1602,7 @@ export const requestTeacherPasswordReset = async (req, res) => {
 };
 
 export const verifyTeacherPasswordResetOtp = async (req, res) => {
-  const resetRole = req.passwordResetRole === "admin" ? "admin" : "teacher";
+  const resetRole = resolvePasswordResetRole(req.passwordResetRole);
   try {
     const { error, value } = passwordResetVerifySchema.validate(req.body);
     if (error) {
@@ -1702,7 +1705,7 @@ export const verifyTeacherPasswordResetOtp = async (req, res) => {
 };
 
 export const resetTeacherPassword = async (req, res) => {
-  const resetRole = req.passwordResetRole === "admin" ? "admin" : "teacher";
+  const resetRole = resolvePasswordResetRole(req.passwordResetRole);
   try {
     const { error, value } = passwordResetSchema.validate(req.body);
     if (error) {

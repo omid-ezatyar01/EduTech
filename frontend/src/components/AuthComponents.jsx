@@ -13,28 +13,30 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
+import { localizePath } from "../utils/localizedRoutes.js";
 
-export function AuthHeader({ dir }) {
+export function AuthHeader({ dir, language }) {
   const logoSrc = "/logo.png";
+  const homeHref = localizePath("/", language || (dir === "ltr" ? "en" : "fa"));
+
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
         <div className="mx-auto flex h-[76px] max-w-[1536px] items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link to="/">
+          <a href={homeHref}>
             <img
               src={logoSrc}
               className="h-9 sm:h-10 lg:h-11 object-contain"
               alt="EduTech"
             />
-          </Link>
-          <Link
-            to="/"
+          </a>
+          <a
+            href={homeHref}
             className="flex items-center gap-2 text-sm font-bold text-slate-600 transition hover:text-primary-700"
           >
             <Home size={18} />
             {dir === "ltr" ? "Back to Home" : "بازگشت به خانه"}
-          </Link>
+          </a>
         </div>
       </header>
       <div className="h-[76px]" aria-hidden="true" />

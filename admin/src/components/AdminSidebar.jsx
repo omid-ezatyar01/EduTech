@@ -19,6 +19,7 @@ import {
   Headphones,
   UsersRound,
   Images,
+  PanelsTopLeft,
 } from "lucide-react";
 import { NavLink } from "react-router";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
@@ -33,6 +34,7 @@ const menuItems = [
   { key: "videos", icon: Clapperboard, path: "/videos" },
   { key: "articles", icon: Newspaper, path: "/articles" },
   { key: "gallery", icon: Images, path: "/gallery" },
+  { key: "heroMedia", icon: PanelsTopLeft, path: "/hero-media" },
   { key: "payments", icon: CreditCard, path: "/payments" },
   { key: "teacherIncome", icon: Wallet, path: "/teacher-income" },
   { key: "bankReviews", icon: Landmark, path: "/teacher-bank-reviews" },

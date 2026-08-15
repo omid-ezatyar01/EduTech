@@ -24,6 +24,7 @@ test("converts app paths into stable localized paths", () => {
   assert.equal(stripLanguagePrefix("/en/course/ielts"), "/course/ielts");
   assert.equal(localizePath("/course/ielts", "fa"), "/fa/course/ielts");
   assert.equal(localizePath("/fa/course/ielts", "en"), "/en/course/ielts");
+  assert.equal(localizePath("/", "fa"), "/fa/");
   assert.equal(localizePath("/", "en"), "/en/");
 });
 

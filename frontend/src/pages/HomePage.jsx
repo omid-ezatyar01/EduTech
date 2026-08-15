@@ -24,6 +24,7 @@ import { Link } from "react-router";
 import CourseCard from "../components/CourseCard.jsx";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
 import SectionTitle from "../components/SectionTitle.jsx";
+import HeroMediaCarousel from "../components/HeroMediaCarousel.jsx";
 import { fetchArticles, resolveArticleCoverUrl } from "../../services/articleService.js";
 import {
   fetchPublicPlatformStats,
@@ -405,8 +406,8 @@ export default function HomePage({ language, t }) {
       <section id="home" className="relative overflow-hidden bg-[linear-gradient(180deg,#FFFFFF_0%,#F4FAFF_100%)]">
         <div className="absolute -start-24 top-16 h-72 w-72 rounded-full bg-primary-100/50 blur-3xl" />
         <div className="absolute -end-20 bottom-10 h-64 w-64 rounded-full bg-teal-100/60 blur-3xl" />
-        <div className="relative mx-auto grid max-w-[1536px] items-center gap-8 px-4 pb-12 pt-10 sm:px-6 md:pt-14 lg:grid-cols-[0.52fr_0.48fr] lg:px-8 lg:py-14" dir="ltr">
-          <div className={`relative z-10 w-full max-w-[650px] text-center ${isRTL ? "mx-auto lg:order-2 lg:justify-self-end" : "mx-auto lg:order-1 lg:justify-self-start"}`} dir={dir}>
+        <div className="relative mx-auto flex max-w-[1340px] flex-col gap-10 px-4 pb-12 pt-10 sm:px-6 md:pt-14 lg:px-8 lg:py-14" dir="ltr">
+          <div className="relative z-10 mx-auto w-full max-w-[900px] text-center" dir={dir}>
             <div className={`inline-flex items-center gap-2 rounded-full border border-primary-100 bg-white px-5 py-2 text-sm font-bold text-primary-700 shadow-sm ${isRTL ? "flex-row-reverse" : ""}`}><Radio size={16} />{t.hero.badge}</div>
             <h1 className="mx-auto mt-7 max-w-3xl whitespace-pre-line text-4xl font-black leading-[1.4] tracking-tight text-slate-950 sm:text-[2.75rem] lg:text-[3.35rem] lg:leading-[1.5]">
               <span className="text-teal-500">{t.hero.titleBefore}</span>{language === "fa" ? " " : "\n"}{t.hero.titleAfter}
@@ -416,15 +417,13 @@ export default function HomePage({ language, t }) {
               <Link className="inline-flex h-14 items-center justify-center gap-3 rounded-xl bg-primary-600 px-7 text-base font-extrabold text-white shadow-glow transition hover:-translate-y-0.5 hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-100" to="/live-courses"><span>{t.hero.primary}</span><ArrowUpRight size={19} /></Link>
               <Link className="inline-flex h-14 items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-7 text-base font-extrabold text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:border-primary-200 hover:text-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-100" to="/videos"><Play size={18} fill="currentColor" /><span>{page.watchVideos}</span></Link>
             </div>
-            <div className="mt-9 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="mx-auto mt-9 grid max-w-[760px] grid-cols-2 gap-3 lg:grid-cols-4">
               {t.hero.features.map((feature) => <div className="inline-flex min-w-0 items-center justify-center rounded-full border border-slate-100 bg-white px-3 py-2 text-center text-xs font-semibold leading-5 text-slate-700 shadow-sm sm:text-sm" key={feature}>{feature}</div>)}
             </div>
           </div>
-          <div className={`relative z-10 w-full max-w-[760px] self-center ${isRTL ? "mx-auto lg:order-1 lg:justify-self-start" : "mx-auto lg:order-2 lg:justify-self-end"}`}>
-            <div className={`absolute -bottom-2 h-[45%] w-[34%] rounded-[42%_58%_48%_52%/54%_42%_58%_46%] bg-teal-500/90 ${isRTL ? "right-7" : "left-7"}`} />
-            <div className={`absolute top-12 h-[78%] w-[44%] bg-gradient-to-br from-primary-300 to-primary-600 ${isRTL ? "left-0" : "right-0"}`} />
-            <div className="relative overflow-hidden bg-transparent lg:min-h-[498px]">
-              <picture><source srcSet="/hero-student.webp" type="image/webp" /><img className="relative z-10 h-full min-h-[300px] w-full object-cover object-center lg:min-h-[498px]" src="/hero-student.png" width="806" height="498" fetchPriority="high" decoding="async" alt={t.hero.visualTitle} /></picture>
+          <div className="relative z-10 w-full overflow-hidden rounded-2xl bg-slate-950 shadow-[0_22px_60px_rgba(15,23,42,0.20)] ring-1 ring-slate-900/10 sm:rounded-[28px]">
+            <div className="relative aspect-video w-full">
+              <HeroMediaCarousel language={language} fallbackAlt={t.hero.visualTitle} />
             </div>
           </div>
         </div>

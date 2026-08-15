@@ -69,6 +69,21 @@ export const changeCurrentUserPassword = async (payload) => {
   return response.data;
 };
 
+export const requestStudentPasswordReset = async (email) => {
+  const response = await api.post("/auth/student/password-reset/request", { email });
+  return response.data;
+};
+
+export const verifyStudentPasswordResetOtp = async ({ email, otp }) => {
+  const response = await api.post("/auth/student/password-reset/verify", { email, otp });
+  return response.data;
+};
+
+export const resetStudentPassword = async (payload) => {
+  const response = await api.post("/auth/student/password-reset/reset", payload);
+  return response.data;
+};
+
 export const getStudentGoogleAuthUrl = async (mode = "login") => {
   const response = await api.get("/auth/student/google/auth-url", {
     params: { mode },

@@ -17,6 +17,7 @@ import {
   getStudentGoogleAuthUrl,
 } from "../../services/authService.js";
 import FrontendPageLoader from "../components/common/FrontendPageLoader.jsx";
+import { GOOGLE_ONLY_STUDENT_AUTH } from "../config/authMode.js";
 
 const pageData = {
   fa: {
@@ -311,7 +312,7 @@ export default function LoginPage({ language = "fa" }) {
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-slate-50 font-sans" dir={dir}>
-      <AuthHeader dir={dir} />
+      <AuthHeader dir={dir} language={language} />
 
       <main className="flex flex-1 items-center px-3 py-3 sm:px-6 sm:py-5 lg:px-8 lg:py-8 xl:py-10">
         <div className="mx-auto w-full max-w-[1140px]">
@@ -330,7 +331,7 @@ export default function LoginPage({ language = "fa" }) {
                 {data.form.title}
               </h1>
 
-              <form
+              {!GOOGLE_ONLY_STUDENT_AUTH ? <form
                 className="mt-4 space-y-5 sm:mt-8 sm:space-y-6"
                 onSubmit={handleLogin}
                 autoComplete="off"
@@ -361,7 +362,7 @@ export default function LoginPage({ language = "fa" }) {
 
                 <div className="pt-5 flex items-center justify-end gap-2 sm:gap-4">
                   <Link
-                    to="/contact"
+                    to="/forgot-password"
                     className="text-sm font-bold text-primary-600 hover:text-primary-700"
                   >
                     {data.form.forgot}
@@ -379,15 +380,19 @@ export default function LoginPage({ language = "fa" }) {
                       : "Logging in"
                     : data.form.submit}
                 </button>
-              </form>
+              </form> : error ? (
+                <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-600">
+                  {error}
+                </div>
+              ) : null}
 
-              <div className="my-5 flex items-center gap-4 before:h-px before:flex-1 before:bg-slate-100 after:h-px after:flex-1 after:bg-slate-100">
+              {!GOOGLE_ONLY_STUDENT_AUTH ? <div className="my-5 flex items-center gap-4 before:h-px before:flex-1 before:bg-slate-100 after:h-px after:flex-1 after:bg-slate-100">
                 <span className="text-sm font-bold text-slate-400">
                   {data.form.or}
                 </span>
-              </div>
+              </div> : null}
 
-              <div className="space-y-3">
+              <div className={GOOGLE_ONLY_STUDENT_AUTH ? "mt-8 space-y-3" : "space-y-3"}>
                 <SocialButton
                   icon={Mail}
                   onClick={handleGoogleLogin}

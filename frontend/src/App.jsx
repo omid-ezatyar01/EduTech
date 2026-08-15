@@ -36,6 +36,7 @@ const loadStudentFeedbackPage = () => import("./pages/StudentFeedbackPage.jsx");
 const loadStudentSupportPage = () => import("./pages/StudentSupportPage.jsx");
 const loadLoginPage = () => import("./pages/LoginPage.jsx");
 const loadRegisterPage = () => import("./pages/RegisterPage.jsx");
+const loadStudentPasswordRecoveryPage = () => import("./pages/StudentPasswordRecoveryPage.jsx");
 const loadStudentDashboardPage = () => import("./pages/StudentDashboardPage.jsx");
 const loadPaymentSuccessPage = () => import("./pages/PaymentSuccessPage.jsx");
 const loadPaymentFailurePage = () => import("./pages/PaymentFailurePage.jsx");
@@ -68,6 +69,7 @@ const StudentFeedbackPage = lazy(loadStudentFeedbackPage);
 const StudentSupportPage = lazy(loadStudentSupportPage);
 const LoginPage = lazy(loadLoginPage);
 const RegisterPage = lazy(loadRegisterPage);
+const StudentPasswordRecoveryPage = lazy(loadStudentPasswordRecoveryPage);
 const StudentDashboardPage = lazy(loadStudentDashboardPage);
 const PaymentSuccessPage = lazy(loadPaymentSuccessPage);
 const PaymentFailurePage = lazy(loadPaymentFailurePage);
@@ -138,6 +140,7 @@ const preloadRoutes = [
   { key: "terms", test: (path) => path === "/terms", load: loadTermsPage },
   { key: "login", test: (path) => path === "/login", load: loadLoginPage },
   { key: "register", test: (path) => path === "/register", load: loadRegisterPage },
+  { key: "forgot-password", test: (path) => path === "/forgot-password", load: loadStudentPasswordRecoveryPage },
   {
     key: "student-dashboard",
     test: (path) => path === "/student/dashboard",
@@ -490,6 +493,14 @@ export default function App() {
                   isAuthenticated={isAuthenticated}
                 >
                   <RegisterPage language={language} t={t} />
+                </AuthRoute>
+              }
+            />
+            <Route
+              path="/forgot-password"
+              element={
+                <AuthRoute isAuthenticated={isAuthenticated}>
+                  <StudentPasswordRecoveryPage language={language} />
                 </AuthRoute>
               }
             />

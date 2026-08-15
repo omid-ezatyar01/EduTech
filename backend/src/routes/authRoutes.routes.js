@@ -99,6 +99,24 @@ router.post("/teacher/login", loginLimiter, loginAs("teacher"), loginUser);
 router.post("/admin/login", loginLimiter, loginAs("admin"), loginUser);
 router.post("/support/login", loginLimiter, loginAs("support"), loginUser);
 router.post(
+  "/student/password-reset/request",
+  passwordResetRequestLimiter,
+  passwordResetAs("student"),
+  requestTeacherPasswordReset,
+);
+router.post(
+  "/student/password-reset/verify",
+  passwordResetVerifyLimiter,
+  passwordResetAs("student"),
+  verifyTeacherPasswordResetOtp,
+);
+router.post(
+  "/student/password-reset/reset",
+  passwordResetCompleteLimiter,
+  passwordResetAs("student"),
+  resetTeacherPassword,
+);
+router.post(
   "/teacher/password-reset/request",
   passwordResetRequestLimiter,
   passwordResetAs("teacher"),
