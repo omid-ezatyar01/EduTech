@@ -732,7 +732,7 @@ const sendOtpErrorResponse = (res, error) => {
 
 const removeOldAvatarIfLocal = async (avatarPath) => {
   if (!avatarPath || !avatarPath.startsWith("/uploads/avatars/")) return;
-  const oldFilePath = path.resolve(__dirname, `../../${avatarPath.replace(/^\//, "")}`);
+  const oldFilePath = resolveUploadsPath("avatars", path.basename(avatarPath));
   await fs.unlink(oldFilePath).catch(() => {});
 };
 
@@ -765,10 +765,7 @@ const saveTeacherCvFromBuffer = async (userId, fileBuffer) => {
 
 const removeOldTeacherCvIfLocal = async (cvPath) => {
   if (!cvPath || !cvPath.startsWith("/uploads/teacher-cv/")) return;
-  const oldFilePath = path.resolve(
-    __dirname,
-    `../../${String(cvPath).replace(/^\//, "")}`,
-  );
+  const oldFilePath = resolveUploadsPath("teacher-cv", path.basename(cvPath));
   await fs.unlink(oldFilePath).catch(() => {});
 };
 
@@ -782,9 +779,9 @@ const saveTeacherCertificateFromBuffer = async (userId, fileBuffer, index = 0) =
 
 const removeOldTeacherCertificateIfLocal = async (certificatePath) => {
   if (!certificatePath || !certificatePath.startsWith("/uploads/teacher-certificates/")) return;
-  const oldFilePath = path.resolve(
-    __dirname,
-    `../../${String(certificatePath).replace(/^\//, "")}`,
+  const oldFilePath = resolveUploadsPath(
+    "teacher-certificates",
+    path.basename(certificatePath),
   );
   await fs.unlink(oldFilePath).catch(() => {});
 };

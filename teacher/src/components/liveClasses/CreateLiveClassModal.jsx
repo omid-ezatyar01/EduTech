@@ -29,6 +29,28 @@ const extractTime = (value = "") => {
   return timePart.slice(0, 5);
 };
 
+const addMinutesToTime = (value, minutes = 60) => {
+  const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
+  if (!match) return "";
+  const total = (Number(match[1]) * 60 + Number(match[2]) + minutes) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+};
+
+const formatDateInCourseZone = (value, course = {}) => {
+  const date = new Date(value || "");
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: course?.timezone || "Asia/Kabul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]));
+  return values.year && values.month && values.day
+    ? `${values.year}-${values.month}-${values.day}`
+    : "";
+};
+
 const resolveCourseTimes = (course = {}) => {
   const firstSchedule = Array.isArray(course?.schedule) && course.schedule.length
     ? course.schedule[0]
@@ -52,10 +74,9 @@ const resolveCourseTimes = (course = {}) => {
     return values.hour && values.minute ? `${values.hour}:${values.minute}` : "";
   };
   const startFromDate = formatInCourseZone(course?.startDate);
-  const endFromDate = formatInCourseZone(course?.endDate);
   return {
     startTime: startFromDate || "18:00",
-    endTime: endFromDate || "19:00",
+    endTime: addMinutesToTime(startFromDate || "18:00", 60),
   };
 };
 
@@ -87,6 +108,10 @@ export default function CreateLiveClassModal({
   const selectedCourseId = form.courseId || firstCourseId;
   const selectedCourse = courses.find((item) => item._id === selectedCourseId) || {};
   const resolvedTimes = resolveCourseTimes(selectedCourse);
+  const adminStartDate = selectedCourse?.isBootcampInternal
+    ? formatDateInCourseZone(selectedCourse.startDate, selectedCourse)
+    : "";
+  const minimumSessionDate = [getTodayInputDate(), adminStartDate].filter(Boolean).sort().at(-1);
 
   const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
   const handleClose = () => {
@@ -174,7 +199,14 @@ export default function CreateLiveClassModal({
 
           <label>
             <span className="mb-1 block text-xs font-semibold text-slate-600">{labels.date}</span>
-            <input type="date" min={getTodayInputDate()} value={form.date} required onChange={(e) => setField("date", e.target.value)} className="h-11 w-full rounded-xl border border-[#E2E8F0] px-3 text-sm outline-none focus:border-[#0B4FD8]" />
+            <input type="date" min={minimumSessionDate} value={form.date} required onChange={(e) => setField("date", e.target.value)} className="h-11 w-full rounded-xl border border-[#E2E8F0] px-3 text-sm outline-none focus:border-[#0B4FD8]" />
+            {adminStartDate ? (
+              <span className="mt-1 block text-[11px] font-bold text-amber-700">
+                {language === "fa"
+                  ? `جلسه نمی‌تواند پیش از تاریخ تعیین‌شده توسط ادمین (${adminStartDate}) باشد.`
+                  : `Sessions cannot be scheduled before the admin start date (${adminStartDate}).`}
+              </span>
+            ) : null}
           </label>
 
           <label>

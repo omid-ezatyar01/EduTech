@@ -63,6 +63,9 @@ export const assignmentSubmissionFileHasValidSignature = (file) => {
 
 export const removeAssignmentSubmissionFileIfLocal = async (filePath) => {
   if (!filePath || !String(filePath).startsWith("/uploads/assignment-submissions/")) return;
-  const oldFilePath = path.resolve(__dirname, `../../${String(filePath).replace(/^\//, "")}`);
+  const oldFilePath = resolveUploadsPath(
+    "assignment-submissions",
+    path.basename(String(filePath)),
+  );
   await fs.unlink(oldFilePath).catch(() => {});
 };

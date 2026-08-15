@@ -405,7 +405,7 @@ const assertTeacherOwnsCourse = async (teacherId, courseId) => {
   const course = await Course.findOne({
     _id: courseId,
     ...teacherCourseFilter(teacherId),
-  }).select("_id title status teacher teacherId createdBy classEndedAt classCancelledAt");
+  }).select("_id title status teacher teacherId createdBy startDate endDate schedule timezone isBootcampInternal classEndedAt classCancelledAt");
 
   if (!course) {
     throw new ApiError(404, "Course not found or not owned by teacher");
@@ -431,7 +431,7 @@ const assertCoursePermission = async (user, courseId) => {
 
   let course = null;
   if (user.role === "admin") {
-    course = await Course.findById(courseId).select("_id title teacher teacherId createdBy");
+    course = await Course.findById(courseId).select("_id title teacher teacherId createdBy startDate endDate schedule timezone isBootcampInternal");
   } else if (user.role === "teacher") {
     course = await assertTeacherOwnsCourse(user._id, courseId);
   } else {
@@ -451,7 +451,7 @@ const getTeacherSessionById = async (teacherId, sessionId) => {
     teacherId,
   }).populate(
     "courseId",
-    "title status isFree price startDate classEndedAt classCancelledAt",
+    "title status isFree price startDate isBootcampInternal classEndedAt classCancelledAt",
   );
 
   if (!session) {
@@ -459,6 +459,22 @@ const getTeacherSessionById = async (teacherId, sessionId) => {
   }
 
   return session;
+};
+
+const assertSessionRespectsBootcampStart = (course, startAt) => {
+  if (!course?.isBootcampInternal || !course?.startDate) return;
+  const bootcampStart = new Date(course.startDate);
+  const sessionStart = new Date(startAt);
+  if (
+    Number.isNaN(bootcampStart.getTime()) ||
+    Number.isNaN(sessionStart.getTime()) ||
+    sessionStart < bootcampStart
+  ) {
+    throw new ApiError(
+      400,
+      "Bootcamp sessions cannot start before the administrator-set bootcamp start time",
+    );
+  }
 };
 
 const getSessionAndEnrollmentForStudent = async (studentId, sessionId) => {
@@ -552,6 +568,7 @@ export const createTeacherLiveSession = asyncHandler(async (req, res) => {
 
   const course = await assertTeacherOwnsCourse(teacherId, payload.courseId);
   assertTeacherCanManageCourse(course);
+  assertSessionRespectsBootcampStart(course, payload.startAt);
   await ensureSessionSlotIsUnique({ courseId: payload.courseId, startAt: payload.startAt });
 
   let meetingLink = payload.meetingLink || "";
@@ -702,10 +719,12 @@ export const updateTeacherLiveSession = asyncHandler(async (req, res) => {
   const session = await getTeacherSessionById(teacherId, req.params.id);
   assertTeacherCanManageCourse(session.courseId);
   const payload = { ...req.body };
+  let targetCourse = session.courseId;
 
   if (payload.courseId) {
     const nextCourse = await assertTeacherOwnsCourse(teacherId, payload.courseId);
     assertTeacherCanManageCourse(nextCourse);
+    targetCourse = nextCourse;
     session.courseId = payload.courseId;
   }
 
@@ -728,6 +747,8 @@ export const updateTeacherLiveSession = asyncHandler(async (req, res) => {
       session[key] = payload[key];
     }
   });
+
+  assertSessionRespectsBootcampStart(targetCourse, session.startAt);
 
   if (
     Object.prototype.hasOwnProperty.call(payload, "startAt") ||

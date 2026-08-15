@@ -606,10 +606,24 @@ export default function TeacherLiveClasses() {
       const timezone =
         selectedCourse?.timezone || getBrowserTimeZone() || "Asia/Kabul";
       const startAt = zonedDateTimeToUtc(form.date, form.startTime, timezone);
-      const endAt = zonedDateTimeToUtc(form.date, form.endTime, timezone);
+      let endAt = zonedDateTimeToUtc(form.date, form.endTime, timezone);
 
       if (!startAt || !endAt) {
         throw new Error(language === "fa" ? "زمان جلسه معتبر نیست." : "Invalid date/time");
+      }
+      if (endAt <= startAt) {
+        endAt = new Date(endAt.getTime() + 24 * 60 * 60 * 1000);
+      }
+      if (
+        selectedCourse?.isBootcampInternal &&
+        selectedCourse?.startDate &&
+        startAt < new Date(selectedCourse.startDate)
+      ) {
+        throw new Error(
+          language === "fa"
+            ? "جلسه بوت‌کمپ نمی‌تواند پیش از زمان شروع تعیین‌شده توسط ادمین ایجاد شود."
+            : "The bootcamp session cannot start before the administrator-set start time.",
+        );
       }
 
       await createTeacherLiveSession({
