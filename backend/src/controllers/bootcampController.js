@@ -10,6 +10,7 @@ import ApiResponse from "../utils/ApiResponse.js";
 import generateSlug from "../utils/generateSlug.js";
 import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
+import { deleteCourseWithRelationsByFilter } from "../services/courseCascadeDelete.service.js";
 import { removeBootcampCoverIfLocal, saveBootcampCoverFromBuffer } from "../utils/bootcampCover.js";
 
 const courseSelect = "title slug thumbnail status isPublished isFree price teacher createdBy meetingType schedule startDate endDate classStartedAt classEndedAt classCancelledAt";
@@ -239,13 +240,31 @@ export const updateBootcamp = asyncHandler(async (req, res) => {
 export const deleteBootcamp = asyncHandler(async (req, res) => {
   const row = await Bootcamp.findById(req.params.id);
   if (!row) throw new ApiError(404, "Bootcamp not found");
-  if (Number(row.registeredCount || 0) > 0) {
-    throw new ApiError(409, "Bootcamps with registrations must be cancelled instead of deleted");
-  }
-  await row.deleteOne();
-  await Course.deleteOne({ _id: row.courseId, isBootcampInternal: true });
+
+  // Close registration before removing related records so a concurrent public
+  // registration cannot be accepted while the deletion is in progress.
+  await Bootcamp.updateOne(
+    { _id: row._id },
+    { $set: { status: "cancelled" } },
+  );
+
+  const registrationResult = await BootcampRegistration.deleteMany({
+    bootcampId: row._id,
+  });
+  const courseResult = await deleteCourseWithRelationsByFilter({
+    _id: row.courseId,
+    isBootcampInternal: true,
+  });
+  await Bootcamp.deleteOne({ _id: row._id });
   await removeBootcampCoverIfLocal(row.coverImage);
-  return res.json(new ApiResponse({ message: "Bootcamp deleted successfully", data: { id: row._id } }));
+  return res.json(new ApiResponse({
+    message: "Bootcamp and its registrations were deleted successfully",
+    data: {
+      id: row._id,
+      removedRegistrations: Number(registrationResult?.deletedCount || 0),
+      removedCourseRelations: courseResult?.removed || null,
+    },
+  }));
 });
 
 export const getAdminBootcampRegistrations = asyncHandler(async (req, res) => {

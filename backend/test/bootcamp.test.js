@@ -21,6 +21,7 @@ test("bootcamp exposes public, student, and protected admin routes", () => {
   assert.ok(routes.some((route) => route.path === "/admin/bootcamps" && route.methods.includes("post")));
   assert.ok(routes.some((route) => route.path === "/admin/bootcamps/cover" && route.methods.includes("post")));
   assert.ok(routes.some((route) => route.path === "/admin/bootcamps/:id/registrations" && route.methods.includes("get")));
+  assert.ok(routes.some((route) => route.path === "/admin/bootcamps/:id" && route.methods.includes("delete")));
 });
 
 test("bootcamp validation enforces limits and free registration consent", () => {

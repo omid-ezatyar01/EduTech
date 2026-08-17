@@ -52,7 +52,8 @@ const copy = {
     create: "بوت‌کمپ جدید",
     save: "ذخیره",
     cancel: "لغو",
-    deleteConfirm: "این بوت‌کمپ حذف شود؟",
+    deleteConfirm:
+      "این بوت‌کمپ برای همیشه حذف شود؟ تمام ثبت‌نام‌ها، جلسات و دسترسی شاگردان مرتبط نیز حذف می‌شوند.",
     course: "مدرس بوت‌کمپ",
     chooseCourse: "انتخاب مدرس",
     titleFa: "عنوان فارسی",
@@ -90,7 +91,8 @@ const copy = {
     create: "New bootcamp",
     save: "Save",
     cancel: "Cancel",
-    deleteConfirm: "Delete this bootcamp?",
+    deleteConfirm:
+      "Permanently delete this bootcamp? Its registrations, sessions, and related student access will also be removed.",
     course: "Bootcamp teacher",
     chooseCourse: "Choose a teacher",
     titleFa: "Persian title",
@@ -155,6 +157,7 @@ export default function AdminBootcampsPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
   const [uploadingCover, setUploadingCover] = useState(false);
   const [rosterFor, setRosterFor] = useState(null);
   const [roster, setRoster] = useState([]);
@@ -270,10 +273,14 @@ export default function AdminBootcampsPage() {
   const remove = async (item) => {
     if (!window.confirm(t.deleteConfirm)) return;
     try {
+      setDeletingId(item._id);
+      setError("");
       await deleteAdminBootcamp(item._id);
       setItems((current) => current.filter((row) => row._id !== item._id));
     } catch (requestError) {
       setError(requestError?.message || t.saveError);
+    } finally {
+      setDeletingId("");
     }
   };
 
@@ -433,9 +440,14 @@ export default function AdminBootcampsPage() {
                   </button>
                   <button
                     onClick={() => remove(item)}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-rose-50 text-xs font-black text-rose-700"
+                    disabled={deletingId === item._id}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-rose-50 text-xs font-black text-rose-700 disabled:cursor-wait disabled:opacity-60"
                   >
-                    <Trash2 size={15} />
+                    {deletingId === item._id ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={15} />
+                    )}
                   </button>
                 </div>
               </div>
