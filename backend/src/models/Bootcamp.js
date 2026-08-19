@@ -28,6 +28,7 @@ const bootcampSchema = new mongoose.Schema(
     registrationOpensAt: { type: Date, default: null },
     registrationClosesAt: { type: Date, default: null, index: true },
     plannedStartAt: { type: Date, default: null },
+    scheduleTimeZone: { type: String, default: "Asia/Kabul", immutable: true },
     minimumReachedAt: { type: Date, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   },

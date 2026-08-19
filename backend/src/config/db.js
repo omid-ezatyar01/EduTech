@@ -1,6 +1,10 @@
 import mongoose from "mongoose";
 import { backfillCourseThumbnailAssets } from "../utils/courseImage.js";
 import { expireStalePendingPaymentAttempts } from "../utils/paymentAttemptMigration.js";
+import {
+  migrateLegacyBootcampTimes,
+  syncInternalBootcampCourseStartDates,
+} from "../utils/bootcampTimeMigration.js";
 
 const SEVENTY_TWO_HOURS_IN_MILLISECONDS = 72 * 60 * 60 * 1000;
 
@@ -258,6 +262,26 @@ const ensureSingleActivePaymentAttemptIndex = async () => {
   );
 };
 
+const repairLegacyBootcampTimes = async () => {
+  try {
+    const migrated = await migrateLegacyBootcampTimes(
+      mongoose.connection.collection("bootcamps"),
+    );
+    if (migrated > 0) {
+      console.log(`Corrected ${migrated} legacy bootcamp schedule(s) to Kabul time`);
+    }
+    const synced = await syncInternalBootcampCourseStartDates(
+      mongoose.connection.collection("bootcamps"),
+      mongoose.connection.collection("courses"),
+    );
+    if (synced > 0) {
+      console.log(`Synchronized ${synced} internal bootcamp course schedule(s)`);
+    }
+  } catch (error) {
+    console.warn(`Could not correct legacy bootcamp times: ${error.message}`);
+  }
+};
+
 export const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI);
@@ -279,6 +303,7 @@ export const connectDB = async () => {
     // allowing the active-attempt uniqueness constraint to be installed.
     await repairStalePendingPaymentAttempts();
     await repairDuplicatePaymentAccounting();
+    await repairLegacyBootcampTimes();
     // Payment checkout safety depends on this constraint. If existing active
     // duplicates prevent it from being created, fail startup instead of
     // accepting another potentially chargeable race.

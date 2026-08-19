@@ -22,6 +22,11 @@ import { fetchAdminTeachers } from "../../services/courseService.js";
 import AdminPageLoader from "../components/common/AdminPageLoader.jsx";
 import { useAdminI18n } from "../i18n/AdminI18nContext.jsx";
 import { compressImageFileToLimit } from "../utils/imageCompression.js";
+import {
+  dateTimeInputInZoneToIso,
+  DEFAULT_TIME_ZONE,
+  formatDateTimeInputInZone,
+} from "../utils/timezone.js";
 
 const COVER_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const COVER_RAW_MAX_BYTES = 10 * 1024 * 1024;
@@ -67,6 +72,7 @@ const copy = {
     opens: "شروع ثبت‌نام",
     closes: "پایان ثبت‌نام",
     starts: "شروع برنامه",
+    timeZoneNotice: "تمام زمان‌های بوت‌کمپ به وقت کابل ثبت می‌شوند.",
     registrations: "ثبت‌نام‌ها",
     noRegistrations: "هنوز شاگردی ثبت‌نام نکرده است.",
     student: "شاگرد",
@@ -106,6 +112,7 @@ const copy = {
     opens: "Registration opens",
     closes: "Registration closes",
     starts: "Planned start",
+    timeZoneNotice: "All bootcamp times are saved in Kabul time.",
     registrations: "Registrations",
     noRegistrations: "No students have registered yet.",
     student: "Student",
@@ -141,8 +148,7 @@ const statusLabels = {
   },
 };
 
-const toInputDate = (value) =>
-  value ? new Date(value).toISOString().slice(0, 16) : "";
+const toInputDate = (value) => formatDateTimeInputInZone(value, DEFAULT_TIME_ZONE);
 const localized = (value, language) =>
   value?.[language] || value?.[language === "fa" ? "en" : "fa"] || "";
 
@@ -249,13 +255,13 @@ export default function AdminBootcampsPage() {
       minimumStudents: Number(form.minimumStudents),
       maximumStudents: Number(form.maximumStudents),
       registrationOpensAt: form.registrationOpensAt
-        ? new Date(form.registrationOpensAt).toISOString()
+        ? dateTimeInputInZoneToIso(form.registrationOpensAt, DEFAULT_TIME_ZONE)
         : null,
       registrationClosesAt: form.registrationClosesAt
-        ? new Date(form.registrationClosesAt).toISOString()
+        ? dateTimeInputInZoneToIso(form.registrationClosesAt, DEFAULT_TIME_ZONE)
         : null,
       plannedStartAt: form.plannedStartAt
-        ? new Date(form.plannedStartAt).toISOString()
+        ? dateTimeInputInZoneToIso(form.plannedStartAt, DEFAULT_TIME_ZONE)
         : null,
     };
     try {
@@ -671,6 +677,9 @@ export default function AdminBootcampsPage() {
                   }
                   className="mt-2 h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3"
                 />
+                <span className="mt-1 block text-xs font-semibold text-slate-500">
+                  {t.timeZoneNotice}
+                </span>
               </label>
               <label className="text-sm font-black">
                 {t.status}

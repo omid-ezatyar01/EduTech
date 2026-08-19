@@ -12,6 +12,7 @@ import { ensureCourseAutoStarted } from "../utils/courseAutoStart.js";
 import { publishCourseEnrollmentEvents } from "../services/courseNotification.service.js";
 import { deleteCourseWithRelationsByFilter } from "../services/courseCascadeDelete.service.js";
 import { removeBootcampCoverIfLocal, saveBootcampCoverFromBuffer } from "../utils/bootcampCover.js";
+import { BOOTCAMP_TIME_ZONE } from "../utils/bootcampTimeMigration.js";
 
 const courseSelect = "title slug thumbnail status isPublished isFree price teacher createdBy meetingType schedule startDate endDate classStartedAt classEndedAt classCancelledAt";
 
@@ -209,6 +210,7 @@ export const createBootcamp = asyncHandler(async (req, res) => {
       courseId: internalCourse._id,
       slug: await buildUniqueSlug(req.body.title),
       createdBy: req.user._id,
+      scheduleTimeZone: BOOTCAMP_TIME_ZONE,
     });
   } catch (error) {
     await Course.deleteOne({ _id: internalCourse._id });

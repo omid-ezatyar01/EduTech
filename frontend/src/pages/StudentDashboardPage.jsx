@@ -31,6 +31,7 @@ import { clearAuth, getAuthUser, setAuthNotice } from "../../services/portal.js"
 import { isUnauthorizedError } from "../../services/http.js";
 import { resolveStudentCourseProgressPercent } from "../utils/courseProgress.js";
 import { buildCoursePath } from "../utils/routePaths.js";
+import { DEFAULT_TIME_ZONE, formatDateTimeInZone } from "../utils/timezone.js";
 import useLiveDataRefresh from "../hooks/useLiveDataRefresh.js";
 
 const STATUS_ORDER = {
@@ -807,7 +808,11 @@ export default function StudentDashboardPage({ language = "fa" }) {
                     {bootcamp.plannedStartAt ? (
                       <p className="mt-3 flex items-center gap-2 text-xs font-bold text-slate-600">
                         <CalendarDays size={14} className="text-primary-600" />
-                        {new Date(bootcamp.plannedStartAt).toLocaleString(language === "fa" ? "fa-AF" : "en-US")}
+                        {formatDateTimeInZone(
+                          bootcamp.plannedStartAt,
+                          DEFAULT_TIME_ZONE,
+                          language,
+                        )}
                       </p>
                     ) : null}
                   </Link>
